@@ -1,0 +1,73 @@
+name: jspeak
+description: "JSPEAK: Global Communication Onboard - 객실승무원 기내대화 외국어 학습 앱"
+publish_to: 'none'
+version: 0.1.0+1
+
+environment:
+  sdk: ^3.11.5
+
+dependencies:
+  connectivity_plus: ^7.2.0
+  crypto: ^3.0.7
+  dio: ^5.10.0
+  flutter:
+    sdk: flutter
+  flutter_riverpod: ^3.3.2
+  flutter_svg: ^2.3.0
+  flutter_tts: ^4.2.5
+  go_router: ^17.3.0
+  hive: ^2.2.3
+  hive_flutter: ^1.1.0
+  intl: ^0.20.3
+  just_audio: ^0.10.6
+  path_provider: ^2.1.6
+  speech_to_text: ^7.4.0
+
+dev_dependencies:
+  flutter_test:
+    sdk: flutter
+  flutter_lints: ^6.0.0
+
+flutter:
+  uses-material-design: true
+  assets:
+    - assets/sample_content.json
+    - assets/images/jinair_logo1.svg
+    - assets/images/jinair_logo2.svg
+  fonts:
+    - family: SUIT
+      fonts:
+        - asset: assets/fonts/SUIT-Thin.ttf
+          weight: 100
+        - asset: assets/fonts/SUIT-ExtraLight.ttf
+          weight: 200
+        - asset: assets/fonts/SUIT-Light.ttf
+          weight: 300
+        - asset: assets/fonts/SUIT-Regular.ttf
+          weight: 400
+        - asset: assets/fonts/SUIT-Medium.ttf
+          weight: 500
+        - asset: assets/fonts/SUIT-SemiBold.ttf
+          weight: 600
+        - asset: assets/fonts/SUIT-Bold.ttf
+          weight: 700
+        - asset: assets/fonts/SUIT-ExtraBold.ttf
+          weight: 800
+        - asset: assets/fonts/SUIT-Heavy.ttf
+          weight: 900
+    - family: SUITE
+      fonts:
+        - asset: assets/fonts/SUITE-Light.ttf
+          weight: 300
+        - asset: assets/fonts/SUITE-Regular.ttf
+          weight: 400
+        - asset: assets/fonts/SUITE-Medium.ttf
+          weight: 500
+        - asset: assets/fonts/SUITE-SemiBold.ttf
+          weight: 600
+        - asset: assets/fonts/SUITE-Bold.ttf
+          weight: 700
+        - asset: assets/fonts/SUITE-ExtraBold.ttf
+          weight: 800
+        - asset: assets/fonts/SUITE-Heavy.ttf
+          weight: 900

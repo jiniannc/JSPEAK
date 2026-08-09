@@ -1,0 +1,257 @@
+{
+  "categoryOrder": ["탑승 안내", "좌석 안내", "식사 서비스", "면세품 판매"],
+  "allSentences": [
+    {
+      "language": "English",
+      "category": "탑승 안내",
+      "sentence": "May I see your boarding pass, please?",
+      "pronunciation": "메이 아이 씨 유어 보딩 패스, 플리즈?",
+      "korean": "탑승권을 보여주시겠습니까?",
+      "audio": "",
+      "popular": 1,
+      "important": "Yes"
+    },
+    {
+      "language": "English",
+      "category": "좌석 안내",
+      "sentence": "Your seat is 23A, by the window on the left side.",
+      "pronunciation": "유어 씻 이즈 트웬티쓰리 에이, 바이 더 윈도우 온 더 레프트 사이드.",
+      "korean": "손님 좌석은 왼쪽 창가 23A입니다.",
+      "audio": "",
+      "popular": 2,
+      "important": "No"
+    },
+    {
+      "language": "English",
+      "category": "식사 서비스",
+      "sentence": "Would you like chicken or beef?",
+      "pronunciation": "우쥬 라이크 치킨 오어 비프?",
+      "korean": "치킨과 소고기 중 어느 것으로 드릴까요?",
+      "audio": "",
+      "popular": 1,
+      "important": "Yes"
+    },
+    {
+      "language": "Japanese",
+      "category": "탑승 안내",
+      "sentence": "搭乗券を拝見してもよろしいでしょうか。",
+      "pronunciation": "토-죠-켄오 하이켄시테모 요로시이데쇼-카",
+      "korean": "탑승권을 확인해도 되겠습니까?",
+      "audio": "",
+      "popular": 2,
+      "important": "Yes"
+    },
+    {
+      "language": "Japanese",
+      "category": "식사 서비스",
+      "sentence": "お飲み物は何になさいますか。",
+      "pronunciation": "오노미모노와 나니니 나사이마스카",
+      "korean": "음료는 무엇으로 하시겠습니까?",
+      "audio": "",
+      "popular": 1,
+      "important": "No"
+    },
+    {
+      "language": "Chinese",
+      "category": "탑승 안내",
+      "sentence": "请出示您的登机牌。",
+      "pronunciation": "칭 추스 닌더 떵지파이",
+      "korean": "탑승권을 보여주세요.",
+      "audio": "",
+      "popular": 1,
+      "important": "Yes"
+    },
+    {
+      "language": "Chinese",
+      "category": "면세품 판매",
+      "sentence": "您需要免税品吗？",
+      "pronunciation": "닌 쉬야오 미엔쉐이핀 마?",
+      "korean": "면세품이 필요하십니까?",
+      "audio": "",
+      "popular": 2,
+      "important": "No"
+    }
+  ],
+  "allWords": [
+    {
+      "language": "English",
+      "category": "탑승 안내",
+      "word": "boarding pass",
+      "pronunciation": "[ˈbɔːrdɪŋ pæs]",
+      "meaning": "탑승권",
+      "description": "탑승 시 반드시 제시해야 하는 필수 서류입니다.",
+      "popular": 3,
+      "important": "Yes"
+    },
+    {
+      "language": "English",
+      "category": "탑승 안내",
+      "word": "may",
+      "pronunciation": "[meɪ]",
+      "meaning": "~해도 되나요",
+      "description": "공손한 허가·요청 표현입니다.",
+      "popular": 2,
+      "important": "No"
+    },
+    {
+      "language": "English",
+      "category": "탑승 안내",
+      "word": "see",
+      "pronunciation": "[siː]",
+      "meaning": "보다, 확인하다",
+      "description": "탑승권·신분증 등을 확인할 때 사용합니다.",
+      "popular": 2,
+      "important": "No"
+    },
+    {
+      "language": "English",
+      "category": "식사 서비스",
+      "word": "chicken",
+      "pronunciation": "[ˈtʃɪkɪn]",
+      "meaning": "닭고기",
+      "description": "기내식 메뉴 선택 시 사용합니다.",
+      "popular": 2,
+      "important": "No"
+    },
+    {
+      "language": "English",
+      "category": "식사 서비스",
+      "word": "beef",
+      "pronunciation": "[biːf]",
+      "meaning": "소고기",
+      "description": "기내식 메뉴 선택 시 사용합니다.",
+      "popular": 2,
+      "important": "No"
+    }
+  ],
+  "scenariosEn": [
+    {
+      "scenario_id": "en_seat_01",
+      "title": "좌석 변경 요청",
+      "order": 1,
+      "speaker": "Passenger",
+      "text_ko": "실례합니다, 좌석을 바꿀 수 있을까요?",
+      "text_target": "Excuse me, can I change my seat?",
+      "pronunciation": "",
+      "blank_frame": "",
+      "flight_stage": "좌석 안내",
+      "level": "중급",
+      "chapter_no": 1,
+      "chapter_name": "탑승 및 좌석 안내",
+      "chapter_image": "assets/images/ch_boarding.png",
+      "new": true
+    },
+    {
+      "scenario_id": "en_seat_01",
+      "order": 2,
+      "speaker": "Crew",
+      "text_ko": "잠시만요, 빈 좌석이 있는지 확인해 보겠습니다.",
+      "text_target": "Let me check if there are any available seats.",
+      "pronunciation": "",
+      "blank_frame": "Let me check if there are any ____ seats.",
+      "flight_stage": "좌석 안내",
+      "level": "중급",
+      "chapter_no": 1,
+      "chapter_name": "탑승 및 좌석 안내",
+      "chapter_image": "assets/images/ch_boarding.png",
+      "new": false
+    },
+    {
+      "scenario_id": "en_meal_01",
+      "title": "기내 식사 주문",
+      "order": 1,
+      "speaker": "Passenger",
+      "text_ko": "치킨 식사로 주실 수 있나요?",
+      "text_target": "Could I have the chicken meal, please?",
+      "pronunciation": "",
+      "blank_frame": "",
+      "flight_stage": "식사 서비스",
+      "level": "초급",
+      "chapter_no": 2,
+      "chapter_name": "기내 식사 서비스",
+      "chapter_image": "assets/images/ch_meal.png",
+      "new": false
+    },
+    {
+      "scenario_id": "en_meal_01",
+      "order": 2,
+      "speaker": "Crew",
+      "text_ko": "물론이죠, 바로 가져다 드리겠습니다.",
+      "text_target": "Certainly, I will bring it right away.",
+      "pronunciation": "",
+      "blank_frame": "Certainly, I will ____ it right away.",
+      "flight_stage": "식사 서비스",
+      "level": "초급",
+      "chapter_no": 2,
+      "chapter_name": "기내 식사 서비스",
+      "chapter_image": "assets/images/ch_meal.png",
+      "new": false
+    }
+  ],
+  "scenariosJp": [
+    {
+      "scenario_id": "jp_seat_01",
+      "title": "창가 좌석 변경",
+      "order": 1,
+      "speaker": "Passenger",
+      "text_ko": "창가 좌석으로 바꿀 수 있을까요?",
+      "text_target": "窓側の席に変更できますか。",
+      "pronunciation": "마도가와노 세키니 헨코- 데키마스카",
+      "blank_frame": "",
+      "flight_stage": "좌석 안내",
+      "level": "초급",
+      "chapter_no": 1,
+      "chapter_name": "탑승 및 좌석 안내",
+      "chapter_image": "assets/images/ch_boarding.png",
+      "new": true
+    },
+    {
+      "scenario_id": "jp_seat_01",
+      "order": 2,
+      "speaker": "Crew",
+      "text_ko": "네, 확인해 보겠습니다. 잠시만 기다려 주세요.",
+      "text_target": "かしこまりました。確認いたしますので、少々お待ちください。",
+      "pronunciation": "카시코마리마시타. 카쿠닌 이타시마스노데, 쇼-쇼- 오마치 쿠다사이.",
+      "blank_frame": "かしこまりました。____いたしますので、少々お待ちください。",
+      "flight_stage": "좌석 안내",
+      "level": "초급",
+      "chapter_no": 1,
+      "chapter_name": "탑승 및 좌석 안내",
+      "chapter_image": "assets/images/ch_boarding.png",
+      "new": false
+    }
+  ],
+  "scenariosCn": [
+    {
+      "scenario_id": "cn_meal_01",
+      "title": "채식 메뉴 문의",
+      "order": 1,
+      "speaker": "Passenger",
+      "text_ko": "채식 메뉴가 있나요?",
+      "text_target": "请问有素食吗？",
+      "pronunciation": "칭 wen you su shi ma?",
+      "blank_frame": "",
+      "flight_stage": "식사 서비스",
+      "level": "초급",
+      "chapter_no": 2,
+      "chapter_name": "기내 식사 서비스",
+      "chapter_image": "assets/images/ch_meal.png",
+      "new": true
+    },
+    {
+      "scenario_id": "cn_meal_01",
+      "order": 2,
+      "speaker": "Crew",
+      "text_ko": "네, 채식 옵션이 있습니다. 원하시면 준비해 드리겠습니다.",
+      "text_target": "有的，我们准备了素食餐。需要为您准备吗？",
+      "pronunciation": "you de, women zhunbei le su shi can. xuyao wei nin zhunbei ma?",
+      "blank_frame": "有的，我们准备了____。需要为您准备吗？",
+      "flight_stage": "식사 서비스",
+      "level": "초급",
+      "chapter_no": 2,
+      "chapter_name": "기내 식사 서비스",
+      "chapter_image": "assets/images/ch_meal.png",
+      "new": false
+    }
+  ]
+}
