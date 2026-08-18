@@ -2,11 +2,16 @@ import 'dart:convert';
 
 import 'package:crypto/crypto.dart';
 
+import '../../core/utils/chapter_asset_path.dart';
+
 /// 스프레드시트 한 행에 해당하는 문장.
 class Sentence {
   final String id;
   final String language;
+  final int chapterNo;
   final String category;
+  final String chapterImage;
+  final String chapterHook;
   final String sentence;
   final String pronunciation;
   final String korean;
@@ -21,7 +26,10 @@ class Sentence {
   const Sentence({
     required this.id,
     required this.language,
+    this.chapterNo = 1,
     required this.category,
+    this.chapterImage = '',
+    this.chapterHook = '',
     required this.sentence,
     required this.pronunciation,
     required this.korean,
@@ -43,7 +51,12 @@ class Sentence {
     return Sentence(
       id: stableId(language, category, text),
       language: language,
+      chapterNo: _parseChapterNo(json['chapter_no']),
       category: category,
+      chapterImage: resolveChapterAssetPath(
+        (json['chapter_image'] ?? '') as String,
+      ),
+      chapterHook: (json['chapter_hook'] ?? '') as String,
       sentence: text,
       pronunciation: (json['pronunciation'] ?? '') as String,
       korean: (json['korean'] ?? '') as String,
@@ -65,7 +78,10 @@ class Sentence {
 
   Map<String, dynamic> toJson() => {
         'language': language,
+        'chapter_no': chapterNo,
         'category': category,
+        'chapter_image': chapterImage,
+        if (chapterHook.isNotEmpty) 'chapter_hook': chapterHook,
         'sentence': sentence,
         'pronunciation': pronunciation,
         'korean': korean,
@@ -79,6 +95,11 @@ class Sentence {
     if (value is String) return int.tryParse(value) ?? 0;
     if (value is num) return value.toInt();
     return 0;
+  }
+
+  static int _parseChapterNo(Object? value) {
+    final parsed = _parseInt(value);
+    return parsed <= 0 ? 1 : parsed;
   }
 
   /// 시트 audio 값(파일 ID 또는 URL)을 앱이 재생할 수 있는 URL로 변환한다.

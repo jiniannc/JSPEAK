@@ -12,6 +12,7 @@ import '../../core/config/active5_layout.dart';
 import '../../core/config/app_config.dart';
 import '../../core/theme/animated_language_scope.dart';
 import '../../core/widgets/device_scaffold.dart';
+import '../shell/floating_island_nav_bar.dart';
 import '../shell/main_shell_tab_header.dart';
 import 'widgets/interactive_passport_booklet.dart';
 import 'widgets/my_page_section_header.dart';
@@ -79,7 +80,7 @@ class _MyPageScreenState extends ConsumerState<MyPageScreen> {
               metrics.pagePadding.left,
               0,
               metrics.pagePadding.right,
-              120,
+              28 + FloatingIslandNavBar.scrollBottomPadding(context),
             ),
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.stretch,

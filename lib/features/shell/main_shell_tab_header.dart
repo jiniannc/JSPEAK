@@ -13,7 +13,7 @@ import '../dictionary/widgets/bookmark_vault_modal.dart';
 import '../learning/learning_hub_shell.dart';
 
 /// 홈 · 학습 · 기내사전 · 마이페이지 — 4개 탭 공통 헤더.
-/// 탭 전환은 이 위젯 하나가 크로스페이드+슬라이드로 담당하고, 학습 탭
+/// 탭 전환은 이 위젯 하나가 크로스페이드로 담당하고, 학습 탭
 /// 내부의 서브 페이지 전환(기본 문장/시나리오/단어 스와이프)은 AppHeader
 /// 자체의 AnimatedSwitcher(`animateTitle: true`)가 담당한다.
 class MainShellTabHeader extends ConsumerStatefulWidget {
@@ -37,9 +37,8 @@ class MainShellTabHeader extends ConsumerStatefulWidget {
 
 class _MainShellTabHeaderState extends ConsumerState<MainShellTabHeader>
     with TickerProviderStateMixin {
-  static const _slideDistance = 64.0;
-  static const _switchDuration = Duration(milliseconds: 460);
-  static const _trailingFadeDuration = Duration(milliseconds: 380);
+  static const _switchDuration = Duration(milliseconds: 480);
+  static const _trailingFadeDuration = Duration(milliseconds: 420);
   static const _shimmerDuration = Duration(milliseconds: 340);
 
   late final AnimationController _controller;
@@ -85,7 +84,7 @@ class _MainShellTabHeaderState extends ConsumerState<MainShellTabHeader>
   void didUpdateWidget(covariant MainShellTabHeader oldWidget) {
     super.didUpdateWidget(oldWidget);
     // 4개 탭 모두 같은 위젯이 그리므로, 탭이 바뀌면(학습 탭 포함) 항상
-    // 크로스페이드+슬라이드를 재생한다.
+    // 크로스페이드를 재생한다.
     if (widget.tabIndex != _lastTabIndex) {
       final previousTab = _lastTabIndex;
       _outgoingTabIndex = previousTab;
@@ -103,9 +102,14 @@ class _MainShellTabHeaderState extends ConsumerState<MainShellTabHeader>
             widget.tabIndex == MainShellTabHeader.kMyPageTabIndex ? 0.0 : 1.0;
       }
 
+      // 첫 프레임부터 fadeT=0(나가는 헤더만 보임)으로 시작해야 새 타이틀이
+      // 잠깐 노출된 뒤 슬라이드되는 깜빡임이 없다.
+      _controller.stop();
+      _controller.value = 0;
+
       // build/layout 단계 도중 컨트롤러를 즉시 구동하면 TickerMode 변경이
       // Riverpod의 provider refresh를 동기 트리거해 "setState during build"
-      // 예외로 이어진다. 다음 프레임으로 미뤄 안전하게 시작한다.
+      // 예외로 이어진다. value 리셋만 동기로 하고 재생은 다음 프레임으로 미룬다.
       WidgetsBinding.instance.addPostFrameCallback((_) {
         if (!mounted) return;
         _controller.forward(from: 0);
@@ -200,7 +204,7 @@ class _MainShellTabHeaderState extends ConsumerState<MainShellTabHeader>
           selectedLanguage: language,
           onLanguageSelected: (lang) => selectLearningLanguage(ref, lang),
           accent: palette.primary,
-          animateTitle: true,
+          animateTitle: !_animating,
           transitionAxis: isSubMode
               ? AppHeaderTransitionAxis.vertical
               : AppHeaderTransitionAxis.horizontal,
@@ -246,27 +250,43 @@ class _MainShellTabHeaderState extends ConsumerState<MainShellTabHeader>
 
   Widget _wrapTransitionLayer({
     required double opacity,
-    required Offset offset,
-    required double scale,
     required Widget child,
+    double scale = 1.0,
   }) {
     return Opacity(
       opacity: opacity.clamp(0.0, 1.0),
-      child: Transform.translate(
-        offset: offset,
-        child: Transform.scale(
-          alignment: Alignment.topLeft,
-          scale: scale,
-          child: child,
-        ),
+      child: Transform.scale(
+        alignment: Alignment.topLeft,
+        scale: scale,
+        child: child,
       ),
     );
+  }
+
+  ({double incoming, double outgoing, double incomingScale, double outgoingScale})
+      _crossfadeProgress(double t) {
+    // 나가는 타이틀은 전반부에 빠르게 퇴장, 들어오는 타이틀은 약간 늦게 등장해
+    // 겹침 구간을 짧게 유지한다.
+    final outgoingT = Curves.easeOutCubic.transform(_remap(t, 0.0, 0.45));
+    final incomingT = Curves.easeOutQuart.transform(_remap(t, 0.14, 0.96));
+    return (
+      incoming: incomingT,
+      outgoing: 1 - outgoingT,
+      incomingScale: 0.93 + (0.07 * incomingT),
+      outgoingScale: 1.0 - (0.05 * outgoingT),
+    );
+  }
+
+  static double _remap(double t, double start, double end) {
+    if (t <= start) return 0;
+    if (t >= end) return 1;
+    return (t - start) / (end - start);
   }
 
   Widget _buildHeaderStack(
     BuildContext context,
     double inset, {
-    required double fadeT,
+    required double progressT,
   }) {
     Widget buildTitleHeader(int tabIndex) {
       return KeyedSubtree(
@@ -275,7 +295,7 @@ class _MainShellTabHeaderState extends ConsumerState<MainShellTabHeader>
       );
     }
 
-    Widget buildTitleLayers(double fadeT) {
+    Widget buildTitleLayers(double progressT) {
       if (!_animating) {
         return Align(
           alignment: Alignment.topLeft,
@@ -283,6 +303,7 @@ class _MainShellTabHeaderState extends ConsumerState<MainShellTabHeader>
         );
       }
 
+      final crossfade = _crossfadeProgress(progressT);
       final outgoingTab = _outgoingTabIndex;
       final outgoing =
           outgoingTab == null ? null : buildTitleHeader(outgoingTab);
@@ -298,9 +319,8 @@ class _MainShellTabHeaderState extends ConsumerState<MainShellTabHeader>
                 left: 0,
                 right: 0,
                 child: _wrapTransitionLayer(
-                  opacity: 1 - fadeT,
-                  offset: Offset(-_slideDistance * fadeT, 0),
-                  scale: 1.0 - (0.05 * fadeT),
+                  opacity: crossfade.outgoing,
+                  scale: crossfade.outgoingScale,
                   child: outgoing,
                 ),
               ),
@@ -309,9 +329,8 @@ class _MainShellTabHeaderState extends ConsumerState<MainShellTabHeader>
               left: 0,
               right: 0,
               child: _wrapTransitionLayer(
-                opacity: fadeT,
-                offset: Offset(_slideDistance * (1 - fadeT), 0),
-                scale: 0.95 + (0.05 * fadeT),
+                opacity: crossfade.incoming,
+                scale: crossfade.incomingScale,
                 child: current,
               ),
             ),
@@ -333,7 +352,7 @@ class _MainShellTabHeaderState extends ConsumerState<MainShellTabHeader>
       child: Stack(
         clipBehavior: Clip.none,
         children: [
-          buildTitleLayers(fadeT),
+          buildTitleLayers(progressT),
           if (!_animating && _shimmerController.isAnimating)
             Positioned(
               top: AppHeader.topInset,
@@ -381,10 +400,8 @@ class _MainShellTabHeaderState extends ConsumerState<MainShellTabHeader>
         _shimmerController,
       ]),
       builder: (context, _) {
-        final fadeT = _animating
-            ? Curves.easeOutCubic.transform(_controller.value)
-            : 1.0;
-        return _buildHeaderStack(context, inset, fadeT: fadeT);
+        final progressT = _animating ? _controller.value : 1.0;
+        return _buildHeaderStack(context, inset, progressT: progressT);
       },
     );
   }

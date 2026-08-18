@@ -215,7 +215,6 @@ class _WordSwipeTrainingScreenState
       unknownWords: List.unmodifiable(_unknownWords),
       category: _category,
       language: _language,
-      nextCategory: _reviewOnly ? null : _nextCategory,
       onRetryLimited: () {
         _resultPresented = false;
         final retryDeck = _unknownWords.take(5).toList();
@@ -232,18 +231,9 @@ class _WordSwipeTrainingScreenState
         _startSession(
           language: _language,
           category: _category,
-          reviewOnly: _reviewOnly,
+          reviewOnly: true,
         );
       },
-      onNextChapter: _reviewOnly || _nextCategory == null
-          ? null
-          : () {
-              _resultPresented = false;
-              _startSession(
-                language: _language,
-                category: _nextCategory!,
-              );
-            },
       onExit: () {
         if (mounted) context.pop();
       },
@@ -305,12 +295,6 @@ class _WordSwipeTrainingScreenState
 
   WordModel? get _current =>
       (_index < _deck.length) ? _deck[_index] : null;
-
-  String? get _nextCategory {
-    final content = ref.read(contentProvider).value;
-    if (content == null) return null;
-    return content.bundle.nextWordCategory(_language, _category);
-  }
 
   void _toggleReveal() {
     if (_flyController.isAnimating || _panMoved) return;
@@ -658,6 +642,8 @@ class _SwipeSessionView extends StatelessWidget {
                     key: ValueKey('deck_${deck[index + 1].id}'),
                     word: deck[index + 1],
                     category: category,
+                    wordNumber: index + 2,
+                    totalWords: deck.length,
                     revealed: false,
                     revealProgress: 0,
                     knowOpacity: 0,
@@ -684,6 +670,8 @@ class _SwipeSessionView extends StatelessWidget {
                             key: ValueKey('deck_${deck[index].id}'),
                             word: deck[index],
                             category: category,
+                            wordNumber: index + 1,
+                            totalWords: deck.length,
                             revealed: revealed,
                             revealProgress: revealProgress,
                             knowOpacity: knowOpacity,
@@ -778,6 +766,8 @@ class _RoundAction extends StatelessWidget {
 class _WordCard extends ConsumerWidget {
   final WordModel word;
   final String category;
+  final int wordNumber;
+  final int totalWords;
   final bool revealed;
   final double revealProgress;
   final double knowOpacity;
@@ -789,6 +779,8 @@ class _WordCard extends ConsumerWidget {
     super.key,
     required this.word,
     required this.category,
+    required this.wordNumber,
+    required this.totalWords,
     required this.revealed,
     required this.revealProgress,
     required this.knowOpacity,
@@ -861,12 +853,12 @@ class _WordCard extends ConsumerWidget {
                         borderRadius: BorderRadius.circular(8),
                       ),
                       child: Text(
-                        word.language,
+                        '$wordNumber / $totalWords',
                         style: const TextStyle(
                           fontSize: 11,
                           fontWeight: FontWeight.w800,
                           color: DashboardPalette.tealDeep,
-                          letterSpacing: 0.6,
+                          letterSpacing: 0.2,
                         ),
                       ),
                     ),

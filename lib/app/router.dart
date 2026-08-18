@@ -10,7 +10,6 @@ import '../features/dictionary/dictionary_home_screen.dart';
 import '../features/learning/learning_home_screen.dart';
 import '../features/learning/learning_hub_shell.dart';
 import '../features/my_page/my_page_screen.dart';
-import '../features/scenarios/scenario_home_screen.dart';
 import '../features/scenarios/scenario_training_screen.dart';
 import '../features/search/search_screen.dart';
 import '../features/settings/settings_screen.dart';
@@ -54,10 +53,7 @@ final router = GoRouter(
                   routes: [
                     GoRoute(
                       path: 'list',
-                      pageBuilder: (context, state) => NoTransitionPage(
-                        key: state.pageKey,
-                        child: const ScenarioHomeScreen(),
-                      ),
+                      redirect: (context, state) => '/scenarios',
                     ),
                     GoRoute(
                       path: 'sentences',

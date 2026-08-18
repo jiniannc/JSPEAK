@@ -13,12 +13,14 @@
  *     Flutter 빌드 시 --dart-define=CONTENT_URL=... 로 전달
  *
  * 시트 컬럼 (Sentences 시트, 1행은 헤더):
- *  A: language | B: category | C: sentence | D: pronunciation
- *  E: korean   | F: audio (Google Drive 파일 ID) | G: popular | H: important (Yes/No)
+ *  A: language | B: chapter_no | C: category | D: chapter_image
+ *  E: sentence | F: pronunciation | G: korean | H: audio (Google Drive 파일 ID)
+ *  I: popular | J: important (Yes/No) | L: chapter_hook (챕터당 첫 행 1셀만)
  *
  * Words 시트 (1행은 헤더):
- *  A: language | B: category | C: word | D: pronunciation (IPA)
- *  E: meaning  | F: description | G: popular | H: important (Yes/No)
+ *  A: language | B: chapter_no | C: category | D: chapter_image
+ *  E: word | F: pronunciation (IPA) | G: meaning | H: description
+ *  I: popular | J: important (Yes/No)
  *
  * 시나리오 시트 (scenarios_en / scenarios_jp / scenarios_cn, 1행은 헤더):
  *  A: scenario_id | B: chapter_no | C: chapter_name | D: chapter_image
@@ -61,44 +63,90 @@ function doGet(e) {
     .setMimeType(ContentService.MimeType.JSON);
 }
 
+function normalizeChapterImage(raw) {
+  const text = String(raw || '').trim();
+  if (!text) return '';
+  let path = text.replace(/\\/g, '/');
+  while (path.indexOf('assets/assets/') === 0) {
+    path = path.substring('assets/'.length);
+  }
+  path = path.replace(/learninghub\s+icons\//gi, '');
+  path = path.replace(/^assets\/images\//i, '');
+  path = path.replace(/^images\//i, '');
+  if (/\.(png|jpe?g|webp|gif)$/i.test(path)) {
+    return path.replace(/^\/+/, '');
+  }
+  return '';
+}
+
 function getData() {
   const ss = SpreadsheetApp.getActiveSpreadsheet();
   const sheet = ss.getSheetByName('Sentences');
   const data = sheet.getDataRange().getValues();
 
   const allSentences = [];
-  const categoryOrder = [];
 
   for (let i = 1; i < data.length; i++) {
     const row = data[i];
     const language = row[0];
-    const category = row[1];
+    const category = row[2];
     if (!language || !category) continue;
-
-    if (categoryOrder.indexOf(category) === -1) {
-      categoryOrder.push(category);
-    }
 
     allSentences.push({
       language: language,
+      chapter_no: parseInt(row[1]) || 1,
       category: category,
-      sentence: row[2],
-      pronunciation: row[3],
-      korean: row[4],
-      audio: resolveAudioUrl(row[5]),
-      popular: parseInt(row[6]) || 0,
-      important: normalizeImportant(row[7]),
+      chapter_image: normalizeChapterImage(row[3]),
+      sentence: row[4],
+      pronunciation: row[5],
+      korean: row[6],
+      audio: resolveAudioUrl(row[7]),
+      popular: parseInt(row[8]) || 0,
+      important: normalizeImportant(row[9]),
+      chapter_hook: String(row[11] || '').trim(),
     });
   }
 
+  const allWords = getWords();
+
   return {
     allSentences: allSentences,
-    categoryOrder: categoryOrder,
-    allWords: getWords(),
+    categoryOrder: buildCategoryOrder(allSentences, allWords),
+    allWords: allWords,
     scenariosEn: getScenarios('scenarios_en'),
     scenariosJp: getScenarios('scenarios_jp'),
     scenariosCn: getScenarios('scenarios_cn'),
   };
+}
+
+function buildCategoryOrder(allSentences, allWords) {
+  const chapterByCategory = {};
+
+  function noteCategory(category, chapterNo) {
+    if (!category) return;
+    const no = parseInt(chapterNo) || 1;
+    if (
+      chapterByCategory[category] === undefined ||
+      no < chapterByCategory[category]
+    ) {
+      chapterByCategory[category] = no;
+    }
+  }
+
+  for (let i = 0; i < allSentences.length; i++) {
+    const s = allSentences[i];
+    noteCategory(s.category, s.chapter_no);
+  }
+  for (let j = 0; j < allWords.length; j++) {
+    const w = allWords[j];
+    noteCategory(w.category, w.chapter_no);
+  }
+
+  return Object.keys(chapterByCategory).sort(function (a, b) {
+    const cmp = chapterByCategory[a] - chapterByCategory[b];
+    if (cmp !== 0) return cmp;
+    return String(a).localeCompare(String(b), 'ko');
+  });
 }
 
 /**
@@ -170,16 +218,6 @@ function getScenarios(sheetName) {
     if (v === true || v === 1) return true;
     const s = String(v).trim().toLowerCase();
     return s === 'true' || s === '1' || s === 'yes' || s === 'y';
-  }
-
-  function normalizeChapterImage(raw) {
-    const text = String(raw || '').trim();
-    if (!text) return '';
-    if (text.indexOf('assets/') === 0) return text;
-    if (/\.(png|jpe?g|webp|gif)$/i.test(text)) {
-      return 'assets/images/' + text.replace(/^\/+/, '');
-    }
-    return '';
   }
 
   function parseRows(useHeader) {
@@ -266,19 +304,21 @@ function getWords() {
   for (let i = 1; i < data.length; i++) {
     const row = data[i];
     const language = row[0];
-    const word = row[2];
+    const word = row[4];
     if (!language || !word) continue;
 
     allWords.push({
       language: language,
-      category: row[1] || '',
+      chapter_no: parseInt(row[1]) || 1,
+      category: row[2] || '',
+      chapter_image: normalizeChapterImage(row[3]),
       word: word,
-      pronunciation: row[3] || '',
-      meaning: row[4] || '',
-      description: row[5] || '',
-      popular: parseInt(row[6]) || 0,
-      important: normalizeImportant(row[7]),
-    );
+      pronunciation: row[5] || '',
+      meaning: row[6] || '',
+      description: row[7] || '',
+      popular: parseInt(row[8]) || 0,
+      important: normalizeImportant(row[9]),
+    });
   }
 
   return allWords;

@@ -1,12 +1,11 @@
 import 'dart:math' as math;
-import 'dart:ui';
-
 import 'package:flutter/material.dart';
 
-import '../../../core/utils/chapter_asset_path.dart';
 import '../../../core/theme/language_palette.dart';
 import '../../../data/models/scenario.dart';
 import '../../../data/models/scenario_chapter.dart';
+import '../../../shared/widgets/chapter_thumbnail.dart';
+import '../../../shared/widgets/true_glass_panel.dart';
 
 // ── True glass palette ───────────────────────────────────────
 
@@ -17,14 +16,7 @@ abstract final class _GlassPalette {
   static const reviewInk = Color(0xFF475569);
   static const newCoral = Color(0xFFFF5252);
   static const ctaSlate = Color(0xFF1E293B);
-  static const thumbBg = Color(0xFFF8FAFC);
-  static const thumbIcon = Color(0xFF94A3B8);
-  static const glassShadow = Color(0x0F000000);
-  static const glassFillAlpha = 0.65;
-  static const nestedFillAlpha = 0.35;
-  static const glassBorderAlpha = 0.8;
   static const treeLine = Color(0xFFCBD5E1);
-  static const blurSigma = 12.0;
 
   /// tilePadding.left(12) + leading(40) + titleGap(16)
   static const chapterTitleInset = 68.0;
@@ -53,53 +45,12 @@ class _TrueGlassPanel extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final isNested = tier == _GlassPanelTier.nested;
-
-    return Container(
+    return TrueGlassPanel(
+      radius: radius,
+      padding: padding,
       margin: margin,
-      decoration: isNested
-          ? null
-          : BoxDecoration(
-              borderRadius: BorderRadius.circular(radius),
-              boxShadow: const [
-                BoxShadow(
-                  color: _GlassPalette.glassShadow,
-                  blurRadius: 16,
-                  offset: Offset(0, 4),
-                ),
-              ],
-            ),
-      child: ClipRRect(
-        borderRadius: BorderRadius.circular(radius),
-        child: BackdropFilter(
-          filter: ImageFilter.blur(
-            sigmaX: _GlassPalette.blurSigma,
-            sigmaY: _GlassPalette.blurSigma,
-          ),
-          child: DecoratedBox(
-            decoration: BoxDecoration(
-              color: Colors.white.withValues(
-                alpha: isNested
-                    ? _GlassPalette.nestedFillAlpha
-                    : _GlassPalette.glassFillAlpha,
-              ),
-              borderRadius: BorderRadius.circular(radius),
-              border: isNested
-                  ? null
-                  : Border.all(
-                      color: Colors.white.withValues(
-                        alpha: _GlassPalette.glassBorderAlpha,
-                      ),
-                      width: 1.5,
-                    ),
-            ),
-            child: Padding(
-              padding: padding ?? EdgeInsets.zero,
-              child: child,
-            ),
-          ),
-        ),
-      ),
+      nested: tier == _GlassPanelTier.nested,
+      child: child,
     );
   }
 }
@@ -210,7 +161,7 @@ class _ScenarioNewBadgeState extends State<ScenarioNewBadge>
   }
 }
 
-/// 챕터 썸네일 — asset 실패 시 미니멀 아이콘 폴백.
+/// 챕터 썸네일 — [ChapterThumbnail] 래퍼.
 class ScenarioChapterThumbnail extends StatelessWidget {
   final String assetPath;
 
@@ -218,38 +169,7 @@ class ScenarioChapterThumbnail extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final resolved = resolveChapterAssetPath(assetPath);
-
-    return ClipRRect(
-      borderRadius: BorderRadius.circular(10),
-      child: SizedBox(
-        width: 40,
-        height: 40,
-        child: resolved.isEmpty
-            ? _fallback()
-            : Image.asset(
-                resolved,
-                width: 40,
-                height: 40,
-                fit: BoxFit.cover,
-                errorBuilder: (context, error, stackTrace) => _fallback(),
-              ),
-      ),
-    );
-  }
-
-  Widget _fallback() {
-    return Container(
-      width: 40,
-      height: 40,
-      color: _GlassPalette.thumbBg.withValues(alpha: 0.7),
-      alignment: Alignment.center,
-      child: const Icon(
-        Icons.flight_rounded,
-        size: 18,
-        color: _GlassPalette.thumbIcon,
-      ),
-    );
+    return ChapterThumbnail(assetPath: assetPath);
   }
 }
 

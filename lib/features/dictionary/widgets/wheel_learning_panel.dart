@@ -240,6 +240,7 @@ class _WheelLearningPanelState extends ConsumerState<WheelLearningPanel> {
       children: [
         TappableSentenceRichText(
           sentence: sentence.sentence,
+          language: sentence.language,
           textAlign: TextAlign.center,
           style: TextStyle(
             fontSize: metrics.sentenceFontSize + 1,

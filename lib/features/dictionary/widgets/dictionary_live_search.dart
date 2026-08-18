@@ -10,6 +10,7 @@ import '../../../app/dictionary_providers.dart';
 import '../../../app/providers.dart';
 import '../../../app/search_providers.dart';
 import '../../../app/shell_providers.dart';
+import '../../../core/services/audio_prefetch.dart';
 import '../../../core/theme/language_palette.dart';
 import '../../../data/models/sentence.dart';
 import '../../../data/models/vocabulary_entry.dart';
@@ -73,8 +74,6 @@ class _DictionaryLiveSearchViewState extends ConsumerState<DictionaryLiveSearchV
   List<String> _chipLabels = const [];
   int _chipGeneration = 0;
   bool _hasChipCandidates = false;
-  int _diceRestFace = 5;
-  int _diceSpinFromFace = 5;
 
   bool get _isLiveActive => _searchEngaged;
 
@@ -88,7 +87,6 @@ class _DictionaryLiveSearchViewState extends ConsumerState<DictionaryLiveSearchV
   void initState() {
     super.initState();
     _chipRandom = math.Random();
-    _diceRestFace = _chipRandom.nextInt(6) + 1;
     _controller = TextEditingController();
     _focusNode = FocusNode();
     _controller.addListener(_onTextChanged);
@@ -168,12 +166,6 @@ class _DictionaryLiveSearchViewState extends ConsumerState<DictionaryLiveSearchV
 
   Future<void> _rollQuickSearchChips() async {
     if (_diceController.isAnimating) return;
-    final fromFace = _diceRestFace;
-    final nextFace = _chipRandom.nextInt(6) + 1;
-    setState(() {
-      _diceSpinFromFace = fromFace;
-      _diceRestFace = nextFace;
-    });
     await _diceController.forward(from: 0);
     if (!mounted) return;
     _diceController.value = 0;
@@ -228,6 +220,18 @@ class _DictionaryLiveSearchViewState extends ConsumerState<DictionaryLiveSearchV
       _showLoader = false;
     });
     ref.read(searchProvider.notifier).setQuery(next);
+    _prefetchSearchAudio(next);
+  }
+
+  void _prefetchSearchAudio(String query) {
+    final q = query.trim();
+    if (q.isEmpty) return;
+    final bundle = ref.read(contentProvider).value?.bundle;
+    if (bundle == null) return;
+    AudioPrefetch.sentences(
+      bundle.search(q, language: widget.language),
+      limit: 12,
+    );
   }
 
   void _enterSearch() {
@@ -260,7 +264,13 @@ class _DictionaryLiveSearchViewState extends ConsumerState<DictionaryLiveSearchV
     _controller.text = value;
     _debouncedQuery = value;
     _showLoader = false;
-    ref.read(searchProvider.notifier).setQuery(value);
+    final trimmed = value.trim();
+    if (trimmed.isNotEmpty) {
+      ref.read(searchProvider.notifier).submitSearch(trimmed);
+    } else {
+      ref.read(searchProvider.notifier).setQuery('');
+    }
+    _prefetchSearchAudio(value);
     setState(() => _searchEngaged = true);
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (mounted) _focusNode.requestFocus();
@@ -339,7 +349,7 @@ class _DictionaryLiveSearchViewState extends ConsumerState<DictionaryLiveSearchV
 
     final searchBar = _LiveSearchPillBar(
       key: const ValueKey('dictionary-live-search-bar'),
-      accent: widget.palette.primary,
+      palette: widget.palette,
       controller: _controller,
       focusNode: _focusNode,
       expanded: active,
@@ -365,7 +375,7 @@ class _DictionaryLiveSearchViewState extends ConsumerState<DictionaryLiveSearchV
               const chipsBlockHeight = 44.0;
               const favoritesReserve = 76.0;
               final navBottom =
-                  FloatingIslandNavBar.reservedHeight(context) + 8;
+                  FloatingIslandNavBar.scrollBottomPadding(context) + 8;
 
               final heroMaxHeight = active
                   ? constraints.maxHeight
@@ -427,8 +437,6 @@ class _DictionaryLiveSearchViewState extends ConsumerState<DictionaryLiveSearchV
                                               ? _rollQuickSearchChips
                                               : null,
                                           diceSpin: _diceSpin,
-                                          diceRestFace: _diceRestFace,
-                                          diceSpinFromFace: _diceSpinFromFace,
                                         ),
                                         SizedBox(height: heroGap),
                                         SizedBox(height: compactBarHeight),
@@ -436,7 +444,7 @@ class _DictionaryLiveSearchViewState extends ConsumerState<DictionaryLiveSearchV
                                         DictionaryQuickSearchChips(
                                           tags: _chipLabels,
                                           generation: _chipGeneration,
-                                          accent: widget.palette.primary,
+                                          palette: widget.palette,
                                           onTagSelected: _applyQuery,
                                           entryAnimations: _chipGeneration == 0
                                               ? _chipAnimations
@@ -460,7 +468,7 @@ class _DictionaryLiveSearchViewState extends ConsumerState<DictionaryLiveSearchV
                                     opacity: _favoritesFade,
                                     child: _CompactFavoritesPanel(
                                       inset: 0,
-                                      accent: widget.palette.primary,
+                                      palette: widget.palette,
                                       favorites: widget.favorites,
                                       onFavoriteTap: widget.onFavoriteTap,
                                       onViewAll: () =>
@@ -522,15 +530,15 @@ class _DictionaryLiveSearchViewState extends ConsumerState<DictionaryLiveSearchV
     Key contentKey;
 
     if (rawQuery.isEmpty) {
-      contentKey = const ValueKey('search-idle-hint');
-      content = Center(
-        child: Text(
-          '검색어를 입력하면 결과가 바로 표시됩니다',
-          style: TextStyle(
-            fontSize: 13,
-            color: DashboardPalette.textMuted.withValues(alpha: 0.75),
-          ),
-        ),
+      final search = ref.watch(searchProvider);
+      contentKey = ValueKey('search-history-${search.recentQueries.length}');
+      content = _DictionarySearchHistoryPanel(
+        palette: widget.palette,
+        recentQueries: search.recentQueries,
+        loading: search.historyLoading,
+        onQueryTap: _applyQuery,
+        onRemove: (q) => ref.read(searchProvider.notifier).removeRecent(q),
+        onClear: () => ref.read(searchProvider.notifier).clearRecent(),
       );
     } else if (showLoading) {
       contentKey = ValueKey('search-loading-$rawQuery');
@@ -538,15 +546,9 @@ class _DictionaryLiveSearchViewState extends ConsumerState<DictionaryLiveSearchV
         accent: widget.palette.primary,
       );
     } else if (query.isEmpty) {
-      contentKey = const ValueKey('search-idle-hint');
-      content = Center(
-        child: Text(
-          '검색어를 입력하면 결과가 바로 표시됩니다',
-          style: TextStyle(
-            fontSize: 13,
-            color: DashboardPalette.textMuted.withValues(alpha: 0.75),
-          ),
-        ),
+      contentKey = ValueKey('search-pending-$rawQuery');
+      content = DictionaryGlassSearchLoader(
+        accent: widget.palette.primary,
       );
     } else if (wordResults.isEmpty && sentenceResults.isEmpty) {
       contentKey = ValueKey('search-empty-$query');
@@ -583,7 +585,7 @@ class _AdaptiveSplitSearchResults extends StatelessWidget {
   static const _sectionHeaderHeight = 34.0;
   static const _dividerBlockHeight = 13.0;
   static const _wordGridColumns = 3;
-  static const _wordGridRowHeight = 112.0;
+  static const _wordGridRowHeight = 124.0;
   static const _wordGridSpacing = 6.0;
 
   final List<VocabularyEntry> wordResults;
@@ -800,7 +802,7 @@ class _WordGridSearchSection extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final bottomInset =
-        intrinsic ? 4.0 : 4 + MediaQuery.paddingOf(context).bottom;
+        intrinsic ? 4.0 : 4 + FloatingIslandNavBar.scrollBottomPadding(context);
 
     final grid = GridView.builder(
       shrinkWrap: intrinsic,
@@ -883,7 +885,7 @@ class _SearchResultsSection extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final bottomInset = intrinsic ? 4.0 : 4 + MediaQuery.paddingOf(context).bottom;
+    final bottomInset = intrinsic ? 4.0 : 4 + FloatingIslandNavBar.scrollBottomPadding(context);
 
     final listView = ListView.builder(
       shrinkWrap: intrinsic,
@@ -998,7 +1000,7 @@ class _SearchResultSectionHeader extends StatelessWidget {
 }
 
 class _LiveSearchPillBar extends ConsumerStatefulWidget {
-  final Color accent;
+  final LanguagePalette palette;
   final TextEditingController controller;
   final FocusNode focusNode;
   final bool expanded;
@@ -1009,7 +1011,7 @@ class _LiveSearchPillBar extends ConsumerStatefulWidget {
 
   const _LiveSearchPillBar({
     super.key,
-    required this.accent,
+    required this.palette,
     required this.controller,
     required this.focusNode,
     required this.expanded,
@@ -1041,6 +1043,9 @@ class _LiveSearchPillBarState extends ConsumerState<_LiveSearchPillBar> {
   @override
   Widget build(BuildContext context) {
     final expanded = widget.expanded;
+    final searchAccent = widget.palette.searchAccent;
+    final searchBorder = widget.palette.searchFieldBorder;
+
     return Center(
       child: AnimatedContainer(
         duration: const Duration(milliseconds: 420),
@@ -1052,119 +1057,110 @@ class _LiveSearchPillBarState extends ConsumerState<_LiveSearchPillBar> {
           child: InkWell(
             borderRadius: BorderRadius.circular(expanded ? 22 : 28),
             onTap: expanded ? null : widget.onExpandTap,
-            child: ClipRRect(
-              borderRadius: BorderRadius.circular(expanded ? 22 : 28),
-              child: BackdropFilter(
-                filter: ImageFilter.blur(sigmaX: 18, sigmaY: 18),
-                child: AnimatedContainer(
-                  duration: const Duration(milliseconds: 420),
-                  curve: Curves.easeInOutCubic,
-                  decoration: BoxDecoration(
-                    color: const Color(0x33FFFFFF),
-                    borderRadius: BorderRadius.circular(expanded ? 22 : 28),
-                    border: Border.all(
-                      color: Colors.white.withValues(alpha: 0.65),
+            child: AnimatedContainer(
+              duration: const Duration(milliseconds: 420),
+              curve: Curves.easeInOutCubic,
+              decoration: BoxDecoration(
+                color: Colors.white,
+                borderRadius: BorderRadius.circular(expanded ? 22 : 28),
+                border: Border.all(
+                  color: searchBorder,
+                  width: 0.5,
+                ),
+                boxShadow: [
+                  BoxShadow(
+                    color: Colors.black.withValues(alpha: 0.04),
+                    blurRadius: 12,
+                    offset: const Offset(0, 4),
+                  ),
+                ],
+              ),
+              child: Padding(
+                padding: EdgeInsets.symmetric(horizontal: expanded ? 14 : 16),
+                child: Row(
+                  children: [
+                    Icon(
+                      Icons.search_rounded,
+                      size: expanded ? 22 : 20,
+                      color: searchAccent,
                     ),
-                    boxShadow: const [
-                      BoxShadow(
-                        color: Color(0x0D000000),
-                        blurRadius: 15,
-                        spreadRadius: 2,
-                        offset: Offset(0, 4),
+                    const SizedBox(width: 8),
+                    Expanded(
+                      child: TextField(
+                        controller: widget.controller,
+                        focusNode: widget.focusNode,
+                        readOnly: !expanded,
+                        showCursor: expanded,
+                        enableInteractiveSelection: expanded,
+                        textInputAction: TextInputAction.search,
+                        style: TextStyle(
+                          fontSize: expanded ? 15 : 13.5,
+                          fontWeight: FontWeight.w600,
+                          color: DashboardPalette.navy.withValues(
+                            alpha: expanded ? 1 : 0.72,
+                          ),
+                        ),
+                        cursorColor: searchAccent,
+                        decoration: InputDecoration(
+                          isDense: true,
+                          border: InputBorder.none,
+                          hintText: expanded
+                              ? '비상구, 담요, 보조배터리 등 검색...'
+                              : '무엇을 찾아볼까요?',
+                          hintStyle: TextStyle(
+                            fontSize: expanded ? 14 : 13.5,
+                            fontWeight: FontWeight.w600,
+                            color: const Color(0xFF64748B).withValues(
+                              alpha: expanded ? 0.85 : 0.65,
+                            ),
+                          ),
+                        ),
+                        onTap: expanded ? null : widget.onExpandTap,
+                        onSubmitted: (_) {
+                          final q = widget.controller.text.trim();
+                          if (q.isNotEmpty) {
+                            ref
+                                .read(searchProvider.notifier)
+                                .submitSearch(q);
+                          }
+                        },
                       ),
-                    ],
-                  ),
-                  child: Padding(
-                    padding:
-                        EdgeInsets.symmetric(horizontal: expanded ? 14 : 16),
-                    child: Row(
-                      children: [
-                        Icon(
-                          Icons.search_rounded,
-                          size: expanded ? 22 : 20,
-                          color: widget.accent.withValues(alpha: 0.85),
-                        ),
-                        const SizedBox(width: 8),
-                        Expanded(
-                          child: TextField(
-                            controller: widget.controller,
-                            focusNode: widget.focusNode,
-                            readOnly: !expanded,
-                            showCursor: expanded,
-                            enableInteractiveSelection: expanded,
-                            textInputAction: TextInputAction.search,
-                            style: TextStyle(
-                              fontSize: expanded ? 15 : 13.5,
-                              fontWeight: FontWeight.w600,
-                              color: DashboardPalette.navy.withValues(
-                                alpha: expanded ? 1 : 0.55,
-                              ),
-                            ),
-                            cursorColor: widget.accent,
-                            decoration: InputDecoration(
-                              isDense: true,
-                              border: InputBorder.none,
-                              hintText: expanded
-                                  ? '비상구, 담요, 보조배터리 등 검색...'
-                                  : '무엇을 찾아볼까요?',
-                              hintStyle: TextStyle(
-                                fontSize: expanded ? 14 : 13.5,
-                                fontWeight: FontWeight.w600,
-                                color: DashboardPalette.textMuted.withValues(
-                                  alpha: expanded ? 0.75 : 0.55,
-                                ),
-                              ),
-                            ),
-                            onTap: expanded ? null : widget.onExpandTap,
-                            onSubmitted: (_) {
-                              final q = widget.controller.text.trim();
-                              if (q.isNotEmpty) {
-                                ref
-                                    .read(searchProvider.notifier)
-                                    .submitSearch(q);
-                              }
-                            },
-                          ),
-                        ),
-                        if (expanded && widget.controller.text.isNotEmpty)
-                          IconButton(
-                            visualDensity: VisualDensity.compact,
-                            padding: EdgeInsets.zero,
-                            constraints: const BoxConstraints(
-                              minWidth: 32,
-                              minHeight: 32,
-                            ),
-                            icon: Icon(
-                              Icons.close_rounded,
-                              size: 18,
-                              color: DashboardPalette.textMuted
-                                  .withValues(alpha: 0.7),
-                            ),
-                            onPressed: () {
-                              widget.controller.clear();
-                              ref.read(searchProvider.notifier).setQuery('');
-                              setState(() {});
-                            },
-                          )
-                        else if (expanded)
-                          IconButton(
-                            visualDensity: VisualDensity.compact,
-                            padding: EdgeInsets.zero,
-                            constraints: const BoxConstraints(
-                              minWidth: 32,
-                              minHeight: 32,
-                            ),
-                            icon: Icon(
-                              Icons.keyboard_arrow_down_rounded,
-                              size: 22,
-                              color: DashboardPalette.textMuted
-                                  .withValues(alpha: 0.7),
-                            ),
-                            onPressed: widget.onClear,
-                          ),
-                      ],
                     ),
-                  ),
+                    if (expanded && widget.controller.text.isNotEmpty)
+                      IconButton(
+                        visualDensity: VisualDensity.compact,
+                        padding: EdgeInsets.zero,
+                        constraints: const BoxConstraints(
+                          minWidth: 32,
+                          minHeight: 32,
+                        ),
+                        icon: const Icon(
+                          Icons.close_rounded,
+                          size: 18,
+                          color: Color(0xFF64748B),
+                        ),
+                        onPressed: () {
+                          widget.controller.clear();
+                          ref.read(searchProvider.notifier).setQuery('');
+                          setState(() {});
+                        },
+                      )
+                    else if (expanded)
+                      IconButton(
+                        visualDensity: VisualDensity.compact,
+                        padding: EdgeInsets.zero,
+                        constraints: const BoxConstraints(
+                          minWidth: 32,
+                          minHeight: 32,
+                        ),
+                        icon: const Icon(
+                          Icons.keyboard_arrow_down_rounded,
+                          size: 22,
+                          color: Color(0xFF64748B),
+                        ),
+                        onPressed: widget.onClear,
+                      ),
+                  ],
                 ),
               ),
             ),
@@ -1179,14 +1175,14 @@ class _LiveSearchPillBarState extends ConsumerState<_LiveSearchPillBar> {
 
 class _CompactFavoritesPanel extends StatelessWidget {
   final double inset;
-  final Color accent;
+  final LanguagePalette palette;
   final List<DictionaryFavoriteItem> favorites;
   final ValueChanged<DictionaryFavoriteItem> onFavoriteTap;
   final VoidCallback onViewAll;
 
   const _CompactFavoritesPanel({
     required this.inset,
-    required this.accent,
+    required this.palette,
     required this.favorites,
     required this.onFavoriteTap,
     required this.onViewAll,
@@ -1196,26 +1192,24 @@ class _CompactFavoritesPanel extends StatelessWidget {
   Widget build(BuildContext context) {
     return Padding(
       padding: const EdgeInsets.only(bottom: 4),
-      child: Column(
-        mainAxisSize: MainAxisSize.min,
-        crossAxisAlignment: CrossAxisAlignment.stretch,
-        children: [
-          Divider(
-            height: 1,
-            thickness: 1,
-            color: accent.withValues(alpha: 0.12),
-          ),
-          const SizedBox(height: 10),
-          Padding(
-            padding: EdgeInsets.symmetric(horizontal: inset),
-            child: Row(
+      child: Container(
+        padding: EdgeInsets.fromLTRB(inset + 14, 12, inset + 14, 12),
+        decoration: BoxDecoration(
+          color: palette.favoritesSectionBackground,
+          borderRadius: BorderRadius.circular(16),
+        ),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            Row(
               children: [
                 Text(
                   '⭐ 즐겨찾기',
                   style: TextStyle(
-                    fontSize: 12.5,
-                    fontWeight: FontWeight.w900,
-                    color: DashboardPalette.navy.withValues(alpha: 0.85),
+                    fontSize: 13,
+                    fontWeight: FontWeight.w800,
+                    color: DashboardPalette.navy,
                   ),
                 ),
                 const Spacer(),
@@ -1233,8 +1227,8 @@ class _CompactFavoritesPanel extends StatelessWidget {
                         '전체보기 ↗',
                         style: TextStyle(
                           fontSize: 12,
-                          fontWeight: FontWeight.w600,
-                          color: accent,
+                          fontWeight: FontWeight.w700,
+                          color: palette.searchAccent,
                           letterSpacing: -0.1,
                         ),
                       ),
@@ -1243,20 +1237,17 @@ class _CompactFavoritesPanel extends StatelessWidget {
                 ),
               ],
             ),
-          ),
-          const SizedBox(height: 8),
-          SizedBox(
-            height: 36,
-            child: Padding(
-              padding: EdgeInsets.symmetric(horizontal: inset),
+            const SizedBox(height: 10),
+            SizedBox(
+              height: 36,
               child: _CompactFavoritesRow(
                 items: favorites,
-                accent: accent,
+                palette: palette,
                 onTap: onFavoriteTap,
               ),
             ),
-          ),
-        ],
+          ],
+        ),
       ),
     );
   }
@@ -1264,12 +1255,12 @@ class _CompactFavoritesPanel extends StatelessWidget {
 
 class _CompactFavoritesRow extends StatelessWidget {
   final List<DictionaryFavoriteItem> items;
-  final Color accent;
+  final LanguagePalette palette;
   final ValueChanged<DictionaryFavoriteItem> onTap;
 
   const _CompactFavoritesRow({
     required this.items,
-    required this.accent,
+    required this.palette,
     required this.onTap,
   });
 
@@ -1281,9 +1272,9 @@ class _CompactFavoritesRow extends StatelessWidget {
         child: Text(
           '별표로 저장한 단어·문장이 여기에 표시됩니다',
           style: TextStyle(
-            fontSize: 11.5,
+            fontSize: 13,
             fontWeight: FontWeight.w500,
-            color: DashboardPalette.textMuted.withValues(alpha: 0.75),
+            color: const Color(0xFF64748B),
           ),
         ),
       );
@@ -1298,7 +1289,7 @@ class _CompactFavoritesRow extends StatelessWidget {
         final item = items[i];
         return _FavoriteChip(
           item: item,
-          accent: accent,
+          palette: palette,
           onTap: () => onTap(item),
         );
       },
@@ -1308,12 +1299,12 @@ class _CompactFavoritesRow extends StatelessWidget {
 
 class _FavoriteChip extends StatelessWidget {
   final DictionaryFavoriteItem item;
-  final Color accent;
+  final LanguagePalette palette;
   final VoidCallback onTap;
 
   const _FavoriteChip({
     required this.item,
-    required this.accent,
+    required this.palette,
     required this.onTap,
   });
 
@@ -1372,6 +1363,231 @@ class _FavoriteChip extends StatelessWidget {
                     color: DashboardPalette.navy,
                   ),
                 ),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+/// 검색 활성·쿼리 비어 있을 때 — 리퀴드 글래스 검색 기록 패널.
+class _DictionarySearchHistoryPanel extends StatelessWidget {
+  final LanguagePalette palette;
+  final List<String> recentQueries;
+  final bool loading;
+  final ValueChanged<String> onQueryTap;
+  final ValueChanged<String> onRemove;
+  final VoidCallback onClear;
+
+  const _DictionarySearchHistoryPanel({
+    required this.palette,
+    required this.recentQueries,
+    required this.loading,
+    required this.onQueryTap,
+    required this.onRemove,
+    required this.onClear,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return Align(
+      alignment: Alignment.topCenter,
+      child: SingleChildScrollView(
+        physics: const BouncingScrollPhysics(),
+        padding: const EdgeInsets.only(top: 4),
+        child: ClipRRect(
+          borderRadius: BorderRadius.circular(20),
+          child: BackdropFilter(
+            filter: ImageFilter.blur(sigmaX: 14, sigmaY: 14),
+            child: DecoratedBox(
+              decoration: BoxDecoration(
+                color: palette.glassFill(alpha: 0.74, tint: 0.05),
+                borderRadius: BorderRadius.circular(20),
+                border: Border.all(
+                  color: palette.glassBorder(alpha: 0.55),
+                  width: 0.8,
+                ),
+                boxShadow: [
+                  BoxShadow(
+                    color: palette.primary.withValues(alpha: 0.07),
+                    blurRadius: 22,
+                    offset: const Offset(0, 8),
+                  ),
+                  BoxShadow(
+                    color: Colors.black.withValues(alpha: 0.04),
+                    blurRadius: 10,
+                    offset: const Offset(0, 3),
+                  ),
+                ],
+              ),
+              child: Padding(
+                padding: const EdgeInsets.fromLTRB(14, 13, 10, 14),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.stretch,
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Row(
+                      children: [
+                        Icon(
+                          Icons.history_rounded,
+                          size: 15,
+                          color: palette.searchAccent.withValues(alpha: 0.85),
+                        ),
+                        const SizedBox(width: 6),
+                        Text(
+                          '검색 기록',
+                          style: TextStyle(
+                            fontSize: 12.5,
+                            fontWeight: FontWeight.w800,
+                            letterSpacing: -0.15,
+                            color: DashboardPalette.navy.withValues(alpha: 0.82),
+                          ),
+                        ),
+                        const Spacer(),
+                        if (recentQueries.isNotEmpty)
+                          Material(
+                            color: Colors.transparent,
+                            child: InkWell(
+                              onTap: onClear,
+                              borderRadius: BorderRadius.circular(8),
+                              child: Padding(
+                                padding: const EdgeInsets.symmetric(
+                                  horizontal: 6,
+                                  vertical: 4,
+                                ),
+                                child: Text(
+                                  '전체 삭제',
+                                  style: TextStyle(
+                                    fontSize: 11.5,
+                                    fontWeight: FontWeight.w600,
+                                    color: palette.searchAccent
+                                        .withValues(alpha: 0.88),
+                                  ),
+                                ),
+                              ),
+                            ),
+                          ),
+                      ],
+                    ),
+                    const SizedBox(height: 10),
+                    if (loading)
+                      Padding(
+                        padding: const EdgeInsets.symmetric(vertical: 18),
+                        child: Center(
+                          child: SizedBox(
+                            width: 22,
+                            height: 22,
+                            child: CircularProgressIndicator(
+                              strokeWidth: 2,
+                              color: palette.searchAccent.withValues(alpha: 0.7),
+                            ),
+                          ),
+                        ),
+                      )
+                    else if (recentQueries.isEmpty)
+                      Padding(
+                        padding: const EdgeInsets.fromLTRB(4, 10, 4, 6),
+                        child: Text(
+                          '최근 검색한 표현이 여기에 표시됩니다',
+                          textAlign: TextAlign.center,
+                          style: TextStyle(
+                            fontSize: 12.5,
+                            fontWeight: FontWeight.w500,
+                            height: 1.4,
+                            color: const Color(0xFF64748B).withValues(alpha: 0.9),
+                          ),
+                        ),
+                      )
+                    else
+                      for (var i = 0; i < recentQueries.length; i++) ...[
+                        if (i > 0) const SizedBox(height: 6),
+                        _SearchHistoryGlassRow(
+                          query: recentQueries[i],
+                          palette: palette,
+                          onTap: () => onQueryTap(recentQueries[i]),
+                          onRemove: () => onRemove(recentQueries[i]),
+                        ),
+                      ],
+                  ],
+                ),
+              ),
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+class _SearchHistoryGlassRow extends StatelessWidget {
+  final String query;
+  final LanguagePalette palette;
+  final VoidCallback onTap;
+  final VoidCallback onRemove;
+
+  const _SearchHistoryGlassRow({
+    required this.query,
+    required this.palette,
+    required this.onTap,
+    required this.onRemove,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return Material(
+      color: Colors.transparent,
+      child: InkWell(
+        onTap: onTap,
+        borderRadius: BorderRadius.circular(14),
+        splashColor: palette.searchAccent.withValues(alpha: 0.08),
+        highlightColor: palette.searchAccent.withValues(alpha: 0.04),
+        child: Ink(
+          padding: const EdgeInsets.fromLTRB(11, 9, 4, 9),
+          decoration: BoxDecoration(
+            color: Colors.white.withValues(alpha: 0.52),
+            borderRadius: BorderRadius.circular(14),
+            border: Border.all(
+              color: palette.cardBorder.withValues(alpha: 0.45),
+              width: 0.5,
+            ),
+          ),
+          child: Row(
+            children: [
+              Icon(
+                Icons.search_rounded,
+                size: 15,
+                color: palette.searchAccent.withValues(alpha: 0.72),
+              ),
+              const SizedBox(width: 9),
+              Expanded(
+                child: Text(
+                  query,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: TextStyle(
+                    fontSize: 13.5,
+                    fontWeight: FontWeight.w600,
+                    letterSpacing: -0.2,
+                    color: DashboardPalette.navy.withValues(alpha: 0.88),
+                  ),
+                ),
+              ),
+              IconButton(
+                visualDensity: VisualDensity.compact,
+                padding: EdgeInsets.zero,
+                constraints: const BoxConstraints(
+                  minWidth: 30,
+                  minHeight: 30,
+                ),
+                icon: Icon(
+                  Icons.close_rounded,
+                  size: 16,
+                  color: DashboardPalette.textMuted.withValues(alpha: 0.55),
+                ),
+                tooltip: '삭제',
+                onPressed: onRemove,
               ),
             ],
           ),

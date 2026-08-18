@@ -56,6 +56,37 @@ class ScoreCelebrationOverlay extends StatefulWidget {
 
   const ScoreCelebrationOverlay({super.key, required this.tier});
 
+  static OverlayEntry? _rootEntry;
+
+  /// 바텀시트 등에 가리지 않도록 루트 Overlay 최상단에 표시한다.
+  static void showOnRoot(BuildContext context, ScoreCelebrationTier tier) {
+    if (tier == ScoreCelebrationTier.none) return;
+    dismissRoot();
+
+    final overlay = Overlay.maybeOf(context, rootOverlay: true);
+    if (overlay == null) return;
+
+    late final OverlayEntry entry;
+    entry = OverlayEntry(
+      builder: (_) => Positioned.fill(
+        child: IgnorePointer(
+          child: ScoreCelebrationOverlay(tier: tier),
+        ),
+      ),
+    );
+    _rootEntry = entry;
+    overlay.insert(entry);
+
+    Future<void>.delayed(tier.duration, () {
+      if (_rootEntry == entry) dismissRoot();
+    });
+  }
+
+  static void dismissRoot() {
+    _rootEntry?.remove();
+    _rootEntry = null;
+  }
+
   @override
   State<ScoreCelebrationOverlay> createState() =>
       _ScoreCelebrationOverlayState();

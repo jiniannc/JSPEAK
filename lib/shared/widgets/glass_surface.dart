@@ -12,7 +12,7 @@ abstract final class GlassSurfaceStyle {
 
   /// 플로팅 아일랜드 네비 — 더 맑은 라이트 글래스.
   static const floatingIslandBlur = 16.0;
-  static const floatingIslandFillAlpha = 0.82;
+  static const floatingIslandFillAlpha = 0.65;
 
   /// 구분선·보조 선 (카드 외곽 유리 테두리와 별도).
   static const dividerColor = Color(0xFFCBD5E1);

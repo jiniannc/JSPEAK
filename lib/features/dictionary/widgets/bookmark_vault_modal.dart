@@ -18,6 +18,7 @@ import '../../../shared/widgets/glass_surface.dart';
 import '../../dashboard/dashboard_palette.dart';
 import '../../shell/floating_island_nav_bar.dart';
 import '../dictionary_item_kind_colors.dart';
+import '../dictionary_pronunciation_display.dart';
 
 enum _BookmarkVaultFilter { all, word, sentence }
 
@@ -634,6 +635,22 @@ class _BookmarkWordCard extends ConsumerWidget {
                     height: 1.25,
                   ),
                 ),
+                if (DictionaryPronunciationDisplay.showsWordPronunciation(
+                  entry,
+                )) ...[
+                  const SizedBox(height: 2),
+                  Text(
+                    DictionaryPronunciationDisplay.wordPronunciation(entry),
+                    maxLines: 2,
+                    overflow: TextOverflow.ellipsis,
+                    style: TextStyle(
+                      fontSize: 12,
+                      fontWeight: FontWeight.w500,
+                      color: DashboardPalette.textMuted.withValues(alpha: 0.9),
+                      height: 1.3,
+                    ),
+                  ),
+                ],
                 if (entry.meaning.trim().isNotEmpty) ...[
                   const SizedBox(height: 2),
                   Text(
@@ -682,6 +699,9 @@ class _BookmarkSentenceCard extends ConsumerWidget {
     final isPlaying = audioState.playingSentenceId == sentence.id;
     final category = sentence.category.trim();
     final hasAudio = sentence.audioUrl.isNotEmpty;
+    if (hasAudio) {
+      ref.read(audioProvider.notifier).prefetch(sentence);
+    }
 
     return _BookmarkGlassShell(
       onTap: onTap,
@@ -719,16 +739,25 @@ class _BookmarkSentenceCard extends ConsumerWidget {
                     height: 1.35,
                   ),
                 ),
-                if (sentence.korean.isNotEmpty) ...[
+                if (DictionaryPronunciationDisplay.showsSentencePronunciation(
+                  sentence,
+                )) ...[
                   const SizedBox(height: 3),
                   Text(
+                    sentence.pronunciation,
+                    maxLines: 2,
+                    overflow: TextOverflow.ellipsis,
+                    style: DictionaryPronunciationDisplay
+                        .sentencePronunciationStyle(sentence.language),
+                  ),
+                ],
+                if (sentence.korean.isNotEmpty) ...[
+                  const SizedBox(height: 4),
+                  Text(
                     sentence.korean,
-                    style: TextStyle(
-                      fontSize: 12.5,
-                      fontWeight: FontWeight.w500,
-                      color: DashboardPalette.textMuted.withValues(alpha: 0.9),
-                      height: 1.3,
-                    ),
+                    maxLines: 2,
+                    overflow: TextOverflow.ellipsis,
+                    style: DictionaryPronunciationDisplay.sentenceKoreanStyle,
                   ),
                 ],
               ],

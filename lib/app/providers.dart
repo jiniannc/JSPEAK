@@ -1,10 +1,14 @@
+import 'dart:async';
+
+import 'package:flutter/foundation.dart' show debugPrint, kIsWeb;
 import 'package:flutter_riverpod/flutter_riverpod.dart';
-import 'package:flutter/foundation.dart' show debugPrint;
 import 'package:just_audio/just_audio.dart';
 
 import '../core/config/audio_playback_url.dart';
 import '../core/config/app_config.dart';
 import '../core/services/audio_player_service.dart';
+import '../core/services/audio_prefetch.dart';
+import '../core/network/apps_script_fetch.dart';
 import '../data/datasources/local/audio_cache_datasource.dart';
 import '../data/datasources/local/content_local_datasource.dart';
 import '../data/datasources/remote/content_remote_datasource.dart';
@@ -74,6 +78,7 @@ class ContentController extends AsyncNotifier<ContentState> {
     if (local == null) {
       try {
         final bundle = await _repo.sync();
+        _warmAudioAfterLoad(bundle);
         return ContentState(bundle: bundle, lastSyncedAt: DateTime.now());
       } catch (e) {
         // 동기화 불가(URL 미설정·오프라인) 시 번들 샘플로 폴백해
@@ -81,6 +86,9 @@ class ContentController extends AsyncNotifier<ContentState> {
         final sample = await _repo.loadBundledSample();
         return ContentState(bundle: sample, syncError: e.toString());
       }
+    }
+    if (local.sentences.isNotEmpty) {
+      _warmAudioAfterLoad(local);
     }
     return initial;
   }
@@ -92,6 +100,7 @@ class ContentController extends AsyncNotifier<ContentState> {
     state = AsyncData(current.copyWith(syncing: true, clearError: true));
     try {
       final bundle = await _repo.sync();
+      _warmAudioAfterLoad(bundle);
       state = AsyncData(ContentState(
         bundle: bundle,
         lastSyncedAt: DateTime.now(),
@@ -102,6 +111,25 @@ class ContentController extends AsyncNotifier<ContentState> {
       );
     }
   }
+}
+
+void _warmAudioAfterLoad(ContentBundle bundle) {
+  if (bundle.sentences.isEmpty) return;
+  AudioPrefetch.sentences(bundle.sentences, limit: 8);
+  _warmAppsScriptProxy();
+}
+
+void _warmAppsScriptProxy() {
+  final base = AppConfig.contentUrl;
+  if (base.isEmpty) return;
+  final uri = Uri.parse(base);
+  final ping = uri.replace(
+    queryParameters: {
+      ...uri.queryParameters,
+      'jspeak_ping': '1',
+    },
+  );
+  AppsScriptFetch().getBytes(ping.toString()).then((_) {}, onError: (Object _, StackTrace __) {});
 }
 
 final contentProvider =
@@ -196,8 +224,12 @@ class AudioController extends Notifier<AudioState> {
       await stop();
       return;
     }
+    AudioPrefetch.sentence(sentence);
     await play(sentence);
   }
+
+  /// 화면 진입 시 미리 받기.
+  void prefetch(Sentence sentence) => AudioPrefetch.sentence(sentence);
 
   /// 학습 모드 — 재생 시작.
   Future<void> play(Sentence sentence) async {
@@ -216,12 +248,22 @@ class AudioController extends Notifier<AudioState> {
 
     try {
       await service.setSpeed(state.playbackSpeed);
-      final localPath = await repo.localAudioPath(playbackUrl);
+
+      // 웹: 디스크 캐시 없음 → 메모리 캐시 + 스트리밍.
+      // 모바일: 디스크에 있으면 즉시, 없으면 네트워크 재생 후 백그라운드 저장.
+      String? localPath;
+      if (!kIsWeb) {
+        localPath = await repo.cachedAudioPath(playbackUrl);
+      }
       if (state.playingSentenceId != sentence.id) return;
+
       if (localPath != null) {
         await service.playFile(localPath);
       } else {
         await service.playUrl(playbackUrl);
+        if (!kIsWeb) {
+          unawaited(repo.cacheAudioInBackground(playbackUrl));
+        }
       }
       state = state.copyWith(loading: false, isPlaying: true);
     } catch (e, st) {

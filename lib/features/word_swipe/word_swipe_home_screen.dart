@@ -12,8 +12,11 @@ import '../../core/constants/labels.dart';
 import '../../core/theme/language_palette.dart';
 import '../../core/utils/relative_time.dart';
 import '../../data/datasources/local/swipe_progress_local_datasource.dart';
+import '../../data/models/content_chapter.dart';
 import '../../features/dashboard/dashboard_palette.dart';
+import '../shell/floating_island_nav_bar.dart';
 import '../../features/learning/widgets/mode_guide_cards.dart';
+import '../../shared/widgets/learning_chapter_card_shell.dart';
 import 'word_swipe_training_screen.dart';
 
 /// 단어 스와이프 모드 홈 — 고정 글래스 진도 + 주제 카드 리스트.
@@ -35,7 +38,7 @@ class WordSwipeHomeScreen extends ConsumerWidget {
         error: (e, _) => Center(child: Text('오류: $e')),
         data: (content) {
           final bundle = content.bundle;
-          final categories = bundle.categoriesForWords(language);
+          final chapters = bundle.wordChaptersFor(language);
           final percent = repo.languageProgressPercent(
             language: language,
             bundle: bundle,
@@ -77,7 +80,7 @@ class WordSwipeHomeScreen extends ConsumerWidget {
                     ),
                   // 스크롤 리스트
                   Expanded(
-                    child: categories.isEmpty
+                    child: chapters.isEmpty
                         ? const Center(
                             child: Text(
                               '이 언어의 단어 데이터가 아직 없어요.\n콘텐츠 동기화 후 다시 시도해 주세요.',
@@ -93,9 +96,9 @@ class WordSwipeHomeScreen extends ConsumerWidget {
                               inset,
                               18,
                               inset,
-                              28 + MediaQuery.paddingOf(context).bottom,
+                              28 + FloatingIslandNavBar.scrollBottomPadding(context),
                             ),
-                            itemCount: categories.length + 1,
+                            itemCount: chapters.length + 1,
                             separatorBuilder: (context, index) {
                               if (index == 0) {
                                 return const SizedBox(height: 12);
@@ -129,13 +132,14 @@ class WordSwipeHomeScreen extends ConsumerWidget {
                                   ],
                                 );
                               }
-                              final category = categories[index - 1];
+                              final chapter = chapters[index - 1];
+                              final category = chapter.name;
                               final words =
                                   bundle.wordsFor(language, category);
                               final progress = progressState.stats
                                   .forCategory(language, category);
                               return _SwipeCategoryCard(
-                                category: category,
+                                chapter: chapter,
                                 wordCount: words.length,
                                 progress: progress,
                                 onPlay: () {
@@ -292,14 +296,14 @@ class _SwipeCategoryCard extends StatelessWidget {
   static const Color knownColor = DashboardPalette.teal;
   static const Color unknownColor = Color(0xFFE53935);
 
-  final String category;
+  final ContentChapter chapter;
   final int wordCount;
   final SwipeCategoryProgress progress;
   final VoidCallback onPlay;
   final VoidCallback? onReview;
 
   const _SwipeCategoryCard({
-    required this.category,
+    required this.chapter,
     required this.wordCount,
     required this.progress,
     required this.onPlay,
@@ -313,197 +317,76 @@ class _SwipeCategoryCard extends StatelessWidget {
     final known = progress.knownCount.clamp(0, wordCount);
     final unknown = progress.unknownCount;
     final total = progress.totalCount > 0 ? progress.totalCount : wordCount;
-    final palette = context.languagePalette ?? LanguagePalette.english;
 
-    final BoxDecoration decoration;
-    final double opacity;
-
-    if (mastered) {
-      opacity = 1;
-      decoration = BoxDecoration(
-        borderRadius: BorderRadius.circular(16),
-        gradient: LinearGradient(
-          begin: Alignment.topLeft,
-          end: Alignment.bottomRight,
-          colors: [
-            const Color(0xFFFFF8E1).withValues(alpha: 0.9),
-            Colors.white.withValues(alpha: 0.7),
-            const Color(0xFFFFECB3).withValues(alpha: 0.4),
-          ],
-        ),
-        boxShadow: [
-          BoxShadow(
-            color: const Color(0xFFFFC107).withValues(alpha: 0.14),
-            blurRadius: 12,
-            offset: const Offset(0, 4),
-          ),
-        ],
-      );
-    } else if (played) {
-      opacity = 1;
-      decoration = palette.glassCardDecoration(
-        radius: 16,
-        fillAlpha: 0.62,
-        borderAlpha: 0.48,
-        shadows: [
-          BoxShadow(
-            color: Colors.black.withValues(alpha: 0.05),
-            blurRadius: 14,
-            offset: const Offset(0, 5),
-          ),
-        ],
-      );
-    } else {
-      opacity = 0.8;
-      decoration = palette.glassCardDecoration(
-        radius: 16,
-        fillAlpha: 0.45,
-        borderAlpha: 0.38,
-        shadows: const [],
-      );
-    }
-
-    return Opacity(
-      opacity: opacity,
-      child: ClipRRect(
-        borderRadius: BorderRadius.circular(16),
-        child: BackdropFilter(
-          filter: ImageFilter.blur(sigmaX: 10, sigmaY: 10),
-          child: Container(
-            decoration: decoration,
-            clipBehavior: Clip.antiAlias,
-            child: IntrinsicHeight(
-              child: Row(
-            crossAxisAlignment: CrossAxisAlignment.stretch,
-            children: [
-              // ① 카드 본체 — 처음부터 스와이프
-              Expanded(
-                child: Material(
-                  color: Colors.transparent,
-                  child: InkWell(
-                    onTap: onPlay,
-                    child: Padding(
-                      padding: EdgeInsets.fromLTRB(
-                        14,
-                        14,
-                        played ? 8 : 14,
-                        14,
-                      ),
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          Row(
-                            children: [
-                              Expanded(
-                                child: Text(
-                                  category,
-                                  style: const TextStyle(
-                                    fontSize: 15.5,
-                                    fontWeight: FontWeight.w800,
-                                    color: DashboardPalette.navy,
-                                  ),
-                                ),
-                              ),
-                              if (mastered)
-                                Container(
-                                  padding: const EdgeInsets.symmetric(
-                                    horizontal: 8,
-                                    vertical: 3,
-                                  ),
-                                  decoration: BoxDecoration(
-                                    color: const Color(0xFFFFC107)
-                                        .withValues(alpha: 0.22),
-                                    borderRadius: BorderRadius.circular(20),
-                                  ),
-                                  child: const Row(
-                                    mainAxisSize: MainAxisSize.min,
-                                    children: [
-                                      Icon(
-                                        Icons.workspace_premium_rounded,
-                                        size: 14,
-                                        color: Color(0xFFF57F17),
-                                      ),
-                                      SizedBox(width: 4),
-                                      Text(
-                                        'MASTER',
-                                        style: TextStyle(
-                                          fontSize: 10,
-                                          fontWeight: FontWeight.w900,
-                                          letterSpacing: 0.4,
-                                          color: Color(0xFFF57F17),
-                                        ),
-                                      ),
-                                    ],
-                                  ),
-                                )
-                              else
-                                Icon(
-                                  Icons.chevron_right_rounded,
-                                  color: DashboardPalette.textMuted
-                                      .withValues(alpha: played ? 0.55 : 0.35),
-                                ),
-                            ],
-                          ),
-                          const SizedBox(height: 6),
-                          Text(
-                            played
-                                ? (mastered
-                                    ? '이 챕터의 단어 $total개를 모두 마스터했어요!'
-                                    : '안다 $known · 모른다 $unknown / 전체 $total')
-                                : '단어 $wordCount개 · 아직 시작 전',
-                            style: TextStyle(
-                              fontSize: 12,
-                              fontWeight: FontWeight.w500,
-                              color: mastered
-                                  ? const Color(0xFFF57F17)
-                                  : DashboardPalette.textMuted,
-                            ),
-                          ),
-                          if (played && !mastered) ...[
-                            const SizedBox(height: 8),
-                            _KnowUnknownBar(
-                              known: known,
-                              unknown: unknown,
-                              total: total,
-                            ),
-                          ],
-                          if (mastered) ...[
-                            const SizedBox(height: 8),
-                            ClipRRect(
-                              borderRadius: BorderRadius.circular(4),
-                              child: const LinearProgressIndicator(
-                                value: 1,
-                                minHeight: 7,
-                                backgroundColor: Color(0xFFFFECB3),
-                                color: Color(0xFFFFC107),
-                              ),
-                            ),
-                          ],
-                        ],
-                      ),
+    return LearningChapterCardShell(
+      chapter: chapter,
+      onTap: onPlay,
+      thumbnailFallback: Icons.style_rounded,
+      headerTrailing: mastered
+          ? const LearningChapterMasterBadge()
+          : Icon(
+              Icons.chevron_right_rounded,
+              color: DashboardPalette.textMuted.withValues(
+                alpha: played ? 0.55 : 0.35,
+              ),
+            ),
+      content: IntrinsicHeight(
+        child: Row(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            Expanded(
+              child: Padding(
+                padding: EdgeInsets.fromLTRB(0, 0, played ? 8 : 0, 0),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    LearningChapterSubtitle(
+                      mastered: mastered,
+                      text: played
+                          ? (mastered
+                              ? '이 챕터의 단어 $total개를 모두 마스터했어요!'
+                              : '안다 $known · 모른다 $unknown / 전체 $total')
+                          : '단어 $wordCount개 · 아직 시작 전',
                     ),
-                  ),
+                    if (played && !mastered) ...[
+                      const SizedBox(height: 8),
+                      _KnowUnknownBar(
+                        known: known,
+                        unknown: unknown,
+                        total: total,
+                      ),
+                    ],
+                    if (mastered) ...[
+                      const SizedBox(height: 8),
+                      ClipRRect(
+                        borderRadius: BorderRadius.circular(4),
+                        child: const LinearProgressIndicator(
+                          value: 1,
+                          minHeight: 7,
+                          backgroundColor: Color(0xFFFFECB3),
+                          color: Color(0xFFFFC107),
+                        ),
+                      ),
+                    ],
+                  ],
                 ),
               ),
-              // ② 리뷰 영역 — 모르는 단어만 (본체와 터치 완전 분리)
-              if (played) ...[
-                Container(
-                  width: 1,
-                  margin: const EdgeInsets.symmetric(vertical: 12),
-                  color: DashboardPalette.borderLight.withValues(alpha: 0.9),
-                ),
-                _ReviewChip(
-                  mastered: mastered,
-                  unknown: unknown,
-                  total: total,
-                  lastStudiedAt: progress.lastStudiedAt,
-                  onTap: onReview,
-                ),
-              ],
+            ),
+            if (played) ...[
+              Container(
+                width: 1,
+                margin: const EdgeInsets.symmetric(vertical: 4),
+                color: DashboardPalette.borderLight.withValues(alpha: 0.9),
+              ),
+              _ReviewChip(
+                mastered: mastered,
+                unknown: unknown,
+                total: total,
+                lastStudiedAt: progress.lastStudiedAt,
+                onTap: onReview,
+              ),
             ],
-          ),
-        ),
-        ),
+          ],
         ),
       ),
     );

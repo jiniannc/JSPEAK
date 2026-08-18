@@ -4,6 +4,9 @@
     {
       "language": "English",
       "category": "탑승 안내",
+      "chapter_no": 1,
+      "chapter_image": "sent_ch_boarding.png",
+      "chapter_hook": "두근두근 설레는 첫 비행, 외국인 승객이 비행기 입구에 멈춰선다. 난 어떻게 인사해야 할까?",
       "sentence": "May I see your boarding pass, please?",
       "pronunciation": "메이 아이 씨 유어 보딩 패스, 플리즈?",
       "korean": "탑승권을 보여주시겠습니까?",
@@ -14,6 +17,8 @@
     {
       "language": "English",
       "category": "좌석 안내",
+      "chapter_no": 2,
+      "chapter_image": "sent_ch_seat.png",
       "sentence": "Your seat is 23A, by the window on the left side.",
       "pronunciation": "유어 씻 이즈 트웬티쓰리 에이, 바이 더 윈도우 온 더 레프트 사이드.",
       "korean": "손님 좌석은 왼쪽 창가 23A입니다.",
@@ -24,6 +29,8 @@
     {
       "language": "English",
       "category": "식사 서비스",
+      "chapter_no": 3,
+      "chapter_image": "sent_ch_meal.png",
       "sentence": "Would you like chicken or beef?",
       "pronunciation": "우쥬 라이크 치킨 오어 비프?",
       "korean": "치킨과 소고기 중 어느 것으로 드릴까요?",
@@ -34,6 +41,8 @@
     {
       "language": "Japanese",
       "category": "탑승 안내",
+      "chapter_no": 1,
+      "chapter_image": "sent_ch_boarding.png",
       "sentence": "搭乗券を拝見してもよろしいでしょうか。",
       "pronunciation": "토-죠-켄오 하이켄시테모 요로시이데쇼-카",
       "korean": "탑승권을 확인해도 되겠습니까?",
@@ -44,6 +53,8 @@
     {
       "language": "Japanese",
       "category": "식사 서비스",
+      "chapter_no": 3,
+      "chapter_image": "sent_ch_meal.png",
       "sentence": "お飲み物は何になさいますか。",
       "pronunciation": "오노미모노와 나니니 나사이마스카",
       "korean": "음료는 무엇으로 하시겠습니까?",
@@ -54,6 +65,8 @@
     {
       "language": "Chinese",
       "category": "탑승 안내",
+      "chapter_no": 1,
+      "chapter_image": "sent_ch_boarding.png",
       "sentence": "请出示您的登机牌。",
       "pronunciation": "칭 추스 닌더 떵지파이",
       "korean": "탑승권을 보여주세요.",
@@ -64,6 +77,8 @@
     {
       "language": "Chinese",
       "category": "면세품 판매",
+      "chapter_no": 4,
+      "chapter_image": "sent_ch_dutyfree.png",
       "sentence": "您需要免税品吗？",
       "pronunciation": "닌 쉬야오 미엔쉐이핀 마?",
       "korean": "면세품이 필요하십니까?",
@@ -76,6 +91,8 @@
     {
       "language": "English",
       "category": "탑승 안내",
+      "chapter_no": 1,
+      "chapter_image": "word_ch_boarding.png",
       "word": "boarding pass",
       "pronunciation": "[ˈbɔːrdɪŋ pæs]",
       "meaning": "탑승권",
@@ -86,6 +103,8 @@
     {
       "language": "English",
       "category": "탑승 안내",
+      "chapter_no": 1,
+      "chapter_image": "word_ch_boarding.png",
       "word": "may",
       "pronunciation": "[meɪ]",
       "meaning": "~해도 되나요",
@@ -96,6 +115,8 @@
     {
       "language": "English",
       "category": "탑승 안내",
+      "chapter_no": 1,
+      "chapter_image": "word_ch_boarding.png",
       "word": "see",
       "pronunciation": "[siː]",
       "meaning": "보다, 확인하다",
@@ -106,6 +127,8 @@
     {
       "language": "English",
       "category": "식사 서비스",
+      "chapter_no": 3,
+      "chapter_image": "word_ch_meal.png",
       "word": "chicken",
       "pronunciation": "[ˈtʃɪkɪn]",
       "meaning": "닭고기",
@@ -116,6 +139,8 @@
     {
       "language": "English",
       "category": "식사 서비스",
+      "chapter_no": 3,
+      "chapter_image": "word_ch_meal.png",
       "word": "beef",
       "pronunciation": "[biːf]",
       "meaning": "소고기",

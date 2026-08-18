@@ -144,6 +144,30 @@ class LanguagePalette extends ThemeExtension<LanguagePalette> {
   Color glassBorder({double alpha = 0.48}) =>
       Colors.white.withValues(alpha: alpha);
 
+  /// 기내사전 메인 검색 — 해시태그 칩 배경.
+  Color get searchTagBackground => todayPickMeshEnd;
+
+  /// 기내사전 메인 검색 — 해시태그 칩 텍스트.
+  Color get searchTagForeground => accent;
+
+  /// 검색창 아이콘·링크·주사위 아이콘.
+  Color get searchAccent => primary;
+
+  /// 검색창 테두리.
+  Color get searchFieldBorder => cardBorder;
+
+  /// 주사위 버튼 배경.
+  Color get diceButtonBackground => softFill;
+
+  /// 말풍선 그라데이션 (위 → 아래).
+  List<Color> get speechBubbleGradient => [
+        Color.lerp(todayPickMeshStart, primary, 0.22)!,
+        Color.lerp(primary, accent, 0.42)!,
+      ];
+
+  /// 즐겨찾기 섹션 배경.
+  Color get favoritesSectionBackground => canvas;
+
   BoxDecoration glassCardDecoration({
     double radius = 16,
     double fillAlpha = 0.55,

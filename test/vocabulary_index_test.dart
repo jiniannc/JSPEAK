@@ -94,6 +94,32 @@ void main() {
 
     });
 
+    test('중국어 다자어 구문이 글자 단위로 매칭된다', () {
+      final index = VocabularyIndex.fromEntries(const [
+        VocabularyEntry(
+          term: '登机牌',
+          meaning: '탑승권',
+          language: 'Chinese',
+        ),
+        VocabularyEntry(
+          term: '出示',
+          meaning: '제시하다',
+          language: 'Chinese',
+        ),
+      ]);
+
+      const sentence = '请出示您的登机牌。';
+      final matches = VocabularySpanBuilder.findPhraseMatches(
+        sentence,
+        index.entries,
+        language: 'Chinese',
+      );
+
+      expect(matches, hasLength(2));
+      expect(matches[0].entry.term, '出示');
+      expect(matches[1].entry.term, '登机牌');
+    });
+
   });
 
 }

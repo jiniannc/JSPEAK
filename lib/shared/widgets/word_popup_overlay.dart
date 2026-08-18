@@ -23,6 +23,7 @@ class WordPopupOverlay {
     required int wordEndIndex,
     required TextStyle textStyle,
     required VocabularyEntry entry,
+    String language = 'English',
   }) {
     dismiss();
 
@@ -40,42 +41,30 @@ class WordPopupOverlay {
       textStyle: textStyle,
       maxWidth: anchorSize.width,
       globalOffset: anchorOffset,
+      language: language,
     );
 
     final screen = MediaQuery.sizeOf(context);
-    const popupWidth = 300.0;
+    const popupWidth = 320.0;
     const margin = 12.0;
 
     var left = anchor.center.dx - popupWidth / 2;
     left = left.clamp(margin, screen.width - popupWidth - margin);
 
     var top = anchor.bottom + 8;
-    if (top + 260 > screen.height - margin) {
-      top = anchor.top - 8 - 260;
+    if (top + 320 > screen.height - margin) {
+      top = anchor.top - 8 - 320;
     }
     top = top.clamp(margin, screen.height - margin);
 
     late OverlayEntry entryOverlay;
     entryOverlay = OverlayEntry(
-      builder: (ctx) => Stack(
-        children: [
-          Positioned.fill(
-            child: GestureDetector(
-              onTap: dismiss,
-              behavior: HitTestBehavior.opaque,
-              child: const ColoredBox(color: Colors.transparent),
-            ),
-          ),
-          Positioned(
-            left: left,
-            top: top,
-            width: popupWidth,
-            child: _AnimatedWordPopup(
-              entry: entry,
-              onClose: dismiss,
-            ),
-          ),
-        ],
+      builder: (ctx) => _WordPopupLayer(
+        left: left,
+        top: top,
+        width: popupWidth,
+        entry: entry,
+        onClose: dismiss,
       ),
     );
 
@@ -90,8 +79,9 @@ class WordPopupOverlay {
     required TextStyle textStyle,
     required double maxWidth,
     required Offset globalOffset,
+    String language = 'English',
   }) {
-    final words = WordCompare.splitWords(sentence);
+    final words = WordCompare.splitTokens(sentence, language: language);
     if (wordStartIndex < 0 ||
         wordEndIndex >= words.length ||
         wordStartIndex > wordEndIndex) {
@@ -103,16 +93,18 @@ class WordPopupOverlay {
       );
     }
 
-    var charStart = 0;
-    for (var i = 0; i < wordStartIndex; i++) {
-      charStart += words[i].length + 1;
-    }
-
-    var charEnd = charStart;
-    for (var i = wordStartIndex; i <= wordEndIndex; i++) {
-      if (i > wordStartIndex) charEnd += 1;
-      charEnd += words[i].length;
-    }
+    final charStart = WordCompare.charOffsetForTokenIndex(
+      words,
+      wordStartIndex,
+      language: language,
+    );
+    final charEnd = charStart +
+        WordCompare.charLengthForTokenRange(
+          words,
+          wordStartIndex,
+          wordEndIndex,
+          language: language,
+        );
 
     final painter = TextPainter(
       text: TextSpan(text: sentence, style: textStyle),
@@ -153,23 +145,28 @@ class WordPopupOverlay {
   }
 }
 
-class _AnimatedWordPopup extends StatefulWidget {
+class _WordPopupLayer extends StatefulWidget {
+  final double left;
+  final double top;
+  final double width;
   final VocabularyEntry entry;
   final VoidCallback onClose;
 
-  const _AnimatedWordPopup({
+  const _WordPopupLayer({
+    required this.left,
+    required this.top,
+    required this.width,
     required this.entry,
     required this.onClose,
   });
 
   @override
-  State<_AnimatedWordPopup> createState() => _AnimatedWordPopupState();
+  State<_WordPopupLayer> createState() => _WordPopupLayerState();
 }
 
-class _AnimatedWordPopupState extends State<_AnimatedWordPopup>
+class _WordPopupLayerState extends State<_WordPopupLayer>
     with SingleTickerProviderStateMixin {
   late final AnimationController _controller;
-  late final Animation<double> _scale;
   late final Animation<double> _fade;
 
   @override
@@ -179,7 +176,6 @@ class _AnimatedWordPopupState extends State<_AnimatedWordPopup>
       vsync: this,
       duration: const Duration(milliseconds: 220),
     );
-    _scale = CurvedAnimation(parent: _controller, curve: Curves.easeOutBack);
     _fade = CurvedAnimation(parent: _controller, curve: Curves.easeOut);
     _controller.forward();
   }
@@ -192,8 +188,83 @@ class _AnimatedWordPopupState extends State<_AnimatedWordPopup>
 
   @override
   Widget build(BuildContext context) {
+    return Stack(
+      children: [
+        Positioned.fill(
+          child: FadeTransition(
+            opacity: _fade,
+            child: GestureDetector(
+              onTap: widget.onClose,
+              behavior: HitTestBehavior.opaque,
+              child: _PopupBackdropScrim(),
+            ),
+          ),
+        ),
+        Positioned(
+          left: widget.left,
+          top: widget.top,
+          width: widget.width,
+          child: _AnimatedWordPopup(
+            fade: _fade,
+            entry: widget.entry,
+            onClose: widget.onClose,
+          ),
+        ),
+      ],
+    );
+  }
+}
+
+class _PopupBackdropScrim extends StatelessWidget {
+  @override
+  Widget build(BuildContext context) {
+    return ColoredBox(
+      color: Colors.black.withValues(alpha: 0.25),
+    );
+  }
+}
+
+class _AnimatedWordPopup extends StatefulWidget {
+  final Animation<double> fade;
+  final VocabularyEntry entry;
+  final VoidCallback onClose;
+
+  const _AnimatedWordPopup({
+    required this.fade,
+    required this.entry,
+    required this.onClose,
+  });
+
+  @override
+  State<_AnimatedWordPopup> createState() => _AnimatedWordPopupState();
+}
+
+class _AnimatedWordPopupState extends State<_AnimatedWordPopup>
+    with SingleTickerProviderStateMixin {
+  late final AnimationController _controller;
+  late final Animation<double> _scale;
+
+  @override
+  void initState() {
+    super.initState();
+    _controller = AnimationController(
+      vsync: this,
+      duration: const Duration(milliseconds: 220),
+    );
+    _scale = CurvedAnimation(parent: _controller, curve: Curves.easeOutBack);
+    _controller.forward();
+  }
+
+  @override
+  void dispose() {
+    _controller.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
     return FadeTransition(
-      opacity: _fade,
+      opacity: widget.fade,
       child: ScaleTransition(
         scale: Tween<double>(begin: 0.88, end: 1).animate(_scale),
         alignment: Alignment.topCenter,

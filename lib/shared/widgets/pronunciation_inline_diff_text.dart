@@ -1,15 +1,12 @@
 import 'package:flutter/material.dart';
 
-
-
 import '../../core/utils/cjk_pronunciation_phrase.dart';
-
+import '../../core/utils/cjk_spoken_phonetic.dart';
 import '../../core/utils/cjk_stt_segments.dart';
-
-import '../../core/utils/japanese_to_korean_converter.dart';
-
+import '../../core/utils/english_pronunciation_tokens.dart';
+import '../../core/utils/japanese_number_normalizer.dart';
+import '../../core/utils/japanese_reading_fold.dart';
 import '../../core/utils/scenario_answer_compare.dart';
-
 import '../../core/utils/word_token_alignment.dart';
 
 
@@ -76,6 +73,374 @@ class PronunciationInlineDiffMissing extends PronunciationInlineDiffToken {
 
   const PronunciationInlineDiffMissing(this.target, {this.phonetic});
 
+}
+
+
+
+List<PronunciationInlineDiffToken> formatEnglishSpokenTokensForDisplay(
+
+  List<PronunciationInlineDiffToken> tokens,
+
+  String targetText,
+
+) {
+
+  if (tokens.isEmpty) return tokens;
+
+  final trailingPunct =
+      EnglishPronunciationTokens.trailingPunctuationFromTarget(targetText);
+
+  final result = <PronunciationInlineDiffToken>[];
+
+  var capitalized = false;
+
+  for (final token in tokens) {
+
+    switch (token) {
+
+      case PronunciationInlineDiffMatch(:final word, :final phonetic):
+
+        var displayWord = word;
+
+        if (!capitalized) {
+
+          displayWord = EnglishPronunciationTokens.capitalizeFirstLetter(word);
+
+          capitalized = true;
+
+        }
+
+        result.add(
+
+          PronunciationInlineDiffMatch(displayWord, phonetic: phonetic),
+
+        );
+
+      case PronunciationInlineDiffCorrection(
+
+        :final spoken,
+
+        :final correct,
+
+        :final spokenPhonetic,
+
+        :final correctPhonetic,
+
+      ):
+
+        var displaySpoken = spoken;
+
+        if (!capitalized) {
+
+          displaySpoken =
+
+              EnglishPronunciationTokens.capitalizeFirstLetter(spoken);
+
+          capitalized = true;
+
+        }
+
+        result.add(
+
+          PronunciationInlineDiffCorrection(
+
+            spoken: displaySpoken,
+
+            correct: correct,
+
+            spokenPhonetic: spokenPhonetic,
+
+            correctPhonetic: correctPhonetic,
+
+          ),
+
+        );
+
+      case PronunciationInlineDiffMissing(:final target, :final phonetic):
+
+        result.add(PronunciationInlineDiffMissing(target, phonetic: phonetic));
+
+    }
+
+  }
+
+  if (trailingPunct == null) return result;
+
+  for (var i = result.length - 1; i >= 0; i--) {
+    final token = result[i];
+    switch (token) {
+      case PronunciationInlineDiffMatch(:final word, :final phonetic):
+        result[i] = PronunciationInlineDiffMatch(
+          EnglishPronunciationTokens.applyTrailingPunctuation(
+            word,
+            trailingPunct,
+          ),
+          phonetic: phonetic,
+        );
+        return result;
+      case PronunciationInlineDiffCorrection(
+        :final spoken,
+        :final correct,
+        :final spokenPhonetic,
+        :final correctPhonetic,
+      ):
+        result[i] = PronunciationInlineDiffCorrection(
+          spoken: EnglishPronunciationTokens.applyTrailingPunctuation(
+            spoken,
+            trailingPunct,
+          ),
+          correct: correct,
+          spokenPhonetic: spokenPhonetic,
+          correctPhonetic: correctPhonetic,
+        );
+        return result;
+      case PronunciationInlineDiffMissing():
+        continue;
+    }
+  }
+
+  return result;
+
+}
+
+
+
+String cjkSpokenSentenceFromTokens(List<PronunciationInlineDiffToken> tokens) {
+  final buffer = StringBuffer();
+  for (final token in tokens) {
+    final part = switch (token) {
+      PronunciationInlineDiffMatch(:final word) => word,
+      PronunciationInlineDiffCorrection(:final spoken) => spoken,
+      PronunciationInlineDiffMissing() => '',
+    };
+    buffer.write(part);
+  }
+  return buffer.toString();
+}
+
+
+
+String _cjkPreparedSpoken(
+  String spokenText,
+  String targetText,
+  String language,
+) {
+  var preprocessed = language == 'Japanese'
+      ? ScenarioAnswerCompare.preprocessSpoken(spokenText, language: language)
+      : spokenText;
+  if (language == 'Japanese') {
+    preprocessed = JapaneseNumberNormalizer.expandDigitsInText(preprocessed);
+  }
+  return CjkSttSegments.extractTargetScript(
+    preprocessed,
+    language,
+    referenceText: targetText,
+  ).trim();
+}
+
+List<WordAlignmentOp> _remapNumberOpsToOriginalTarget(
+  List<WordAlignmentOp> ops,
+  JapaneseTextExpansion expansion,
+) {
+  var expCursor = 0;
+  final remapped = <WordAlignmentOp>[];
+  for (final op in ops) {
+    final targetWord = op.targetWord;
+    if (targetWord == null || targetWord.isEmpty) {
+      remapped.add(op);
+      continue;
+    }
+    final orig = JapaneseNumberNormalizer.originalSliceForExpandedRange(
+      expansion,
+      expCursor,
+      expCursor + targetWord.length,
+    );
+    expCursor += targetWord.length;
+    remapped.add(
+      WordAlignmentOp(
+        kind: op.kind,
+        targetWord: orig.isNotEmpty ? orig : targetWord,
+        spokenWord: op.spokenWord,
+      ),
+    );
+  }
+  return remapped;
+}
+
+
+
+/// CJK 문장형 inline diff — 전체 문장 글자 단위로 틀린 부분만 취소선.
+List<PronunciationInlineDiffToken> buildCjkSentenceInlineDiffTokens({
+  required String targetText,
+  required String spokenText,
+  required String language,
+  required String koreanPronunciation,
+}) {
+  final lexicon = CjkPronunciationPhraseBuilder.buildLexicon(
+    sentence: targetText,
+    pronunciation: koreanPronunciation,
+    language: language,
+  );
+  final targetTrim = targetText.trim();
+  final targetExpansion = language == 'Japanese'
+      ? JapaneseNumberNormalizer.expandWithMap(targetTrim)
+      : null;
+  final targetForAlign = targetExpansion?.expanded ?? targetTrim;
+  final prepared = _cjkPreparedSpoken(spokenText, targetText, language);
+
+  // 일본어: STT 한자(締め)를 정답 가나(しめ)로 접어 정렬한 뒤, 표시는 STT 표면 유지.
+  final fold = language == 'Japanese'
+      ? JapaneseReadingFold.foldWithMap(
+          prepared,
+          CjkSttSegments.extractTargetScript(
+            targetForAlign,
+            language,
+            referenceText: targetText,
+          ),
+        )
+      : null;
+  final spokenForAlign = fold?.folded ?? prepared;
+
+  var ops = CjkPronunciationPhraseBuilder.subdivideForInlineDiffSentence(
+    target: targetForAlign,
+    spoken: spokenForAlign,
+    language: language,
+  );
+  if (targetExpansion != null) {
+    ops = _remapNumberOpsToOriginalTarget(ops, targetExpansion);
+  }
+  final displayOps = fold == null
+      ? ops
+      : _remapAlignmentOpsToSpokenSurface(ops, fold, prepared);
+
+  final fallbackLexeme = lexicon.isNotEmpty
+      ? lexicon.first
+      : CjkPhraseLexeme(surface: targetText);
+
+  return _inlineDiffTokensFromSubdivision(
+    displayOps,
+    lexicon: lexicon,
+    targetLexeme: fallbackLexeme,
+    spokenText: spokenText,
+    language: language,
+    phraseIndex: 0,
+    containerTarget: targetTrim,
+    containerPronunciation: koreanPronunciation,
+  );
+}
+
+/// 정렬은 접힌 가나 기준, UI spoken 표면은 원본 STT(한자)로 되돌린다.
+List<WordAlignmentOp> _remapAlignmentOpsToSpokenSurface(
+  List<WordAlignmentOp> ops,
+  JapaneseReadingFoldResult fold,
+  String preparedSpoken,
+) {
+  var foldPos = 0;
+  final remapped = <WordAlignmentOp>[];
+
+  for (final op in ops) {
+    final spokenPart = op.spokenWord;
+    if (spokenPart == null || spokenPart.isEmpty) {
+      remapped.add(op);
+      continue;
+    }
+
+    final surface = JapaneseReadingFold.spokenSurfaceForFoldRange(
+      fold,
+      preparedSpoken,
+      foldStart: foldPos,
+      foldEnd: foldPos + spokenPart.length,
+    );
+    foldPos += spokenPart.length;
+    remapped.add(
+      WordAlignmentOp(
+        kind: op.kind,
+        targetWord: op.targetWord,
+        spokenWord: surface.isNotEmpty ? surface : spokenPart,
+      ),
+    );
+  }
+  return remapped;
+}
+
+
+
+int _locateTargetWord(String containerTarget, int hint, String word) {
+  if (word.isEmpty) return hint;
+  final idx = containerTarget.indexOf(word, hint);
+  return idx >= 0 ? idx : hint;
+}
+
+
+
+String? _resolveTokenPhonetic({
+  required String containerTarget,
+  required String containerPronunciation,
+  required int rangeStart,
+  required int rangeEnd,
+  List<CjkPhraseLexeme>? lexicon,
+  String? surfaceKey,
+  String language = 'Japanese',
+  String? spokenSurfaceForFallback,
+  bool allowConverterFallback = false,
+}) {
+  // 시트 pronunciation 구문 매칭을 비율 슬라이스보다 우선 (접두 생략 시 오절단 방지).
+  if (lexicon != null && surfaceKey != null) {
+    final fromLexicon = CjkPronunciationPhraseBuilder.phoneticForSurface(
+      lexicon,
+      surfaceKey,
+    );
+    if (fromLexicon != null && fromLexicon.trim().isNotEmpty) {
+      return fromLexicon;
+    }
+    final stripped = CjkPronunciationPhraseBuilder.stripPunctuation(surfaceKey);
+    if (stripped != surfaceKey) {
+      final fromStripped = CjkPronunciationPhraseBuilder.phoneticForSurface(
+        lexicon,
+        stripped,
+      );
+      if (fromStripped != null && fromStripped.trim().isNotEmpty) {
+        return fromStripped;
+      }
+    }
+    for (final item in lexicon) {
+      final itemStrip =
+          CjkPronunciationPhraseBuilder.stripPunctuation(item.surface);
+      if (itemStrip == stripped && item.phonetic.trim().isNotEmpty) {
+        return item.phonetic;
+      }
+    }
+  }
+
+  // 문장 전체 비율 슬라이스보다, 이 구간을 포함하는 lexicon 구문 하나로
+  // 좁힌 슬라이스를 우선 — 옆 구문 발음이 새어 들어오는 것을 막는다.
+  if (lexicon != null) {
+    final scoped = CjkPronunciationPhraseBuilder.phoneticSliceScopedToLexiconPhrase(
+      lexicon: lexicon,
+      rangeStart: rangeStart,
+      rangeEnd: rangeEnd,
+    );
+    if (scoped != null && scoped.trim().isNotEmpty) return scoped;
+  }
+
+  final sliced = CjkPronunciationPhraseBuilder.phoneticSliceForTargetRange(
+    targetText: containerTarget,
+    pronunciation: containerPronunciation,
+    rangeStart: rangeStart,
+    rangeEnd: rangeEnd,
+  );
+  if (sliced != null && sliced.trim().isNotEmpty) return sliced;
+
+  if (allowConverterFallback &&
+      spokenSurfaceForFallback != null &&
+      spokenSurfaceForFallback.trim().isNotEmpty) {
+    return CjkSpokenPhonetic.phoneticForSpokenSurface(
+      spokenSurfaceForFallback,
+      language: language,
+    );
+  }
+
+  return null;
 }
 
 
@@ -161,83 +526,141 @@ List<PronunciationInlineDiffToken> _tokensFromPhraseOps(
 
   var targetIdx = 0;
 
-  return [
+  final tokens = <PronunciationInlineDiffToken>[];
 
-    for (final op in ops)
+  for (final op in ops) {
 
-      switch (op.kind) {
+    switch (op.kind) {
 
-        WordAlignmentKind.match => () {
+      case WordAlignmentKind.match:
 
-            final word = op.spokenWord ?? op.targetWord!;
+        tokens.add(
 
-            targetIdx++;
+          PronunciationInlineDiffMatch(
 
-            return PronunciationInlineDiffMatch(
+            op.spokenWord ?? op.targetWord!,
 
-              word,
+            phonetic: CjkPronunciationPhraseBuilder.phoneticForSurface(
 
-              phonetic: CjkPronunciationPhraseBuilder.phoneticForSurface(
+              lexicon,
 
-                lexicon,
+              op.targetWord ?? op.spokenWord ?? '',
 
-                op.targetWord ?? op.spokenWord ?? '',
+            ),
 
-              ),
+          ),
 
-            );
+        );
 
-          }(),
+        targetIdx++;
 
-        WordAlignmentKind.substitution => () {
+      case WordAlignmentKind.substitution:
 
-            final targetWord = op.targetWord ?? '';
+        final targetWord = op.targetWord ?? '';
 
-            final targetLexeme = targetIdx < lexicon.length
+        final spokenWord = op.spokenWord ?? '';
 
-                ? lexicon[targetIdx]
+        final targetLexeme = targetIdx < lexicon.length
 
-                : CjkPhraseLexeme(surface: targetWord);
+            ? lexicon[targetIdx]
 
-            final phraseIndex = targetIdx;
+            : CjkPhraseLexeme(surface: targetWord);
 
-            targetIdx++;
+        final phraseIndex = targetIdx;
 
-            return PronunciationInlineDiffCorrection(
+        targetIdx++;
 
-              spoken: op.spokenWord!,
+        if (CjkSttSegments.isTargetLanguage(language)) {
 
-              correct: op.targetWord,
+          final subOps = CjkPronunciationPhraseBuilder.subdivideForInlineDiff(
 
-              correctPhonetic: CjkPronunciationPhraseBuilder.phoneticForSurface(
+            target: targetWord,
 
-                lexicon,
+            spoken: spokenWord,
 
-                targetWord,
+            language: language,
 
-              ),
+          );
 
-              spokenPhonetic:
+          final useInlineSubdivision = subOps.length > 1 ||
 
-                  CjkPronunciationPhraseBuilder.spokenPhoneticForSubstitution(
+              (subOps.length == 1 &&
 
-                rawSpoken: spokenText,
+                  subOps.first.kind != WordAlignmentKind.substitution);
 
-                spokenSurface: op.spokenWord!,
+          if (useInlineSubdivision) {
 
-                target: targetLexeme,
+            tokens.addAll(
+
+              _inlineDiffTokensFromSubdivision(
+
+                subOps,
+
+                lexicon: lexicon,
+
+                targetLexeme: targetLexeme,
+
+                spokenText: spokenText,
 
                 language: language,
 
                 phraseIndex: phraseIndex,
 
+                containerTarget: targetWord,
+
+                containerPronunciation: targetLexeme.phonetic,
+
               ),
 
             );
 
-          }(),
+            break;
 
-        WordAlignmentKind.insertion => PronunciationInlineDiffCorrection(
+          }
+
+        }
+
+        tokens.add(
+
+          PronunciationInlineDiffCorrection(
+
+            spoken: spokenWord,
+
+            correct: op.targetWord,
+
+            correctPhonetic: CjkPronunciationPhraseBuilder.phoneticForSurface(
+
+              lexicon,
+
+              targetWord,
+
+            ),
+
+            spokenPhonetic:
+
+                CjkPronunciationPhraseBuilder.spokenPhoneticForSubstitution(
+
+              rawSpoken: spokenText,
+
+              spokenSurface: spokenWord,
+
+              target: targetLexeme,
+
+              language: language,
+
+              phraseIndex: phraseIndex,
+
+            ),
+
+          ),
+
+        );
+
+      case WordAlignmentKind.insertion:
+
+        tokens.add(
+
+          PronunciationInlineDiffCorrection(
 
             spoken: op.spokenWord!,
 
@@ -253,31 +676,239 @@ List<PronunciationInlineDiffToken> _tokensFromPhraseOps(
 
           ),
 
-        WordAlignmentKind.deletion => () {
+        );
 
-            final targetWord = op.targetWord!;
+      case WordAlignmentKind.deletion:
 
-            targetIdx++;
+        final targetWord = op.targetWord!;
 
-            return PronunciationInlineDiffMissing(
+        targetIdx++;
+
+        tokens.add(
+
+          PronunciationInlineDiffMissing(
+
+            targetWord,
+
+            phonetic: CjkPronunciationPhraseBuilder.phoneticForSurface(
+
+              lexicon,
 
               targetWord,
 
-              phonetic: CjkPronunciationPhraseBuilder.phoneticForSurface(
+            ),
 
-                lexicon,
+          ),
 
-                targetWord,
+        );
 
-              ),
+    }
 
-            );
+  }
 
-          }(),
+  return tokens;
 
-      },
+}
 
+
+
+/// 짧은 접두 누락(し·に 등)만 Missing+Match 분리. 긴 prefix는 char subdivide.
+const _maxMissingPrefixChars = 4;
+
+/// target = [누락 접두] + spoken 인 치환 → Missing + Match 로 분리.
+List<PronunciationInlineDiffToken> _tokensFromSubstitutionOp(
+  WordAlignmentOp op, {
+  required List<CjkPhraseLexeme> lexicon,
+  required CjkPhraseLexeme targetLexeme,
+  required String spokenText,
+  required String language,
+  required int phraseIndex,
+  required String containerTarget,
+  required String containerPronunciation,
+  required int targetRangeStart,
+}) {
+  final target = op.targetWord ?? '';
+  final spoken = op.spokenWord ?? '';
+
+  if (spoken.isNotEmpty &&
+      target.length > spoken.length &&
+      target.endsWith(spoken)) {
+    final prefix = target.substring(0, target.length - spoken.length);
+    if (prefix.isNotEmpty &&
+        prefix.length <= _maxMissingPrefixChars &&
+        target == prefix + spoken) {
+      final prefixStart = targetRangeStart;
+      final prefixEnd = targetRangeStart + prefix.length;
+      final suffixStart = prefixEnd;
+      final suffixEnd = targetRangeStart + target.length;
+      return [
+        PronunciationInlineDiffMissing(
+          prefix,
+          phonetic: _resolveTokenPhonetic(
+            containerTarget: containerTarget,
+            containerPronunciation: containerPronunciation,
+            rangeStart: prefixStart,
+            rangeEnd: prefixEnd,
+            lexicon: lexicon,
+            surfaceKey: prefix,
+            language: language,
+          ),
+        ),
+        PronunciationInlineDiffMatch(
+          spoken,
+          phonetic: _resolveTokenPhonetic(
+            containerTarget: containerTarget,
+            containerPronunciation: containerPronunciation,
+            rangeStart: suffixStart,
+            rangeEnd: suffixEnd,
+            lexicon: lexicon,
+            surfaceKey: spoken,
+            language: language,
+          ),
+        ),
+      ];
+    }
+  }
+
+  final charOps = CjkPronunciationPhraseBuilder.subdivideForInlineDiffCharsOnly(
+    target: target,
+    spoken: spoken,
+    language: language,
+  );
+  final isWholeSubstitution = charOps.length == 1 &&
+      charOps.first.kind == WordAlignmentKind.substitution;
+  if (!isWholeSubstitution) {
+    return _inlineDiffTokensFromSubdivision(
+      charOps,
+      lexicon: lexicon,
+      targetLexeme: targetLexeme,
+      spokenText: spokenText,
+      language: language,
+      phraseIndex: phraseIndex,
+      containerTarget: containerTarget,
+      containerPronunciation: containerPronunciation,
+      targetRangeStart: targetRangeStart,
+    );
+  }
+
+  final rangeEnd = targetRangeStart + target.length;
+  return [
+    PronunciationInlineDiffCorrection(
+      spoken: spoken,
+      correct: op.targetWord,
+      correctPhonetic: _resolveTokenPhonetic(
+        containerTarget: containerTarget,
+        containerPronunciation: containerPronunciation,
+        rangeStart: targetRangeStart,
+        rangeEnd: rangeEnd,
+        lexicon: lexicon,
+        surfaceKey: target,
+        language: language,
+      ),
+      spokenPhonetic:
+          CjkPronunciationPhraseBuilder.spokenPhoneticForSubstitution(
+        rawSpoken: spokenText,
+        spokenSurface: spoken,
+        target: targetLexeme,
+        language: language,
+        phraseIndex: phraseIndex,
+      ),
+    ),
   ];
+}
+
+List<PronunciationInlineDiffToken> _inlineDiffTokensFromSubdivision(
+
+  List<WordAlignmentOp> subOps, {
+
+  required List<CjkPhraseLexeme> lexicon,
+
+  required CjkPhraseLexeme targetLexeme,
+
+  required String spokenText,
+
+  required String language,
+
+  required int phraseIndex,
+
+  required String containerTarget,
+
+  required String containerPronunciation,
+
+  int targetRangeStart = 0,
+
+}) {
+
+  final tokens = <PronunciationInlineDiffToken>[];
+  var targetHint = targetRangeStart;
+
+  for (final subOp in subOps) {
+    final targetWord = subOp.targetWord ?? '';
+    final rangeStart = _locateTargetWord(containerTarget, targetHint, targetWord);
+    final rangeEnd = targetWord.isEmpty ? rangeStart : rangeStart + targetWord.length;
+
+    switch (subOp.kind) {
+      case WordAlignmentKind.match:
+        tokens.add(
+          PronunciationInlineDiffMatch(
+            subOp.spokenWord ?? subOp.targetWord!,
+            phonetic: _resolveTokenPhonetic(
+              containerTarget: containerTarget,
+              containerPronunciation: containerPronunciation,
+              rangeStart: rangeStart,
+              rangeEnd: rangeEnd,
+              lexicon: lexicon,
+              surfaceKey: subOp.targetWord ?? subOp.spokenWord,
+              language: language,
+            ),
+          ),
+        );
+        if (targetWord.isNotEmpty) targetHint = rangeEnd;
+      case WordAlignmentKind.substitution:
+        tokens.addAll(
+          _tokensFromSubstitutionOp(
+            subOp,
+            lexicon: lexicon,
+            targetLexeme: targetLexeme,
+            spokenText: spokenText,
+            language: language,
+            phraseIndex: phraseIndex,
+            containerTarget: containerTarget,
+            containerPronunciation: containerPronunciation,
+            targetRangeStart: rangeStart,
+          ),
+        );
+        if (targetWord.isNotEmpty) targetHint = rangeEnd;
+      case WordAlignmentKind.insertion:
+        tokens.add(
+          PronunciationInlineDiffCorrection(
+            spoken: subOp.spokenWord ?? '',
+            spokenPhonetic: CjkSpokenPhonetic.phoneticForSpokenSurface(
+              subOp.spokenWord ?? '',
+              language: language,
+            ),
+          ),
+        );
+      case WordAlignmentKind.deletion:
+        tokens.add(
+          PronunciationInlineDiffMissing(
+            subOp.targetWord ?? '',
+            phonetic: _resolveTokenPhonetic(
+              containerTarget: containerTarget,
+              containerPronunciation: containerPronunciation,
+              rangeStart: rangeStart,
+              rangeEnd: rangeEnd,
+              lexicon: lexicon,
+              surfaceKey: subOp.targetWord,
+              language: language,
+            ),
+          ),
+        );
+        if (targetWord.isNotEmpty) targetHint = rangeEnd;
+    }
+  }
+
+  return tokens;
 
 }
 
@@ -436,7 +1067,7 @@ int pronunciationAccuracyPercent({
 
       koreanPronunciation.trim().isNotEmpty) {
 
-    return CjkPronunciationPhraseBuilder.accuracyPercent(
+    final score = CjkPronunciationPhraseBuilder.accuracyPercent(
 
       sentence: targetText,
 
@@ -447,6 +1078,26 @@ int pronunciationAccuracyPercent({
       language: language,
 
     );
+
+    if (pronunciationHasWordDiff(
+
+          targetText: targetText,
+
+          spokenText: spokenText,
+
+          language: language,
+
+          koreanPronunciation: koreanPronunciation,
+
+        ) &&
+
+        score >= 100) {
+
+      return 99;
+
+    }
+
+    return score;
 
   }
 
@@ -576,6 +1227,8 @@ class PronunciationInlineDiffText extends StatelessWidget {
 
   static const _correctBg = Color(0xFF10B981);
 
+  static const _perfectGreen = Color(0xFF059669);
+
   static const _chipRadius = BorderRadius.all(Radius.circular(16));
 
   static const _chipPadding =
@@ -616,24 +1269,30 @@ class PronunciationInlineDiffText extends StatelessWidget {
   Widget build(BuildContext context) {
 
     final tokens = buildPronunciationInlineDiffTokens(
-
       targetText: targetText,
-
       spokenText: spokenText,
-
       language: language,
-
       koreanPronunciation: correctPronunciation,
-
     );
 
-
+    final isEnglish = !CjkSttSegments.isTargetLanguage(language);
+    final isCjk = !isEnglish;
+    final displayTokens = isEnglish
+        ? formatEnglishSpokenTokensForDisplay(tokens, targetText)
+        : tokens;
+    final hasCorrections =
+        tokens.any((token) => token is! PronunciationInlineDiffMatch);
 
     if (tokens.isEmpty) {
       final fallback = spokenText.trim();
       if (fallback.isEmpty) return const SizedBox.shrink();
       return Text(
-        fallback,
+        isEnglish
+            ? EnglishPronunciationTokens.formatSpokenSentence(
+                fallback,
+                targetText,
+              )
+            : fallback,
         textAlign: textAlign,
         style: const TextStyle(
           fontSize: 13,
@@ -644,7 +1303,58 @@ class PronunciationInlineDiffText extends StatelessWidget {
       );
     }
 
+    final useSentenceLevelDiff =
+        hasCorrections &&
+        (isEnglish ||
+            (isCjk && displayTokens.any((token) => token is! PronunciationInlineDiffMatch)));
+    if (useSentenceLevelDiff) {
+      final cjkInlineTokens = isCjk
+          ? buildCjkSentenceInlineDiffTokens(
+              targetText: targetText,
+              spokenText: spokenText,
+              language: language,
+              koreanPronunciation: correctPronunciation,
+            )
+          : displayTokens;
+      final preparedSpoken = isCjk
+          ? _cjkPreparedSpoken(spokenText, targetText, language)
+          : null;
+      return LayoutBuilder(
+        builder: (context, constraints) {
+          return SizedBox(
+            width: constraints.maxWidth,
+            child: _SubstitutionCluster(
+              spoken: isEnglish
+                  ? EnglishPronunciationTokens.formatSpokenSentence(
+                      spokenText,
+                      targetText,
+                    )
+                  : preparedSpoken!.isNotEmpty
+                      ? preparedSpoken
+                      : spokenText.trim(),
+              spokenTokens: cjkInlineTokens,
+              correct: targetText.trim(),
+              correctPhonetic: _showPhonetic &&
+                      correctPronunciation.trim().isNotEmpty
+                  ? correctPronunciation.trim()
+                  : null,
+              showPhonetic: _showPhonetic,
+              language: language,
+              separateTokensWithSpaces: isEnglish,
+            ),
+          );
+        },
+      );
+    }
 
+    if (!hasCorrections) {
+      return _PerfectMatchDisplay(
+        sentence: _perfectSentenceLabel(displayTokens, isEnglish),
+        phonetic: _perfectPhoneticLabel(displayTokens),
+        textAlign: textAlign,
+        showPhonetic: _showPhonetic,
+      );
+    }
 
     return LayoutBuilder(
       builder: (context, constraints) {
@@ -654,7 +1364,7 @@ class PronunciationInlineDiffText extends StatelessWidget {
           spacing: 6.0,
           runSpacing: 10.0,
           children: [
-            for (final token in tokens)
+            for (final token in displayTokens)
               switch (token) {
                 PronunciationInlineDiffMatch(:final word, :final phonetic) =>
                   _showPhonetic
@@ -686,6 +1396,7 @@ class PronunciationInlineDiffText extends StatelessWidget {
                       spokenPhonetic: spokenPhonetic,
                       correctPhonetic: correctPhonetic,
                       showPhonetic: _showPhonetic,
+                      language: language,
                     ),
                   ),
                 PronunciationInlineDiffMissing(
@@ -701,6 +1412,79 @@ class PronunciationInlineDiffText extends StatelessWidget {
           ],
         );
       },
+    );
+  }
+}
+
+
+
+String _perfectSentenceLabel(
+  List<PronunciationInlineDiffToken> tokens,
+  bool isEnglish,
+) {
+  final parts = [
+    for (final token in tokens)
+      if (token is PronunciationInlineDiffMatch) token.word,
+  ];
+  if (parts.isEmpty) return '';
+  return isEnglish ? parts.join(' ') : parts.join();
+}
+
+
+
+String? _perfectPhoneticLabel(List<PronunciationInlineDiffToken> tokens) {
+  final parts = [
+    for (final token in tokens)
+      if (token is PronunciationInlineDiffMatch &&
+          (token.phonetic?.trim().isNotEmpty ?? false))
+        token.phonetic!.trim(),
+  ];
+  if (parts.isEmpty) return null;
+  return parts.join(' ');
+}
+
+
+
+/// 100점 완벽 일치 — 기존 Match 칩 + 좌상단 소형 체크.
+class _PerfectMatchDisplay extends StatelessWidget {
+  final String sentence;
+  final String? phonetic;
+  final TextAlign textAlign;
+  final bool showPhonetic;
+
+  const _PerfectMatchDisplay({
+    required this.sentence,
+    this.phonetic,
+    required this.textAlign,
+    required this.showPhonetic,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return Align(
+      alignment: switch (textAlign) {
+        TextAlign.center => Alignment.center,
+        TextAlign.end || TextAlign.right => Alignment.centerRight,
+        _ => Alignment.centerLeft,
+      },
+      child: Stack(
+        clipBehavior: Clip.none,
+        children: [
+          _MatchChip(
+            surface: sentence,
+            phonetic: showPhonetic ? phonetic : null,
+          ),
+          const Positioned(
+            top: 6,
+            left: 6,
+            child: Icon(
+              Icons.check_circle_rounded,
+              size: 13,
+              color: PronunciationInlineDiffText._perfectGreen,
+            ),
+          ),
+        ],
+      ),
     );
   }
 }
@@ -859,11 +1643,194 @@ class _MatchChip extends StatelessWidget {
 
 
 
+/// STT 문장 — 맞은 단어는 일반, 틀린 단어만 취소선.
+class _SpokenInlineDiffText extends StatelessWidget {
+  final List<PronunciationInlineDiffToken> tokens;
+  final TextAlign textAlign;
+  final bool separateTokensWithSpaces;
+
+  const _SpokenInlineDiffText({
+    required this.tokens,
+    this.textAlign = TextAlign.center,
+    this.separateTokensWithSpaces = true,
+  });
+
+  static const _matchStyle = TextStyle(
+    fontSize: PronunciationInlineDiffText._surfaceFontSize,
+    fontWeight: FontWeight.w600,
+    letterSpacing: PronunciationInlineDiffText._surfaceLetterSpacing,
+    color: PronunciationInlineDiffText._matchColor,
+    height: 1.3,
+  );
+
+  static const _wrongStrikeStyle = TextStyle(
+    fontSize: PronunciationInlineDiffText._surfaceFontSize,
+    fontWeight: FontWeight.bold,
+    letterSpacing: PronunciationInlineDiffText._surfaceLetterSpacing,
+    color: PronunciationInlineDiffText._wrongText,
+    decoration: TextDecoration.lineThrough,
+    decorationColor: PronunciationInlineDiffText._wrongText,
+    decorationThickness: 1.4,
+    height: 1.3,
+  );
+
+  static const _missingStyle = TextStyle(
+    fontSize: PronunciationInlineDiffText._surfaceFontSize,
+    fontWeight: FontWeight.bold,
+    letterSpacing: PronunciationInlineDiffText._surfaceLetterSpacing,
+    color: PronunciationInlineDiffText._wrongText,
+    decoration: TextDecoration.underline,
+    decorationStyle: TextDecorationStyle.dashed,
+    decorationColor: PronunciationInlineDiffText._wrongText,
+    decorationThickness: 1.6,
+    height: 1.3,
+  );
+
+  static const _missingPhoneticStyle = TextStyle(
+    fontSize: PronunciationInlineDiffText._phoneticFontSize,
+    fontWeight: FontWeight.bold,
+    color: Color(0xFF991B1B),
+    decoration: TextDecoration.underline,
+    decorationStyle: TextDecorationStyle.dashed,
+    decorationColor: Color(0xFF991B1B),
+    decorationThickness: 1.4,
+    height: 1.3,
+  );
+
+  @override
+  Widget build(BuildContext context) {
+    final spans = <InlineSpan>[];
+    var needsSpace = false;
+
+    for (final token in tokens) {
+      if (token is PronunciationInlineDiffMissing) {
+        final missing = token.target;
+        if (missing.trim().isEmpty) continue;
+        if (needsSpace && separateTokensWithSpaces) {
+          spans.add(const TextSpan(text: ' '));
+        }
+        spans.add(TextSpan(text: missing, style: _missingStyle));
+        needsSpace = true;
+        continue;
+      }
+
+      final String? text = switch (token) {
+        PronunciationInlineDiffMatch(:final word) => word,
+        PronunciationInlineDiffCorrection(:final spoken) => spoken,
+        PronunciationInlineDiffMissing() => null,
+      };
+      if (text == null || text.trim().isEmpty) continue;
+
+      if (needsSpace && separateTokensWithSpaces) {
+        spans.add(const TextSpan(text: ' '));
+      }
+      spans.add(
+        TextSpan(
+          text: text,
+          style: token is PronunciationInlineDiffMatch
+              ? _matchStyle
+              : _wrongStrikeStyle,
+        ),
+      );
+      needsSpace = true;
+    }
+
+    if (spans.isEmpty) return const SizedBox.shrink();
+
+    return RichText(
+      textAlign: textAlign,
+      text: TextSpan(children: spans),
+    );
+  }
+}
+
+/// STT 병음 — 토큰별로 맞은/누락/틀린 구간을 구분해 표시.
+class _SpokenInlineDiffPhonetic extends StatelessWidget {
+  final List<PronunciationInlineDiffToken> tokens;
+  final TextAlign textAlign;
+  final bool separateTokensWithSpaces;
+  final String language;
+
+  const _SpokenInlineDiffPhonetic({
+    required this.tokens,
+    required this.language,
+    this.textAlign = TextAlign.center,
+    this.separateTokensWithSpaces = true,
+  });
+
+  static const _matchStyle = TextStyle(
+    fontSize: PronunciationInlineDiffText._phoneticFontSize,
+    fontWeight: FontWeight.w500,
+    color: Color(0xFF991B1B),
+    height: 1.3,
+  );
+
+  static const _wrongStrikeStyle = TextStyle(
+    fontSize: PronunciationInlineDiffText._phoneticFontSize,
+    fontWeight: FontWeight.w500,
+    color: Color(0xFF991B1B),
+    decoration: TextDecoration.lineThrough,
+    decorationColor: Color(0xFF991B1B),
+    height: 1.3,
+  );
+
+  @override
+  Widget build(BuildContext context) {
+    final spans = <InlineSpan>[];
+    var needsSpace = false;
+
+    for (final token in tokens) {
+      final String? phonetic = switch (token) {
+        PronunciationInlineDiffMatch(:final phonetic) => phonetic,
+        PronunciationInlineDiffMissing(:final phonetic) => phonetic,
+        PronunciationInlineDiffCorrection(
+          :final spoken,
+          :final spokenPhonetic,
+        ) =>
+          spokenPhonetic ??
+              CjkSpokenPhonetic.phoneticForSpokenSurface(
+                spoken,
+                language: language,
+              ),
+      };
+      if (phonetic == null || phonetic.trim().isEmpty) continue;
+
+      if (needsSpace && separateTokensWithSpaces) {
+        spans.add(const TextSpan(text: ' '));
+      }
+
+      spans.add(
+        TextSpan(
+          text: phonetic,
+          style: switch (token) {
+            PronunciationInlineDiffMatch() => _matchStyle,
+            PronunciationInlineDiffMissing() =>
+              _SpokenInlineDiffText._missingPhoneticStyle,
+            PronunciationInlineDiffCorrection() => _wrongStrikeStyle,
+          },
+        ),
+      );
+      needsSpace = true;
+    }
+
+    if (spans.isEmpty) return const SizedBox.shrink();
+
+    return RichText(
+      textAlign: textAlign,
+      text: TextSpan(children: spans),
+    );
+  }
+}
+
+
+
 /// 오발음/치환 — 붉은 오답 칩 ➔ 초록 정답 칩.
 
 class _SubstitutionCluster extends StatelessWidget {
 
   final String spoken;
+
+  final List<PronunciationInlineDiffToken>? spokenTokens;
 
   final String? correct;
 
@@ -873,11 +1840,17 @@ class _SubstitutionCluster extends StatelessWidget {
 
   final bool showPhonetic;
 
+  final String language;
+
+  final bool separateTokensWithSpaces;
+
 
 
   const _SubstitutionCluster({
 
     required this.spoken,
+
+    this.spokenTokens,
 
     this.correct,
 
@@ -886,6 +1859,10 @@ class _SubstitutionCluster extends StatelessWidget {
     this.correctPhonetic,
 
     this.showPhonetic = false,
+
+    this.language = 'English',
+
+    this.separateTokensWithSpaces = true,
 
   });
 
@@ -899,19 +1876,20 @@ class _SubstitutionCluster extends StatelessWidget {
 
   Widget build(BuildContext context) {
 
-    final wrongPhonetic = spokenPhonetic ??
+    final wrongPhonetic = showPhonetic && spoken.trim().isNotEmpty
 
-        (showPhonetic && spoken.trim().isNotEmpty
+        ? CjkSpokenPhonetic.phoneticForSpokenSurface(
 
-            ? JapaneseToKoreanConverter.transliterateOrNull(
+            spoken,
 
-                spoken,
+            language: language,
 
-                language: 'Japanese',
+          )
 
-              )
+        : null;
 
-            : null);
+    final useTokenPhonetic =
+        showPhonetic && spokenTokens != null && spokenTokens!.isNotEmpty;
 
 
 
@@ -937,27 +1915,88 @@ class _SubstitutionCluster extends StatelessWidget {
 
             padding: PronunciationInlineDiffText._chipPadding,
 
-            child: showPhonetic
+            child: spokenTokens != null
 
-                ? _PhraseChip(
+                ? Column(
 
-                    surface: spoken,
+                    mainAxisSize: MainAxisSize.min,
 
-                    phonetic: wrongPhonetic,
+                    crossAxisAlignment: CrossAxisAlignment.center,
 
-                    surfaceColor: PronunciationInlineDiffText._wrongText,
+                    children: [
 
-                    surfaceWeight: FontWeight.bold,
+                      _SpokenInlineDiffText(
 
-                    phoneticColor: _wrongPhoneticColor,
+                        tokens: spokenTokens!,
 
-                    phoneticOpacity: 0.8,
+                        textAlign: TextAlign.center,
 
-                    strikethrough: true,
+                        separateTokensWithSpaces: separateTokensWithSpaces,
+
+                      ),
+
+                      if (useTokenPhonetic) ...[
+                        const SizedBox(height: 4),
+                        _SpokenInlineDiffPhonetic(
+                          tokens: spokenTokens!,
+                          language: language,
+                          textAlign: TextAlign.center,
+                          separateTokensWithSpaces: separateTokensWithSpaces,
+                        ),
+                      ] else if (showPhonetic &&
+                          (wrongPhonetic?.trim().isNotEmpty ?? false)) ...[
+
+                        const SizedBox(height: 4),
+
+                        Text(
+
+                          wrongPhonetic!,
+
+                          textAlign: TextAlign.center,
+
+                          style: TextStyle(
+
+                            fontSize:
+
+                                PronunciationInlineDiffText._phoneticFontSize,
+
+                            fontWeight: FontWeight.w500,
+
+                            color: _wrongPhoneticColor.withValues(alpha: 0.8),
+
+                            height: 1.3,
+
+                          ),
+
+                        ),
+
+                      ],
+
+                    ],
 
                   )
 
-                : Text(
+                : showPhonetic
+
+                    ? _PhraseChip(
+
+                        surface: spoken,
+
+                        phonetic: wrongPhonetic,
+
+                        surfaceColor: PronunciationInlineDiffText._wrongText,
+
+                        surfaceWeight: FontWeight.bold,
+
+                        phoneticColor: _wrongPhoneticColor,
+
+                        phoneticOpacity: 0.8,
+
+                        strikethrough: true,
+
+                      )
+
+                    : Text(
 
                     spoken,
 

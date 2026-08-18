@@ -3,6 +3,7 @@ import 'dart:convert';
 import 'package:flutter/services.dart' show rootBundle;
 
 import '../../core/config/audio_playback_url.dart';
+import '../../core/services/audio_bytes_cache.dart';
 import '../datasources/local/audio_cache_datasource.dart';
 import '../datasources/local/content_local_datasource.dart';
 import '../datasources/remote/content_remote_datasource.dart';
@@ -55,8 +56,19 @@ class ContentRepository {
     return bundle;
   }
 
+  /// 디스크 캐시 경로만 확인 (다운로드 없음).
+  Future<String?> cachedAudioPath(String url) => _audioCache.cachedPath(url);
+
   /// 재생용 오디오 소스 결정: 캐시 파일 경로 우선, 없으면 내려받고, 실패하면 null.
   Future<String?> localAudioPath(String url) => _audioCache.ensureCached(url);
+
+  /// 재생과 병렬로 디스크 캐시만 백그라운드 저장.
+  Future<void> cacheAudioInBackground(String url) async {
+    if (url.isEmpty) return;
+    final existing = await _audioCache.cachedPath(url);
+    if (existing != null) return;
+    await _audioCache.download(url);
+  }
 
   /// 모든 오디오를 미리 내려받는다 (설정 화면의 "전체 다운로드").
   /// [onProgress]는 (완료 수, 전체 수)를 전달한다.
@@ -82,5 +94,8 @@ class ContentRepository {
 
   Future<int> audioCacheSizeBytes() => _audioCache.cacheSizeBytes();
 
-  Future<void> clearAudioCache() => _audioCache.clear();
+  Future<void> clearAudioCache() async {
+    await _audioCache.clear();
+    AudioBytesCache.instance.clear();
+  }
 }

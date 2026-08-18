@@ -23,6 +23,32 @@ void main() {
     });
   });
 
+  group('CjkPronunciationPhraseBuilder.phoneticSliceForTargetRange', () {
+    test('문장 pronunciation을 글자 구간으로 슬라이스', () {
+      const target = 'お手伝いしましょうか。';
+      const pronunciation = '오테츠다이시마쇼-까?';
+
+      final head = CjkPronunciationPhraseBuilder.phoneticSliceForTargetRange(
+        targetText: target,
+        pronunciation: pronunciation,
+        rangeStart: 0,
+        rangeEnd: 5,
+      );
+      final missingShi =
+          CjkPronunciationPhraseBuilder.phoneticSliceForTargetRange(
+        targetText: target,
+        pronunciation: pronunciation,
+        rangeStart: 5,
+        rangeEnd: 6,
+      );
+
+      expect(head, isNotNull);
+      expect(head!, contains('테츠'));
+      expect(missingShi, isNotNull);
+      expect(missingShi!.trim(), isNotEmpty);
+    });
+  });
+
   group('CjkPronunciationPhraseBuilder — 부분 일치', () {
     const target = 'お一人様ずつご搭乗券を確認しております。';
     const spoken = 'ホイトリス様ずつこと除菌を確認しております';
@@ -185,6 +211,20 @@ void main() {
         mapped.any((s) => s.contains('座席でございます')),
         isTrue,
       );
+    });
+  });
+
+  group('CjkPronunciationPhraseBuilder — STT 초과 글자', () {
+    const target = 'お一人様ずつご搭乗券を確認しております';
+    const spoken = 'お一人様ずつごご搭乗券を確認しております';
+
+    test('정답보다 글자가 많으면 100점이 아님', () {
+      final score = CjkPronunciationPhraseBuilder.accuracyPercentByCharacters(
+        sentence: target,
+        spokenText: spoken,
+        language: 'Japanese',
+      );
+      expect(score, lessThan(100));
     });
   });
 }

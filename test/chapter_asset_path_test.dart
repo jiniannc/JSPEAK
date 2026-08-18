@@ -12,8 +12,26 @@ void main() {
 
     test('prepends assets/images for filename only', () {
       expect(
-        resolveChapterAssetPath('ch_boarding.png'),
-        'assets/images/ch_boarding.png',
+        resolveChapterAssetPath('boarding.png'),
+        'assets/images/boarding.png',
+      );
+    });
+
+    test('normalizes legacy learninghub icons subfolder', () {
+      expect(
+        resolveChapterAssetPath('learninghub icons/boarding.png'),
+        'assets/images/boarding.png',
+      );
+      expect(
+        resolveChapterAssetPath('assets/images/learninghub icons/seat.png'),
+        'assets/images/seat.png',
+      );
+    });
+
+    test('strips duplicate assets prefix', () {
+      expect(
+        resolveChapterAssetPath('assets/assets/images/boarding.png'),
+        'assets/images/boarding.png',
       );
     });
 

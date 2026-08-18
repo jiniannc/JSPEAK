@@ -20,9 +20,6 @@ class LearningHubShell extends ConsumerWidget {
     if (location.startsWith('/scenarios/sentences')) {
       return const LearningHubHeaderConfig(id: 'basic_sentence');
     }
-    if (location.startsWith('/scenarios/list')) {
-      return const LearningHubHeaderConfig(id: 'scenario');
-    }
     if (location.startsWith('/scenarios/swipe')) {
       return const LearningHubHeaderConfig(id: 'word_swipe');
     }

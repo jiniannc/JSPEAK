@@ -11,6 +11,7 @@ import '../../core/theme/language_palette.dart';
 import '../../data/models/scenario.dart';
 import '../../features/dashboard/dashboard_palette.dart';
 import '../../features/learning/widgets/mode_guide_cards.dart';
+import '../shell/floating_island_nav_bar.dart';
 import 'widgets/scenario_card.dart';
 import 'widgets/scenario_chapter_list.dart';
 
@@ -94,7 +95,7 @@ class ScenarioHomeScreen extends ConsumerWidget {
                   : ListView.separated(
                       padding: metrics.pagePadding.copyWith(
                         top: 4,
-                        bottom: 16 + MediaQuery.paddingOf(context).bottom,
+                        bottom: 16 + FloatingIslandNavBar.scrollBottomPadding(context),
                       ),
                       itemCount: chapters.length,
                       separatorBuilder: (context, index) =>

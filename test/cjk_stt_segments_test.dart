@@ -27,6 +27,56 @@ void main() {
       expect(extracted, 'ご搭乗券を');
     });
 
+    test('extractTargetScript keeps QR when reference has QR', () {
+      const reference = 'QRコードをスキャンしております';
+      expect(
+        CjkSttSegments.extractTargetScript(
+          'QRコードをスキャンしております',
+          'Japanese',
+          referenceText: reference,
+        ),
+        reference,
+      );
+      expect(
+        CjkSttSegments.extractTargetScript(
+          'Q R コードをスキャンしております',
+          'Japanese',
+          referenceText: reference,
+        ),
+        reference,
+      );
+    });
+
+    test('extractTargetScript keeps multi-word Latin brand from reference', () {
+      const reference = 'Visit Japan Webのご登録はお済みでしょうか？';
+      expect(
+        CjkSttSegments.extractTargetScript(
+          reference,
+          'Japanese',
+          referenceText: reference,
+        ),
+        'VISITJAPANWEBのご登録はお済みでしょうか',
+      );
+      expect(
+        CjkSttSegments.extractTargetScript(
+          'ベジットジャパンanWEBのご登録はお済みでしょうか',
+          'Japanese',
+          referenceText: reference,
+        ),
+        'ベジットジャパンWEBのご登録はお済みでしょうか',
+      );
+    });
+
+    test('extractTargetScript without reference still strips QR', () {
+      expect(
+        CjkSttSegments.extractTargetScript(
+          'QRコードをスキャンしております',
+          'Japanese',
+        ),
+        'コードをスキャンしております',
+      );
+    });
+
     test('English passthrough', () {
       expect(
         CjkSttSegments.extractTargetScript('hello world', 'English'),

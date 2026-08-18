@@ -410,6 +410,7 @@ class _CrewTurnBody extends StatelessWidget {
                       blankInputs: blankInputs,
                       selectedBlankIndex: selectedBlankIndex,
                       onBlankTap: onBlankTap,
+                      showPronunciation: showPronunciation,
                     ),
                   ),
           ),
@@ -428,6 +429,7 @@ class _SpeakingContent extends StatelessWidget {
   final List<String> blankInputs;
   final int? selectedBlankIndex;
   final ValueChanged<int>? onBlankTap;
+  final bool showPronunciation;
 
   const _SpeakingContent({
     required this.line,
@@ -438,6 +440,7 @@ class _SpeakingContent extends StatelessWidget {
     this.blankInputs = const [],
     this.selectedBlankIndex,
     this.onBlankTap,
+    this.showPronunciation = false,
   });
 
   @override
@@ -474,6 +477,22 @@ class _SpeakingContent extends StatelessWidget {
           selectedBlankIndex: selectedBlankIndex,
           onBlankTap: structureOn ? onBlankTap : null,
         ),
+        if (structureOn &&
+            showPronunciation &&
+            line.pronunciation.isNotEmpty) ...[
+          const SizedBox(height: 8),
+          Text(
+            line.pronunciation,
+            style: TextStyle(
+              fontSize: 12.5,
+              fontWeight: FontWeight.w500,
+              fontStyle: FontStyle.italic,
+              color: DashboardPalette.textMuted,
+              height: 1.45,
+              letterSpacing: 0.2,
+            ),
+          ),
+        ],
         if (wrongSpoken != null && wrongSpoken!.isNotEmpty && !structureOn) ...[
           const SizedBox(height: 12),
           Text(

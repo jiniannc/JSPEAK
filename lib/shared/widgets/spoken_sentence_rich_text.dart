@@ -44,15 +44,17 @@ List<TextSpan> buildSpokenSentenceSpans({
     );
   }
 
-  final correctWords = WordCompare.splitWords(correctSentence);
-  final spokenWords = WordCompare.splitWords(spokenText);
+  final correctWords = WordCompare.splitTokens(correctSentence, language: language);
+  final spokenWords = WordCompare.splitTokens(spokenText, language: language);
   final matches = vocabulary == null
       ? <VocabularyPhraseMatch>[]
       : VocabularySpanBuilder.findPhraseMatches(
           correctSentence,
           vocabulary.entries,
+          language: language,
         );
   final indexMap = VocabularySpanBuilder.indexMap(matches);
+  final separator = WordCompare.tokenSeparator(language);
 
   if (spokenWords.isEmpty) {
     return [TextSpan(text: spokenText, style: baseStyle)];
@@ -62,8 +64,8 @@ List<TextSpan> buildSpokenSentenceSpans({
   var i = 0;
 
   while (i < spokenWords.length) {
-    if (i > 0) {
-      spans.add(TextSpan(text: ' ', style: baseStyle));
+    if (i > 0 && separator.isNotEmpty) {
+      spans.add(TextSpan(text: separator, style: baseStyle));
     }
 
     final match = i < correctWords.length ? indexMap[i] : null;
@@ -78,7 +80,7 @@ List<TextSpan> buildSpokenSentenceSpans({
         context != null &&
         anchorKey != null) {
       final end = match.endIndex.clamp(0, spokenWords.length - 1);
-      final phraseText = spokenWords.sublist(i, end + 1).join(' ');
+      final phraseText = spokenWords.sublist(i, end + 1).join(separator);
 
       final recognizer = TapGestureRecognizer();
       recognizerPool.add(recognizer);
@@ -93,6 +95,7 @@ List<TextSpan> buildSpokenSentenceSpans({
           wordEndIndex: match.endIndex,
           textStyle: baseStyle,
           entry: entry,
+          language: language,
         );
       };
 

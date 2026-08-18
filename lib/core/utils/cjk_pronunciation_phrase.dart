@@ -1,4 +1,7 @@
+import 'cjk_spoken_phonetic.dart';
 import 'cjk_stt_segments.dart';
+import 'japanese_number_normalizer.dart';
+import 'japanese_reading_fold.dart';
 import 'japanese_to_korean_converter.dart';
 import 'scenario_answer_compare.dart';
 import 'word_token_alignment.dart';
@@ -20,7 +23,7 @@ class CjkPronunciationPhraseBuilder {
   CjkPronunciationPhraseBuilder._();
 
   static final RegExp _jpParticle = RegExp(r'[とをにはのでがはもへ]');
-  static final RegExp _kanji = RegExp(r'[\u4E00-\u9FFF]');
+  static final RegExp _kanji = RegExp(r'[\u4E00-\u9FFF\u3005\u3006\u3007\u303B]');
   static final RegExp _punct = RegExp(r'[。、！？，,\.!?]');
   static final RegExp _phoneticSplit = RegExp(r'[\s/]+');
 
@@ -104,12 +107,37 @@ class CjkPronunciationPhraseBuilder {
       .where((s) => s.isNotEmpty)
       .toList();
 
-  static String _prepareSpokenForCompare(String spoken, String language) {
+  static String _prepareSpokenForCompare(
+    String spoken,
+    String language, {
+    String? referenceText,
+  }) {
     if (!CjkSttSegments.isTargetLanguage(language)) return spoken.trim();
-    final preprocessed = language == 'Japanese'
+    var preprocessed = language == 'Japanese'
         ? ScenarioAnswerCompare.preprocessSpoken(spoken, language: language)
         : spoken;
-    return CjkSttSegments.extractTargetScript(preprocessed, language);
+    if (language == 'Japanese') {
+      preprocessed = JapaneseNumberNormalizer.expandDigitsInText(preprocessed);
+    }
+    final extracted = CjkSttSegments.extractTargetScript(
+      preprocessed,
+      language,
+      referenceText: referenceText,
+    );
+    if (language == 'Japanese' &&
+        referenceText != null &&
+        referenceText.trim().isNotEmpty) {
+      final targetExpanded = JapaneseNumberNormalizer.expandDigitsInText(
+        referenceText,
+      );
+      final targetScript = CjkSttSegments.extractTargetScript(
+        targetExpanded,
+        language,
+        referenceText: referenceText,
+      );
+      return JapaneseReadingFold.fold(extracted, targetScript);
+    }
+    return extracted;
   }
 
   static List<CjkPhraseLexeme> buildLexicon({
@@ -145,6 +173,13 @@ class CjkPronunciationPhraseBuilder {
     }
 
     if (surfaces.length == 1) {
+      if (phonetics.length > 1) {
+        final split = _splitSingleSurfaceByPhoneticWeights(
+          surfaces.first,
+          phonetics,
+        );
+        if (split != null) return split;
+      }
       return [
         CjkPhraseLexeme(
           surface: surfaces.first,
@@ -184,6 +219,77 @@ class CjkPronunciationPhraseBuilder {
         CjkPhraseLexeme(
           surface: surfaces[i],
           phonetic: slice.join(' '),
+        ),
+      );
+    }
+
+    return result;
+  }
+
+  /// 세그멘테이션이 (예: を 뒤가 히라가나라) 문장 전체를 구문 하나로 뭉쳐도,
+  /// pronunciation에 남아 있는 공백 구분은 실제 구문 경계 힌트다.
+  /// 그 힌트를 이용해 하나의 surface를 phonetics 개수만큼 비율로 재분할한다.
+  /// (반대 방향인 `weights` 분배 로직과 대칭.) 재분할 없이 문장 전체를
+  /// 하나로 두면, 뒤쪽 글자의 발음 음절 수가 글자 수와 안 맞을 때 그 오차가
+  /// 앞쪽 구문 경계까지 새어 들어와 옆 단어 발음이 섞여 보일 수 있다.
+  static List<CjkPhraseLexeme>? _splitSingleSurfaceByPhoneticWeights(
+    String surface,
+    List<String> phonetics,
+  ) {
+    final weights = phonetics
+        .map(
+          (p) => p.replaceAll(RegExp(r'[-\^.·・\s]'), '').length,
+        )
+        .toList();
+    final totalWeight = weights.fold<int>(0, (sum, w) => sum + w);
+    if (totalWeight <= 0) return null;
+
+    final totalChars = _contentCharCount(surface);
+    if (totalChars < phonetics.length) return null;
+
+    final result = <CjkPhraseLexeme>[];
+    var charCursor = 0;
+    var contentConsumed = 0;
+    var weightConsumed = 0;
+
+    for (var i = 0; i < phonetics.length; i++) {
+      final isLast = i == phonetics.length - 1;
+      int targetContentEnd;
+      if (isLast) {
+        targetContentEnd = totalChars;
+      } else {
+        weightConsumed += weights[i];
+        final remainingPhrases = phonetics.length - i - 1;
+        targetContentEnd = (weightConsumed / totalWeight * totalChars).round();
+        targetContentEnd = targetContentEnd.clamp(
+          contentConsumed + 1,
+          totalChars - remainingPhrases,
+        );
+      }
+
+      var idx = charCursor;
+      var content = contentConsumed;
+      while (idx < surface.length && content < targetContentEnd) {
+        if (!_punct.hasMatch(surface[idx])) content++;
+        idx++;
+      }
+
+      result.add(
+        CjkPhraseLexeme(
+          surface: surface.substring(charCursor, idx),
+          phonetic: phonetics[i],
+        ),
+      );
+      charCursor = idx;
+      contentConsumed = content;
+    }
+
+    if (charCursor < surface.length) {
+      final last = result.removeLast();
+      result.add(
+        CjkPhraseLexeme(
+          surface: last.surface + surface.substring(charCursor),
+          phonetic: last.phonetic,
         ),
       );
     }
@@ -348,6 +454,9 @@ class CjkPronunciationPhraseBuilder {
     String spoken,
     String language,
   ) {
+    if (language == 'Japanese') {
+      target = JapaneseNumberNormalizer.expandDigitsInText(target);
+    }
     final t = _charUnits(target, language);
     final s = _charUnits(spoken, language);
     if (t.isEmpty || s.isEmpty) return 0;
@@ -375,13 +484,77 @@ class CjkPronunciationPhraseBuilder {
   static int _targetCharacterCount(String text, String language) =>
       _charUnits(text, language).length;
 
+  /// LCS로 매칭되지 않은 STT 글자들 — [accuracyPercentByCharacters]가 점수를
+  /// 깎는 실제 근거. 단어/구문 diff에서는 발음이 비슷해 "완벽 일치"로
+  /// 보여도, STT가 잡음·필러를 여분의 글자로 인식했으면 여기 나타난다.
+  static List<String> extraRecognizedChars({
+    required String sentence,
+    required String spokenText,
+    required String language,
+  }) {
+    final spokenPrepared = _prepareSpokenForCompare(
+      spokenText,
+      language,
+      referenceText: sentence,
+    );
+    final t = _charUnits(sentence, language);
+    final s = _charUnits(spokenPrepared, language);
+    if (t.isEmpty || s.isEmpty) return const [];
+
+    final n = t.length;
+    final m = s.length;
+    final dp = List.generate(n + 1, (_) => List<int>.filled(m + 1, 0));
+    for (var i = 1; i <= n; i++) {
+      for (var j = 1; j <= m; j++) {
+        if (ScenarioAnswerCompare.charsEquivalentForCompare(
+          t[i - 1],
+          s[j - 1],
+          language,
+        )) {
+          dp[i][j] = dp[i - 1][j - 1] + 1;
+        } else {
+          dp[i][j] = dp[i - 1][j] > dp[i][j - 1] ? dp[i - 1][j] : dp[i][j - 1];
+        }
+      }
+    }
+
+    final matchedSpokenIdx = <int>{};
+    var i = n;
+    var j = m;
+    while (i > 0 && j > 0) {
+      if (ScenarioAnswerCompare.charsEquivalentForCompare(
+            t[i - 1],
+            s[j - 1],
+            language,
+          ) &&
+          dp[i][j] == dp[i - 1][j - 1] + 1) {
+        matchedSpokenIdx.add(j - 1);
+        i--;
+        j--;
+      } else if (dp[i - 1][j] >= dp[i][j - 1]) {
+        i--;
+      } else {
+        j--;
+      }
+    }
+
+    return [
+      for (var k = 0; k < s.length; k++)
+        if (!matchedSpokenIdx.contains(k)) s[k],
+    ];
+  }
+
   /// 맞춘 글자 수 / 정답 전체 글자 수 기반 부분 점수.
   static int accuracyPercentByCharacters({
     required String sentence,
     required String spokenText,
     required String language,
   }) {
-    final spokenPrepared = _prepareSpokenForCompare(spokenText, language);
+    final spokenPrepared = _prepareSpokenForCompare(
+      spokenText,
+      language,
+      referenceText: sentence,
+    );
     final targetLen = _targetCharacterCount(sentence, language);
     if (targetLen == 0) {
       return spokenPrepared.trim().isEmpty ? 100 : 0;
@@ -391,10 +564,16 @@ class CjkPronunciationPhraseBuilder {
       spokenPrepared,
       language,
     );
-    return ((matched / targetLen) * 100).round().clamp(0, 100);
+    final spokenLen = _targetCharacterCount(spokenPrepared, language);
+    var score = (matched / targetLen) * 100;
+    // STT가 정답보다 글자를 더 넣어도 LCS만으로는 100점이 되는 문제 보정.
+    if (spokenLen > targetLen) {
+      score -= ((spokenLen - targetLen) / targetLen) * 100;
+    }
+    return score.round().clamp(0, 100);
   }
 
-  /// 거대한 substitution을 형태소/구문 단위 ops로 분할.
+  /// 거대한 substitution을 형태소/구문 단위 ops로 분할 (채점·정렬용).
   static List<WordAlignmentOp> subdivideSubstitution({
     required String target,
     required String spoken,
@@ -428,6 +607,282 @@ class CjkPronunciationPhraseBuilder {
       spokenWords: spokenMorphs,
       language: language,
     ).ops;
+  }
+
+  /// inline diff UI용 — 형태소 분할 실패 시 글자 단위로 쪼갠다.
+  static List<WordAlignmentOp> subdivideForInlineDiff({
+    required String target,
+    required String spoken,
+    required String language,
+  }) {
+    if (surfacesEquivalent(target, spoken, language)) {
+      return [
+        WordAlignmentOp(
+          kind: WordAlignmentKind.match,
+          targetWord: target,
+          spokenWord: spoken,
+        ),
+      ];
+    }
+
+    final targetMorphs = segmentSurface(target, language: language);
+    final spokenMorphs = segmentSurface(spoken, language: language);
+
+    if (targetMorphs.length > 1 && spokenMorphs.length > 1) {
+      final morphOps = WordTokenAligner.align(
+        targetWords: targetMorphs,
+        spokenWords: spokenMorphs,
+        language: language,
+      ).ops;
+      final onlyWholeSubstitution = morphOps.length == 1 &&
+          morphOps.first.kind == WordAlignmentKind.substitution;
+      if (!onlyWholeSubstitution) {
+        return morphOps;
+      }
+    }
+
+    return _subdivideByCharacters(target, spoken, language);
+  }
+
+  /// 문장형 inline diff — morph 생략, 항상 글자 단위(중간 누락·false match 방지).
+  static List<WordAlignmentOp> subdivideForInlineDiffSentence({
+    required String target,
+    required String spoken,
+    required String language,
+  }) {
+    if (surfacesEquivalent(target, spoken, language)) {
+      return [
+        WordAlignmentOp(
+          kind: WordAlignmentKind.match,
+          targetWord: target,
+          spokenWord: spoken,
+        ),
+      ];
+    }
+    return _subdivideByCharacters(target, spoken, language);
+  }
+
+  /// 구문 내부 char subdivide — morph 없이 글자 단위만.
+  static List<WordAlignmentOp> subdivideForInlineDiffCharsOnly({
+    required String target,
+    required String spoken,
+    required String language,
+  }) => subdivideForInlineDiffSentence(
+        target: target,
+        spoken: spoken,
+        language: language,
+      );
+
+  static List<WordAlignmentOp> _subdivideByCharacters(
+    String target,
+    String spoken,
+    String language,
+  ) {
+    final targetUnits = _charUnits(target, language);
+    final spokenUnits = _charUnits(spoken, language);
+
+    if (targetUnits.isEmpty && spokenUnits.isEmpty) {
+      return [
+        WordAlignmentOp(
+          kind: WordAlignmentKind.substitution,
+          targetWord: target,
+          spokenWord: spoken,
+        ),
+      ];
+    }
+
+    final charAlignment = WordTokenAligner.align(
+      targetWords: targetUnits,
+      spokenWords: spokenUnits,
+      language: language,
+    );
+    final lcsOps = _coalesceAdjacentInsertionDeletion(
+      _mergeAdjacentCharOps(charAlignment.ops),
+    );
+
+    final matchedLen = characterLcsMatchedLength(target, spoken, language);
+    final maxLen = targetUnits.length > spokenUnits.length
+        ? targetUnits.length
+        : spokenUnits.length;
+    if (maxLen > 0 && matchedLen / maxLen < 0.5) {
+      return _coalesceAdjacentInsertionDeletion(
+        _mergeAdjacentCharOps(
+          _subdivideByCharactersPositional(targetUnits, spokenUnits, language),
+        ),
+      );
+    }
+
+    // 중간 누락(を·し 등) 뒤 Match는 그대로 둔다.
+    // Missing UI가 누락 글자를 보여 주므로, gap을 substitution으로
+    // 합치면 戻/もど처럼 한자·가나 정렬이 깨진다.
+    return lcsOps;
+  }
+
+  /// 같은 인덱스끼리 비교 — LCS가 好처럼 엇갈린 글자를 match 처리하는 것을 방지.
+  static List<WordAlignmentOp> _subdivideByCharactersPositional(
+    List<String> targetUnits,
+    List<String> spokenUnits,
+    String language,
+  ) {
+    final ops = <WordAlignmentOp>[];
+    final maxLen = targetUnits.length > spokenUnits.length
+        ? targetUnits.length
+        : spokenUnits.length;
+
+    for (var i = 0; i < maxLen; i++) {
+      final hasTarget = i < targetUnits.length;
+      final hasSpoken = i < spokenUnits.length;
+      if (hasTarget && hasSpoken) {
+        final tc = targetUnits[i];
+        final sc = spokenUnits[i];
+        if (ScenarioAnswerCompare.charsEquivalentForCompare(tc, sc, language)) {
+          ops.add(
+            WordAlignmentOp(
+              kind: WordAlignmentKind.match,
+              targetWord: tc,
+              spokenWord: sc,
+            ),
+          );
+        } else {
+          ops.add(
+            WordAlignmentOp(
+              kind: WordAlignmentKind.substitution,
+              targetWord: tc,
+              spokenWord: sc,
+            ),
+          );
+        }
+      } else if (hasSpoken) {
+        ops.add(
+          WordAlignmentOp(
+            kind: WordAlignmentKind.insertion,
+            spokenWord: spokenUnits[i],
+          ),
+        );
+      } else {
+        ops.add(
+          WordAlignmentOp(
+            kind: WordAlignmentKind.deletion,
+            targetWord: targetUnits[i],
+          ),
+        );
+      }
+    }
+    return ops;
+  }
+
+  static List<WordAlignmentOp> _coalesceAdjacentInsertionDeletion(
+    List<WordAlignmentOp> ops,
+  ) {
+    final result = <WordAlignmentOp>[];
+    var i = 0;
+    while (i < ops.length) {
+      if (i + 1 < ops.length) {
+        final current = ops[i];
+        final next = ops[i + 1];
+        if (current.kind == WordAlignmentKind.insertion &&
+            next.kind == WordAlignmentKind.deletion) {
+          result.add(
+            WordAlignmentOp(
+              kind: WordAlignmentKind.substitution,
+              spokenWord: current.spokenWord,
+              targetWord: next.targetWord,
+            ),
+          );
+          i += 2;
+          continue;
+        }
+        if (current.kind == WordAlignmentKind.deletion &&
+            next.kind == WordAlignmentKind.insertion) {
+          result.add(
+            WordAlignmentOp(
+              kind: WordAlignmentKind.substitution,
+              spokenWord: next.spokenWord,
+              targetWord: current.targetWord,
+            ),
+          );
+          i += 2;
+          continue;
+        }
+      }
+      result.add(ops[i]);
+      i++;
+    }
+    return result;
+  }
+
+  static List<WordAlignmentOp> _mergeAdjacentCharOps(
+    List<WordAlignmentOp> ops,
+  ) {
+    if (ops.isEmpty) return ops;
+
+    final merged = <WordAlignmentOp>[];
+    WordAlignmentKind? currentKind;
+    final targetBuf = StringBuffer();
+    final spokenBuf = StringBuffer();
+
+    void flush() {
+      if (currentKind == null) return;
+      final t = targetBuf.toString();
+      final s = spokenBuf.toString();
+      targetBuf.clear();
+      spokenBuf.clear();
+
+      switch (currentKind!) {
+        case WordAlignmentKind.match:
+          merged.add(
+            WordAlignmentOp(
+              kind: WordAlignmentKind.match,
+              targetWord: t,
+              spokenWord: s,
+            ),
+          );
+        case WordAlignmentKind.substitution:
+          merged.add(
+            WordAlignmentOp(
+              kind: WordAlignmentKind.substitution,
+              targetWord: t.isEmpty ? null : t,
+              spokenWord: s.isEmpty ? null : s,
+            ),
+          );
+        case WordAlignmentKind.deletion:
+          merged.add(
+            WordAlignmentOp(
+              kind: WordAlignmentKind.deletion,
+              targetWord: t.isEmpty ? null : t,
+            ),
+          );
+        case WordAlignmentKind.insertion:
+          merged.add(
+            WordAlignmentOp(
+              kind: WordAlignmentKind.insertion,
+              spokenWord: s.isEmpty ? null : s,
+            ),
+          );
+      }
+      currentKind = null;
+    }
+
+    for (final op in ops) {
+      if (currentKind != null && currentKind != op.kind) {
+        flush();
+      }
+      currentKind = op.kind;
+      switch (op.kind) {
+        case WordAlignmentKind.match:
+          targetBuf.write(op.targetWord);
+          spokenBuf.write(op.spokenWord);
+        case WordAlignmentKind.substitution:
+          targetBuf.write(op.targetWord ?? '');
+          spokenBuf.write(op.spokenWord ?? '');
+        case WordAlignmentKind.deletion:
+          targetBuf.write(op.targetWord ?? '');
+        case WordAlignmentKind.insertion:
+          spokenBuf.write(op.spokenWord ?? '');
+      }
+    }
+    flush();
+    return merged;
   }
 
   static List<WordAlignmentOp> _subdivideAlignmentOps(
@@ -513,6 +968,7 @@ class CjkPronunciationPhraseBuilder {
     final spokenPrepared = _prepareSpokenForCompare(
       spokenText,
       language,
+      referenceText: sentence,
     );
     final autoSpoken = segmentSurface(spokenPrepared, language: language);
     final spokenSurfaces = mapSpokenSegmentsToTarget(
@@ -616,7 +1072,7 @@ class CjkPronunciationPhraseBuilder {
     return '';
   }
 
-  /// 치환 오답 칩용 — STT에 한글/로마字 발음표기가 있을 때만 서브텍스트로 노출.
+  /// 치환 오답 칩용 — STT spokenSurface만 가나→한글 변환 (원문 누락 토큰 phonetic 혼입 방지).
   static String? spokenPhoneticForSubstitution({
     required String rawSpoken,
     required String spokenSurface,
@@ -628,19 +1084,11 @@ class CjkPronunciationPhraseBuilder {
       return null;
     }
 
-    final hint = _spokenPhoneticHint(
-      rawSpoken,
-      spokenSurface,
-      target,
-      language,
-      phraseIndex: phraseIndex,
-    );
-    if (hint.isNotEmpty && !phoneticsEquivalent(hint, target.phonetic)) {
-      return hint;
-    }
-
-    if (language == 'Japanese') {
-      return JapaneseToKoreanConverter.transliterateOrNull(spokenSurface);
+    if (language == 'Japanese' || language == 'Chinese') {
+      return CjkSpokenPhonetic.phoneticForSpokenSurface(
+        spokenSurface,
+        language: language,
+      );
     }
     return null;
   }
@@ -649,8 +1097,11 @@ class CjkPronunciationPhraseBuilder {
     required String spokenSurface,
     required String language,
   }) {
-    if (language == 'Japanese') {
-      return JapaneseToKoreanConverter.transliterateOrNull(spokenSurface);
+    if (language == 'Japanese' || language == 'Chinese') {
+      return CjkSpokenPhonetic.phoneticForSpokenSurface(
+        spokenSurface,
+        language: language,
+      );
     }
     return null;
   }
@@ -661,6 +1112,78 @@ class CjkPronunciationPhraseBuilder {
   ) {
     for (final item in lexicon) {
       if (item.surface == surface) return item.phonetic;
+    }
+    return null;
+  }
+
+  /// 원문 [rangeStart, rangeEnd) 구간에 해당하는 pronunciation 슬라이스.
+  /// `-` `^` 등 장음/악센트 기호는 길이 비율에서 제외해 글자 수와 맞춘다.
+  static String? phoneticSliceForTargetRange({
+    required String targetText,
+    required String pronunciation,
+    required int rangeStart,
+    required int rangeEnd,
+  }) {
+    if (rangeStart >= rangeEnd || pronunciation.trim().isEmpty) return null;
+
+    final phoneticBody = parsePhoneticTokens(pronunciation)
+        .join()
+        .replaceAll(RegExp(r'[-\^.·・]'), '');
+    if (phoneticBody.isEmpty) return null;
+
+    final totalUnits = _contentCharCount(targetText);
+    if (totalUnits <= 0) return null;
+
+    final clampedEnd = rangeEnd.clamp(0, targetText.length);
+    final clampedStart = rangeStart.clamp(0, clampedEnd);
+    final startUnits = _contentCharCount(targetText.substring(0, clampedStart));
+    final endUnits = _contentCharCount(targetText.substring(0, clampedEnd));
+    if (startUnits >= endUnits) return null;
+
+    final phoneticLen = phoneticBody.length;
+    final sliceStart = (startUnits / totalUnits * phoneticLen).floor();
+    var sliceEnd = (endUnits / totalUnits * phoneticLen).ceil();
+    if (sliceEnd <= sliceStart) sliceEnd = sliceStart + 1;
+    sliceEnd = sliceEnd.clamp(0, phoneticLen);
+
+    final slice = phoneticBody.substring(
+      sliceStart.clamp(0, phoneticLen),
+      sliceEnd,
+    );
+    return slice.isEmpty ? null : slice;
+  }
+
+  static int _contentCharCount(String text) =>
+      text.replaceAll(_punct, '').replaceAll(RegExp(r'\s+'), '').length;
+
+  /// [phoneticSliceForTargetRange]를 문장 전체가 아닌, [rangeStart,rangeEnd)를
+  /// 포함하는 개별 lexicon 구문 하나로 좁혀서 슬라이스한다.
+  ///
+  /// 문장 전체 길이 비율로 슬라이스하면, 한 글자가 발음상 2음절 이상인
+  /// 구문(예: `願` 한 글자 → `네가` 2음절)이 뒤쪽에 있을 때 그 오차가
+  /// 앞쪽 구문 경계까지 새어 들어와 옆 단어 발음 일부가 섞여 보인다
+  /// (예: 「ご搭乗」의 발음에 다음 단어 「券」의 첫 음절이 끼어듦).
+  /// 구문 단위로 좁히면 오차가 그 구문 내부로만 갇힌다.
+  static String? phoneticSliceScopedToLexiconPhrase({
+    required List<CjkPhraseLexeme> lexicon,
+    required int rangeStart,
+    required int rangeEnd,
+  }) {
+    var offset = 0;
+    for (final item in lexicon) {
+      final start = offset;
+      final end = offset + item.surface.length;
+      if (rangeStart >= start &&
+          rangeEnd <= end &&
+          item.phonetic.trim().isNotEmpty) {
+        return phoneticSliceForTargetRange(
+          targetText: item.surface,
+          pronunciation: item.phonetic,
+          rangeStart: rangeStart - start,
+          rangeEnd: rangeEnd - start,
+        );
+      }
+      offset = end;
     }
     return null;
   }

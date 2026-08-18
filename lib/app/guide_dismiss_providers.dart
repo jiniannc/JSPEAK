@@ -11,12 +11,14 @@ class GuideDismissState {
   final bool scenario;
   final bool wordSwipe;
   final bool basicSentence;
+  final bool learningHub;
   final bool loading;
 
   const GuideDismissState({
     this.scenario = false,
     this.wordSwipe = false,
     this.basicSentence = false,
+    this.learningHub = false,
     this.loading = true,
   });
 
@@ -24,12 +26,14 @@ class GuideDismissState {
     bool? scenario,
     bool? wordSwipe,
     bool? basicSentence,
+    bool? learningHub,
     bool? loading,
   }) {
     return GuideDismissState(
       scenario: scenario ?? this.scenario,
       wordSwipe: wordSwipe ?? this.wordSwipe,
       basicSentence: basicSentence ?? this.basicSentence,
+      learningHub: learningHub ?? this.learningHub,
       loading: loading ?? this.loading,
     );
   }
@@ -52,6 +56,7 @@ class GuideDismissController extends Notifier<GuideDismissState> {
       wordSwipe: map[GuideDismissLocalDataSource.keyWordSwipe] == true,
       basicSentence:
           map[GuideDismissLocalDataSource.keyBasicSentence] == true,
+      learningHub: map[GuideDismissLocalDataSource.keyLearningHub] == true,
       loading: false,
     );
   }
@@ -71,6 +76,11 @@ class GuideDismissController extends Notifier<GuideDismissState> {
     state = state.copyWith(basicSentence: true, loading: false);
   }
 
+  Future<void> dismissLearningHub() async {
+    await _local.dismiss(GuideDismissLocalDataSource.keyLearningHub);
+    state = state.copyWith(learningHub: true, loading: false);
+  }
+
   Future<void> restoreScenario() async {
     await _local.restore(GuideDismissLocalDataSource.keyScenario);
     state = state.copyWith(scenario: false, loading: false);
@@ -84,6 +94,11 @@ class GuideDismissController extends Notifier<GuideDismissState> {
   Future<void> restoreBasicSentence() async {
     await _local.restore(GuideDismissLocalDataSource.keyBasicSentence);
     state = state.copyWith(basicSentence: false, loading: false);
+  }
+
+  Future<void> restoreLearningHub() async {
+    await _local.restore(GuideDismissLocalDataSource.keyLearningHub);
+    state = state.copyWith(learningHub: false, loading: false);
   }
 }
 

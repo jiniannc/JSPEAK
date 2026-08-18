@@ -12,15 +12,23 @@ class VocabularySpanBuilder {
   /// 긴 구문 우선·겹침 없이 문장에서 사전 항목을 찾는다.
   static List<VocabularyPhraseMatch> findPhraseMatches(
     String sentence,
-    List<VocabularyEntry> entries,
-  ) {
-    final words = WordCompare.splitWords(sentence);
+    List<VocabularyEntry> entries, {
+    String language = 'English',
+  }) {
+    final words = WordCompare.splitTokens(sentence, language: language);
     if (words.isEmpty || entries.isEmpty) return [];
 
-    final sorted = [...entries]
+    final scoped = entries
+        .where((e) => e.language.isEmpty || e.language == language)
+        .toList();
+    if (scoped.isEmpty) return [];
+
+    final sorted = [...scoped]
       ..sort((a, b) {
-        final aLen = WordCompare.splitWords(a.term).length;
-        final bLen = WordCompare.splitWords(b.term).length;
+        final aLen =
+            WordCompare.splitTokens(a.term, language: language).length;
+        final bLen =
+            WordCompare.splitTokens(b.term, language: language).length;
         return bLen.compareTo(aLen);
       });
 
@@ -28,7 +36,7 @@ class VocabularySpanBuilder {
     final occupied = <int>{};
 
     for (final entry in sorted) {
-      final termWords = WordCompare.splitWords(entry.term);
+      final termWords = WordCompare.splitTokens(entry.term, language: language);
       final len = termWords.length;
       if (len == 0 || len > _maxPhraseWords) continue;
 
@@ -88,12 +96,14 @@ class VocabularySpanBuilder {
   static VocabularyEntry? lookupAt(
     VocabularyIndex index,
     List<String> words,
-    int tappedIndex,
-  ) {
+    int tappedIndex, {
+    String language = 'English',
+  }) {
     if (tappedIndex < 0 || tappedIndex >= words.length) return null;
 
-    final sentence = words.join(' ');
-    for (final match in findPhraseMatches(sentence, index.entries)) {
+    final sentence = words.join(WordCompare.tokenSeparator(language));
+    for (final match
+        in findPhraseMatches(sentence, index.entries, language: language)) {
       if (match.contains(tappedIndex)) return match.entry;
     }
     return null;

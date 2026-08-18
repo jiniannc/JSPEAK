@@ -57,6 +57,9 @@ class SentenceCard extends ConsumerWidget {
     final accent = palette?.accent ?? scheme.primary;
     final metrics = Active5Layout.of(context);
     final hasAudio = sentence.audioUrl.isNotEmpty;
+    if (hasAudio) {
+      ref.read(audioProvider.notifier).prefetch(sentence);
+    }
     final favState = ref.watch(dictionaryFavoritesResolvedProvider);
     final isFavorite = favState.contains(sentence.storageFavoriteKey);
 
@@ -98,6 +101,7 @@ class SentenceCard extends ConsumerWidget {
                           children: [
                             TappableSentenceRichText(
                               sentence: sentence.sentence,
+                              language: sentence.language,
                               style: TextStyle(
                                 fontSize: _isList
                                     ? metrics.sentenceFontSize - 1

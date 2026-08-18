@@ -6,6 +6,7 @@ class GuideDismissLocalDataSource {
   static const keyScenario = 'scenario';
   static const keyWordSwipe = 'word_swipe';
   static const keyBasicSentence = 'basic_sentence';
+  static const keyLearningHub = 'learning_hub';
 
   Box<bool>? _box;
 
@@ -34,6 +35,7 @@ class GuideDismissLocalDataSource {
       keyScenario: box.get(keyScenario) == true,
       keyWordSwipe: box.get(keyWordSwipe) == true,
       keyBasicSentence: box.get(keyBasicSentence) == true,
+      keyLearningHub: box.get(keyLearningHub) == true,
     };
   }
 }

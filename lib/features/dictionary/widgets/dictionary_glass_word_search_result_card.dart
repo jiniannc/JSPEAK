@@ -7,6 +7,7 @@ import '../../../app/dictionary_favorite_providers.dart';
 import '../../../app/tts_providers.dart';
 import '../../../core/utils/search_highlight.dart';
 import '../../../data/models/vocabulary_entry.dart';
+import '../dictionary_pronunciation_display.dart';
 import '../dictionary_item_kind_colors.dart';
 import '../../../shared/widgets/glass_surface.dart';
 import '../../dashboard/dashboard_palette.dart';
@@ -31,6 +32,8 @@ class DictionaryGlassWordSearchResultCard extends ConsumerWidget {
     final favState = ref.watch(dictionaryFavoritesResolvedProvider);
     final isFavorite = favState.contains(entry.storageFavoriteKey);
     final pronunciation = entry.pronunciation?.trim() ?? '';
+    final showPronunciation =
+        DictionaryPronunciationDisplay.showsWordPronunciation(entry);
     final categoryLabel = entry.category?.trim() ?? '';
     final radius = gridCell ? 10.0 : 12.0;
 
@@ -60,6 +63,8 @@ class DictionaryGlassWordSearchResultCard extends ConsumerWidget {
                     isSpeaking,
                     isFavorite,
                     categoryLabel,
+                    showPronunciation: showPronunciation,
+                    pronunciation: pronunciation,
                   )
                 : _buildListCell(
                     context,
@@ -67,7 +72,7 @@ class DictionaryGlassWordSearchResultCard extends ConsumerWidget {
                     isSpeaking,
                     isFavorite,
                     pronunciation,
-                    categoryLabel,
+                    categoryLabel: categoryLabel,
                   ),
           ),
         ),
@@ -80,8 +85,10 @@ class DictionaryGlassWordSearchResultCard extends ConsumerWidget {
     WidgetRef ref,
     bool isSpeaking,
     bool isFavorite,
-    String categoryLabel,
-  ) {
+    String categoryLabel, {
+    required bool showPronunciation,
+    required String pronunciation,
+  }) {
     return Padding(
       padding: const EdgeInsets.fromLTRB(8, 8, 6, 8),
       child: Column(
@@ -109,6 +116,20 @@ class DictionaryGlassWordSearchResultCard extends ConsumerWidget {
             highlightColor: SearchHighlightStyle.fill,
             highlightTextColor: SearchHighlightStyle.text,
           ),
+          if (showPronunciation) ...[
+            const SizedBox(height: 2),
+            Text(
+              pronunciation,
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+              style: TextStyle(
+                fontSize: 9.5,
+                fontWeight: FontWeight.w500,
+                color: DashboardPalette.textMuted.withValues(alpha: 0.9),
+                height: 1.15,
+              ),
+            ),
+          ],
           const SizedBox(height: 3),
           Expanded(
             child: SearchHighlightText(
@@ -172,9 +193,9 @@ class DictionaryGlassWordSearchResultCard extends ConsumerWidget {
     WidgetRef ref,
     bool isSpeaking,
     bool isFavorite,
-    String pronunciation,
-    String categoryLabel,
-  ) {
+    String pronunciation, {
+    required String categoryLabel,
+  }) {
     return Padding(
       padding: const EdgeInsets.fromLTRB(12, 10, 10, 10),
       child: Row(
@@ -207,13 +228,19 @@ class DictionaryGlassWordSearchResultCard extends ConsumerWidget {
                   const SizedBox(height: 2),
                   Text(
                     pronunciation,
-                    maxLines: 1,
+                    maxLines: 2,
                     overflow: TextOverflow.ellipsis,
                     style: TextStyle(
                       fontSize: 11.5,
-                      fontStyle: FontStyle.italic,
-                      color: DashboardPalette.textMuted.withValues(alpha: 0.85),
-                      height: 1.2,
+                      fontWeight: FontWeight.w500,
+                      fontStyle:
+                          DictionaryPronunciationDisplay.isCjkLanguage(
+                            entry.language,
+                          )
+                          ? FontStyle.normal
+                          : FontStyle.italic,
+                      color: DashboardPalette.textMuted.withValues(alpha: 0.9),
+                      height: 1.25,
                     ),
                   ),
                 ],

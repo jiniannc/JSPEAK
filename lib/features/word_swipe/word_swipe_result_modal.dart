@@ -42,7 +42,7 @@ class _WordSwipeScoreTier {
       return const _WordSwipeScoreTier(
         title: 'FIRST CLASS MASTER',
         medal: '👑',
-        message: '완벽 그 자체! 오늘 단어는 현지인 레벨 달성입니다! 🎉',
+        message: '완벽 그 자체! 오늘 어휘는 현지인 레벨 달성입니다! 🎉',
         badgeColor: Color(0xFF9333EA),
       );
     }
@@ -50,7 +50,7 @@ class _WordSwipeScoreTier {
       return const _WordSwipeScoreTier(
         title: "CAPTAIN'S CHOICE",
         medal: '💎',
-        message: '아까운 한 끝 차이! 완벽까지 딱 한 걸음 남았습니다 ⭐',
+        message: '아까운 한 끝 차이! Perfect 까지 딱 한 걸음 남았습니다 ⭐',
         badgeColor: Color(0xFF0D9488),
       );
     }
@@ -58,7 +58,7 @@ class _WordSwipeScoreTier {
       return const _WordSwipeScoreTier(
         title: 'BUSINESS CLASS',
         medal: '🥇',
-        message: '훌륭한 회화 실력! 마스터까지 얼마 안 남았어요 👏',
+        message: '훌륭합니다! 마스터까지 얼마 안 남았어요 👏',
         badgeColor: Color(0xFFCA8A04),
       );
     }
@@ -85,10 +85,8 @@ class WordSwipeResultModal extends ConsumerStatefulWidget {
   final List<WordModel> unknownWords;
   final String category;
   final String language;
-  final String? nextCategory;
   final VoidCallback onRetryLimited;
   final VoidCallback onRetryFull;
-  final VoidCallback? onNextChapter;
   final VoidCallback onExit;
 
   const WordSwipeResultModal({
@@ -97,10 +95,8 @@ class WordSwipeResultModal extends ConsumerStatefulWidget {
     required this.unknownWords,
     required this.category,
     required this.language,
-    this.nextCategory,
     required this.onRetryLimited,
     required this.onRetryFull,
-    this.onNextChapter,
     required this.onExit,
   });
 
@@ -110,10 +106,8 @@ class WordSwipeResultModal extends ConsumerStatefulWidget {
     required List<WordModel> unknownWords,
     required String category,
     required String language,
-    String? nextCategory,
     required VoidCallback onRetryLimited,
     required VoidCallback onRetryFull,
-    VoidCallback? onNextChapter,
     required VoidCallback onExit,
   }) {
     final knownCount = allWords.length - unknownWords.length;
@@ -121,6 +115,8 @@ class WordSwipeResultModal extends ConsumerStatefulWidget {
         ? 0
         : ((knownCount / allWords.length) * 100).round();
     final celebrationTier = ScoreCelebrationTier.fromPercent(successPercent);
+    var celebrationScheduled = false;
+
     return showModalBottomSheet<void>(
       context: context,
       isScrollControlled: true,
@@ -129,56 +125,50 @@ class WordSwipeResultModal extends ConsumerStatefulWidget {
       isDismissible: false,
       enableDrag: false,
       builder: (sheetContext) {
+        if (!celebrationScheduled &&
+            celebrationTier != ScoreCelebrationTier.none) {
+          celebrationScheduled = true;
+          WidgetsBinding.instance.addPostFrameCallback((_) {
+            if (sheetContext.mounted) {
+              ScoreCelebrationOverlay.showOnRoot(
+                sheetContext,
+                celebrationTier,
+              );
+            }
+          });
+        }
         final screenSize = MediaQuery.sizeOf(sheetContext);
         final sheetHeight = screenSize.height * 0.90;
         return SizedBox(
           height: screenSize.height,
           width: screenSize.width,
-          child: Stack(
-            fit: StackFit.expand,
-            children: [
-              Align(
-                alignment: Alignment.bottomCenter,
-                child: SizedBox(
-                  height: sheetHeight,
-                  child: WordSwipeResultModal(
-                    allWords: allWords,
-                    unknownWords: unknownWords,
-                    category: category,
-                    language: language,
-                    nextCategory: nextCategory,
-                    onRetryLimited: () {
-                      Navigator.of(sheetContext).pop();
-                      onRetryLimited();
-                    },
-                    onRetryFull: () {
-                      Navigator.of(sheetContext).pop();
-                      onRetryFull();
-                    },
-                    onNextChapter: onNextChapter == null
-                        ? null
-                        : () {
-                            Navigator.of(sheetContext).pop();
-                            onNextChapter();
-                          },
-                    onExit: () {
-                      Navigator.of(sheetContext).pop();
-                      onExit();
-                    },
-                  ),
-                ),
+          child: Align(
+            alignment: Alignment.bottomCenter,
+            child: SizedBox(
+              height: sheetHeight,
+              child: WordSwipeResultModal(
+                allWords: allWords,
+                unknownWords: unknownWords,
+                category: category,
+                language: language,
+                onRetryLimited: () {
+                  Navigator.of(sheetContext).pop();
+                  onRetryLimited();
+                },
+                onRetryFull: () {
+                  Navigator.of(sheetContext).pop();
+                  onRetryFull();
+                },
+                onExit: () {
+                  Navigator.of(sheetContext).pop();
+                  onExit();
+                },
               ),
-              if (celebrationTier != ScoreCelebrationTier.none)
-                Positioned.fill(
-                  child: IgnorePointer(
-                    child: ScoreCelebrationOverlay(tier: celebrationTier),
-                  ),
-                ),
-            ],
+            ),
           ),
         );
       },
-    );
+    ).whenComplete(ScoreCelebrationOverlay.dismissRoot);
   }
 
   @override
@@ -449,62 +439,27 @@ class _WordSwipeResultModalState extends ConsumerState<WordSwipeResultModal>
                             onPressed: widget.onRetryLimited,
                             label: '모르는 단어 $retryCount개만 재도전',
                           ),
-                          if (widget.onNextChapter != null) ...[
-                            const SizedBox(height: 6),
-                            TextButton(
-                              onPressed: widget.onNextChapter,
-                              style: TextButton.styleFrom(
-                                foregroundColor: _subMuted,
-                                minimumSize: const Size.fromHeight(40),
-                              ),
-                              child: Text(
-                                '다음 챕터 진행 · ${widget.nextCategory}',
-                                style: const TextStyle(
-                                  fontSize: 13,
-                                  fontWeight: FontWeight.w700,
-                                ),
-                              ),
-                            ),
-                          ],
                         ] else ...[
                           _LiquidGlassActionButton(
                             onPressed: widget.onRetryFull,
-                            label: '다시 복습하기',
+                            label: '복습',
                           ),
-                          if (widget.onNextChapter != null) ...[
-                            const SizedBox(height: 6),
-                            TextButton(
-                              onPressed: widget.onNextChapter,
-                              style: TextButton.styleFrom(
-                                foregroundColor: _subMuted,
-                                minimumSize: const Size.fromHeight(40),
-                              ),
-                              child: Text(
-                                '다음 챕터 진행 · ${widget.nextCategory}',
-                                style: const TextStyle(
-                                  fontSize: 13,
-                                  fontWeight: FontWeight.w700,
-                                ),
-                              ),
-                            ),
-                          ] else ...[
-                            const SizedBox(height: 6),
-                            TextButton(
-                              onPressed: widget.onExit,
-                              style: TextButton.styleFrom(
-                                foregroundColor: _subMuted,
-                                minimumSize: const Size.fromHeight(40),
-                              ),
-                              child: const Text(
-                                '🎉 학습 완료 · 나가기',
-                                style: TextStyle(
-                                  fontSize: 13,
-                                  fontWeight: FontWeight.w700,
-                                ),
-                              ),
-                            ),
-                          ],
                         ],
+                        const SizedBox(height: 6),
+                        TextButton(
+                          onPressed: widget.onExit,
+                          style: TextButton.styleFrom(
+                            foregroundColor: _subMuted,
+                            minimumSize: const Size.fromHeight(40),
+                          ),
+                          child: const Text(
+                            '메인 화면으로 돌아가기',
+                            style: TextStyle(
+                              fontSize: 13,
+                              fontWeight: FontWeight.w700,
+                            ),
+                          ),
+                        ),
                       ],
                     ),
                   ),

@@ -21,22 +21,6 @@ class InFlightBriefingTour {
   static List<CoachmarkTourStep> _buildSteps(LearningTourTargetKeys keys) {
     return [
       CoachmarkTourStep(
-        targetKey: keys.stampsKey,
-        title: '🏆 3단계 훈련 스탬프',
-        body: '듣기, 말하기를 완료하여 카드를 마스터해보세요.',
-        emphasisWords: const ['듣기', '말하기', '마스터'],
-        borderRadius: 14,
-        padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 6),
-      ),
-      CoachmarkTourStep(
-        targetKey: keys.bookmarkKey,
-        title: '⭐ 표현 보관함',
-        body: '중요한 문장은 별을 눌러 즐겨찾기에 추가해 보세요.',
-        emphasisWords: const ['별', '즐겨찾기'],
-        shape: CoachmarkTourFocusShape.circle,
-        padding: const EdgeInsets.all(6),
-      ),
-      CoachmarkTourStep(
         targetKey: keys.playbackDeckKey,
         title: '🔊 듣기 & 속도 조절',
         body: '재생으로 들어보고, 0.5×·0.75× 배속으로 천천히 연습해 보세요.',
@@ -57,8 +41,25 @@ class InFlightBriefingTour {
         title: '↕️ 스와이프 이동',
         body: '카드를 위아래로 스와이프하여 다음 표현으로 넘어가세요.',
         emphasisWords: const ['위아래로 스와이프'],
-        borderRadius: 26,
-        padding: const EdgeInsets.all(10),
+        borderRadius: 24,
+        padding: const EdgeInsets.fromLTRB(14, 20, 14, 16),
+        preferTooltipBelow: true,
+      ),
+      CoachmarkTourStep(
+        targetKey: keys.stampsKey,
+        title: '🏆 3단계 훈련 스탬프',
+        body: '듣기, 말하기를 완료하여 카드를 마스터해보세요.',
+        emphasisWords: const ['듣기', '말하기', '마스터'],
+        borderRadius: 14,
+        padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 6),
+      ),
+      CoachmarkTourStep(
+        targetKey: keys.bookmarkKey,
+        title: '⭐ 표현 보관함',
+        body: '중요한 문장은 별을 눌러 즐겨찾기에 추가해 보세요.',
+        emphasisWords: const ['별', '즐겨찾기'],
+        shape: CoachmarkTourFocusShape.circle,
+        padding: const EdgeInsets.all(6),
       ),
     ];
   }

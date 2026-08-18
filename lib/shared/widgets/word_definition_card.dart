@@ -3,66 +3,8 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../app/tts_providers.dart';
 import '../../data/models/vocabulary_entry.dart';
-import 'glass_surface.dart';
-import 'ipa_stress_text.dart';
 
-/// Popular(1~3) 중요도 뱃지.
-class PopularBadge extends StatelessWidget {
-  final int popular;
-  final bool important;
-
-  const PopularBadge({
-    super.key,
-    required this.popular,
-    this.important = false,
-  });
-
-  @override
-  Widget build(BuildContext context) {
-    final level = popular.clamp(0, 3);
-
-    return Row(
-      mainAxisSize: MainAxisSize.min,
-      children: [
-        if (important)
-          Container(
-            margin: const EdgeInsets.only(right: 6),
-            padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
-            decoration: BoxDecoration(
-              color: GlassSurfaceStyle.badgeBackground,
-              borderRadius: BorderRadius.circular(6),
-              border: Border.all(
-                color: GlassSurfaceStyle.dividerColor.withValues(alpha: 0.6),
-              ),
-            ),
-            child: const Text(
-              '필수',
-              style: TextStyle(
-                fontSize: 9,
-                fontWeight: FontWeight.w800,
-                color: GlassSurfaceStyle.iconColor,
-              ),
-            ),
-          ),
-        ...List.generate(3, (i) {
-          final filled = i < level;
-          return Padding(
-            padding: const EdgeInsets.only(left: 2),
-            child: Icon(
-              filled ? Icons.circle : Icons.circle_outlined,
-              size: 10,
-              color: filled
-                  ? GlassSurfaceStyle.iconColor
-                  : GlassSurfaceStyle.dividerColor,
-            ),
-          );
-        }),
-      ],
-    );
-  }
-}
-
-/// 단어 상세 미니 카드 (오버레이 팝업 본문).
+/// 단어 상세 미니 카드 — 애플 사전 스타일 오버레이 팝업 본문.
 class WordDefinitionCard extends ConsumerWidget {
   final VocabularyEntry entry;
   final VoidCallback onClose;
@@ -73,190 +15,309 @@ class WordDefinitionCard extends ConsumerWidget {
     required this.onClose,
   });
 
+  static const _slate900 = Color(0xFF0F172A);
+  static const _slate800 = Color(0xFF1E293B);
+  static const _slate500 = Color(0xFF64748B);
+  static const _tagFill = Color(0xFFE0F2FE);
+  static const _tagText = Color(0xFF0369A1);
+  static const _infoFill = Color(0xFFF1F5F9);
+  static const _infoText = Color(0xFF334155);
+  static const _chipFill = Color(0xFFE2E8F0);
+  static const _border = Color(0xFFF1F5F9);
+
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final isSpeaking = ref.watch(ttsSpeakingProvider);
-    final showIpa = entry.language == 'English' &&
-        entry.pronunciation != null &&
-        entry.pronunciation!.isNotEmpty;
+    final pronunciation = entry.pronunciation?.trim();
+    final category = entry.category?.trim();
+    final description = entry.description?.trim();
+    final synonym = entry.synonym?.trim();
+    final showInfoBox =
+        (description != null && description.isNotEmpty) ||
+        (synonym != null && synonym.isNotEmpty);
 
-    return GlassSurface(
-      radius: 16,
-      child: Column(
-        mainAxisSize: MainAxisSize.min,
-        crossAxisAlignment: CrossAxisAlignment.stretch,
-        children: [
-          Container(
-            padding: const EdgeInsets.fromLTRB(16, 10, 4, 8),
-            decoration: BoxDecoration(
-              color: Colors.white.withValues(alpha: 0.22),
-              border: Border(
-                bottom: BorderSide(
-                  color: GlassSurfaceStyle.dividerColor.withValues(alpha: 0.35),
-                ),
-              ),
-            ),
-            child: Row(
-              children: [
-                PopularBadge(
-                  popular: entry.popular,
-                  important: entry.important,
-                ),
-                const Spacer(),
-                IconButton(
-                  visualDensity: VisualDensity.compact,
-                  onPressed: onClose,
-                  icon: const Icon(
-                    Icons.close_rounded,
-                    size: 20,
-                    color: GlassSurfaceStyle.subtitleColor,
-                  ),
-                ),
-              ],
-            ),
+    return Material(
+      color: Colors.white,
+      borderRadius: BorderRadius.circular(24),
+      clipBehavior: Clip.antiAlias,
+      elevation: 0,
+      child: DecoratedBox(
+        decoration: BoxDecoration(
+          color: Colors.white,
+          borderRadius: BorderRadius.circular(24),
+          border: Border.all(
+            color: _border,
+            width: 1.0,
           ),
-          Padding(
-            padding: const EdgeInsets.fromLTRB(16, 12, 16, 14),
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text(
-                  entry.term,
-                  style: const TextStyle(
-                    fontSize: 22,
-                    fontWeight: FontWeight.w800,
-                    color: GlassSurfaceStyle.titleColor,
-                    letterSpacing: -0.3,
-                  ),
-                ),
-                if (showIpa) ...[
-                  const SizedBox(height: 6),
-                  IpaStressText(
-                    ipa: entry.pronunciation!,
-                    baseStyle: const TextStyle(
-                      fontSize: 14,
-                      height: 1.3,
-                      color: GlassSurfaceStyle.subtitleColor,
-                    ),
-                  ),
-                ] else if (entry.pronunciation != null &&
-                    entry.pronunciation!.isNotEmpty) ...[
-                  const SizedBox(height: 6),
+          boxShadow: [
+            BoxShadow(
+              color: Colors.black.withValues(alpha: 0.1),
+              blurRadius: 20,
+              spreadRadius: 0,
+              offset: const Offset(0, 8),
+            ),
+          ],
+        ),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            _PopupHeader(onClose: onClose),
+            Padding(
+              padding: const EdgeInsets.fromLTRB(20, 4, 20, 20),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  if (category != null && category.isNotEmpty) ...[
+                    _CategoryTag(label: category),
+                    const SizedBox(height: 12),
+                  ],
                   Text(
-                    entry.pronunciation!,
+                    entry.term,
                     style: const TextStyle(
-                      fontSize: 13,
-                      fontStyle: FontStyle.italic,
-                      color: GlassSurfaceStyle.subtitleColor,
+                      fontSize: 22,
+                      fontWeight: FontWeight.bold,
+                      color: _slate900,
+                      letterSpacing: -0.4,
+                      height: 1.2,
                     ),
                   ),
-                ],
-                const SizedBox(height: 10),
-                Text(
-                  entry.meaning,
-                  style: const TextStyle(
-                    fontSize: 15,
-                    fontWeight: FontWeight.w600,
-                    color: GlassSurfaceStyle.titleColor,
-                    height: 1.4,
-                  ),
-                ),
-                if (entry.description != null &&
-                    entry.description!.isNotEmpty) ...[
-                  const SizedBox(height: 8),
-                  Text(
-                    entry.description!,
-                    style: const TextStyle(
-                      fontSize: 13,
-                      color: GlassSurfaceStyle.subtitleColor,
-                      height: 1.45,
-                    ),
-                  ),
-                ],
-                if (entry.category != null) ...[
-                  const SizedBox(height: 10),
-                  Container(
-                    padding: const EdgeInsets.symmetric(
-                      horizontal: 8,
-                      vertical: 4,
-                    ),
-                    decoration: BoxDecoration(
-                      color: GlassSurfaceStyle.badgeBackground,
-                      borderRadius: BorderRadius.circular(8),
-                    ),
-                    child: Text(
-                      entry.category!,
+                  if (pronunciation != null && pronunciation.isNotEmpty) ...[
+                    const SizedBox(height: 6),
+                    Text(
+                      pronunciation,
                       style: const TextStyle(
-                        fontSize: 11,
-                        fontWeight: FontWeight.w600,
-                        color: GlassSurfaceStyle.iconColor,
+                        fontSize: 13,
+                        color: _slate500,
+                        height: 1.35,
                       ),
                     ),
-                  ),
-                ],
-                const SizedBox(height: 12),
-                SizedBox(
-                  width: double.infinity,
-                  height: 36,
-                  child: DecoratedBox(
-                    decoration: GlassSurfaceStyle.deepDarkGlassButton(
-                      radius: 18,
-                      opacity: 0.9,
+                  ],
+                  const SizedBox(height: 10),
+                  Text(
+                    entry.meaning,
+                    style: const TextStyle(
+                      fontSize: 16,
+                      fontWeight: FontWeight.w700,
+                      color: _slate800,
+                      height: 1.4,
                     ),
-                    child: Material(
-                      color: Colors.transparent,
-                      child: InkWell(
-                        borderRadius: BorderRadius.circular(18),
-                        onTap: isSpeaking
-                            ? null
-                            : () => ref
-                                .read(ttsSpeakingProvider.notifier)
-                                .speakWord(
-                                  word: entry.term,
-                                  language: entry.language,
-                                ),
-                        child: Row(
-                          mainAxisAlignment: MainAxisAlignment.center,
-                          children: [
-                            if (isSpeaking)
-                              const SizedBox(
-                                width: 14,
-                                height: 14,
-                                child: CircularProgressIndicator(
-                                  strokeWidth: 2,
-                                  color: Colors.white,
-                                ),
-                              )
-                            else
-                              const Text(
-                                '듣기 ▶',
-                                style: TextStyle(
-                                  color: Colors.white,
-                                  fontWeight: FontWeight.w700,
-                                  fontSize: 12,
-                                ),
+                  ),
+                  if (showInfoBox) ...[
+                    const SizedBox(height: 14),
+                    _InfoBox(
+                      description: description,
+                      synonym: synonym,
+                    ),
+                  ],
+                  const SizedBox(height: 16),
+                  SizedBox(
+                    width: double.infinity,
+                    height: 48,
+                    child: FilledButton(
+                      onPressed: isSpeaking
+                          ? null
+                          : () => ref
+                              .read(ttsSpeakingProvider.notifier)
+                              .speakWord(
+                                word: entry.term,
+                                language: entry.language,
                               ),
-                            if (isSpeaking) ...[
-                              const SizedBox(width: 6),
-                              const Text(
-                                '재생 중…',
-                                style: TextStyle(
-                                  color: Colors.white,
-                                  fontWeight: FontWeight.w700,
-                                  fontSize: 12,
-                                ),
-                              ),
-                            ],
-                          ],
+                      style: FilledButton.styleFrom(
+                        backgroundColor: _slate800,
+                        disabledBackgroundColor:
+                            _slate800.withValues(alpha: 0.45),
+                        foregroundColor: Colors.white,
+                        elevation: 0,
+                        shape: RoundedRectangleBorder(
+                          borderRadius: BorderRadius.circular(14),
                         ),
                       ),
+                      child: isSpeaking
+                          ? const SizedBox(
+                              width: 18,
+                              height: 18,
+                              child: CircularProgressIndicator(
+                                strokeWidth: 2,
+                                color: Colors.white,
+                              ),
+                            )
+                          : const Text(
+                              '듣기 ▶',
+                              style: TextStyle(
+                                fontSize: 14,
+                                fontWeight: FontWeight.w700,
+                                letterSpacing: -0.1,
+                              ),
+                            ),
                     ),
                   ),
-                ),
-              ],
+                ],
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+class _PopupHeader extends StatelessWidget {
+  final VoidCallback onClose;
+
+  const _PopupHeader({required this.onClose});
+
+  @override
+  Widget build(BuildContext context) {
+    return SizedBox(
+      height: 44,
+      child: Stack(
+        alignment: Alignment.center,
+        children: [
+          Container(
+            width: 36,
+            height: 4,
+            decoration: BoxDecoration(
+              color: const Color(0xFFCBD5E1),
+              borderRadius: BorderRadius.circular(99),
+            ),
+          ),
+          Positioned(
+            top: 4,
+            right: 4,
+            child: IconButton(
+              visualDensity: VisualDensity.compact,
+              padding: EdgeInsets.zero,
+              constraints: const BoxConstraints(minWidth: 36, minHeight: 36),
+              onPressed: onClose,
+              icon: const Icon(
+                Icons.close_rounded,
+                size: 20,
+                color: WordDefinitionCard._slate500,
+              ),
             ),
           ),
         ],
+      ),
+    );
+  }
+}
+
+class _CategoryTag extends StatelessWidget {
+  final String label;
+
+  const _CategoryTag({required this.label});
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+      decoration: BoxDecoration(
+        color: WordDefinitionCard._tagFill,
+        borderRadius: BorderRadius.circular(8),
+      ),
+      child: Text(
+        label,
+        style: const TextStyle(
+          fontSize: 11,
+          fontWeight: FontWeight.w600,
+          color: WordDefinitionCard._tagText,
+          height: 1.2,
+        ),
+      ),
+    );
+  }
+}
+
+class _InfoBox extends StatelessWidget {
+  final String? description;
+  final String? synonym;
+
+  const _InfoBox({
+    this.description,
+    this.synonym,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      width: double.infinity,
+      padding: const EdgeInsets.fromLTRB(14, 12, 14, 12),
+      decoration: BoxDecoration(
+        color: WordDefinitionCard._infoFill,
+        borderRadius: BorderRadius.circular(12),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          if (description != null && description!.isNotEmpty)
+            Text(
+              description!,
+              style: const TextStyle(
+                fontSize: 13,
+                color: WordDefinitionCard._infoText,
+                height: 1.4,
+              ),
+            ),
+          if (synonym != null && synonym!.isNotEmpty) ...[
+            if (description != null && description!.isNotEmpty)
+              const SizedBox(height: 10),
+            Row(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                const Text(
+                  '유의어',
+                  style: TextStyle(
+                    fontSize: 11,
+                    fontWeight: FontWeight.w600,
+                    color: WordDefinitionCard._slate500,
+                    height: 1.3,
+                  ),
+                ),
+                const SizedBox(width: 8),
+                Flexible(
+                  child: Wrap(
+                    spacing: 6,
+                    runSpacing: 6,
+                    children: [
+                      for (final word in synonym!
+                          .split(RegExp(r'[,;/|]'))
+                          .map((s) => s.trim())
+                          .where((s) => s.isNotEmpty))
+                        _SynonymChip(label: word),
+                    ],
+                  ),
+                ),
+              ],
+            ),
+          ],
+        ],
+      ),
+    );
+  }
+}
+
+class _SynonymChip extends StatelessWidget {
+  final String label;
+
+  const _SynonymChip({required this.label});
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
+      decoration: BoxDecoration(
+        color: WordDefinitionCard._chipFill,
+        borderRadius: BorderRadius.circular(8),
+      ),
+      child: Text(
+        label,
+        style: const TextStyle(
+          fontSize: 12,
+          fontWeight: FontWeight.w600,
+          color: WordDefinitionCard._slate800,
+          height: 1.2,
+        ),
       ),
     );
   }

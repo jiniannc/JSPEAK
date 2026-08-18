@@ -20,6 +20,8 @@ dependencies:
   hive_flutter: ^1.1.0
   intl: ^0.20.3
   just_audio: ^0.10.6
+  lottie: ^3.3.3
+  lpinyin: ^2.0.3
   path_provider: ^2.1.6
   speech_to_text: ^7.4.0
 
@@ -32,8 +34,10 @@ flutter:
   uses-material-design: true
   assets:
     - assets/sample_content.json
-    - assets/images/jinair_logo1.svg
-    - assets/images/jinair_logo2.svg
+    - assets/images/
+    - assets/lottie/touch1.json
+    - assets/lottie/touch2.json
+    - assets/lottie/touch3.json
   fonts:
     - family: SUIT
       fonts:

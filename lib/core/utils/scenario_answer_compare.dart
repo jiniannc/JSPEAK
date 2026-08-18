@@ -1,6 +1,9 @@
 import 'answer_blank_hints.dart';
 import 'cjk_stt_segments.dart';
+import 'japanese_number_normalizer.dart';
+import 'japanese_reading_fold.dart';
 import 'japanese_stt_fix_map.dart';
+import 'english_pronunciation_tokens.dart';
 import 'word_compare.dart';
 
 /// 시나리오 STT 답안 정오 판별·유사도·글자 정렬.
@@ -69,9 +72,32 @@ class ScenarioAnswerCompare {
     return JapaneseSttFixMap.apply(spoken);
   }
 
-  static String _spokenForCompare(String spoken, String language) {
-    final preprocessed = preprocessSpoken(spoken, language: language);
-    return CjkSttSegments.extractTargetScript(preprocessed, language);
+  static String _spokenForCompare(
+    String spoken,
+    String language, {
+    String? correct,
+  }) {
+    var preprocessed = preprocessSpoken(spoken, language: language);
+    if (language == 'Japanese') {
+      preprocessed = JapaneseNumberNormalizer.expandDigitsInText(preprocessed);
+    }
+    final extracted = CjkSttSegments.extractTargetScript(
+      preprocessed,
+      language,
+      referenceText: correct,
+    );
+    if (language == 'Japanese' &&
+        correct != null &&
+        correct.trim().isNotEmpty) {
+      final targetExpanded = JapaneseNumberNormalizer.expandDigitsInText(correct);
+      final targetScript = CjkSttSegments.extractTargetScript(
+        targetExpanded,
+        language,
+        referenceText: correct,
+      );
+      return JapaneseReadingFold.fold(extracted, targetScript);
+    }
+    return extracted;
   }
 
   static bool _charsEquivalent(String a, String b, String? language) {
@@ -102,7 +128,7 @@ class ScenarioAnswerCompare {
       );
     }
 
-    final adjustedSpoken = _spokenForCompare(spoken, language);
+    final adjustedSpoken = _spokenForCompare(spoken, language, correct: correct);
     final normSpoken = normalize(adjustedSpoken, language: language);
     final normCorrect = normalize(correct, language: language);
     if (normSpoken.isEmpty || normCorrect.isEmpty) return false;
@@ -152,7 +178,7 @@ class ScenarioAnswerCompare {
     required String language,
   }) {
     final normSpoken = normalize(
-      _spokenForCompare(spoken, language),
+      _spokenForCompare(spoken, language, correct: correct),
       language: language,
     );
     final normCorrect = normalize(correct, language: language);
@@ -211,7 +237,7 @@ class ScenarioAnswerCompare {
         language: language,
       );
     }
-    final adjustedSpoken = _spokenForCompare(spoken, language);
+    final adjustedSpoken = _spokenForCompare(spoken, language, correct: correct);
     final spokenLetters = AnswerBlankHints.matchLetters(
       adjustedSpoken,
       language: language,
@@ -374,7 +400,7 @@ class ScenarioAnswerCompare {
     required String spoken,
     required String language,
   }) {
-    final adjustedSpoken = _spokenForCompare(spoken, language);
+    final adjustedSpoken = _spokenForCompare(spoken, language, correct: correct);
     final displayChars = correct.split('');
     if (displayChars.isEmpty) return [];
 
@@ -415,7 +441,7 @@ class ScenarioAnswerCompare {
     final rawChars = spoken.split('');
     if (rawChars.isEmpty) return [];
 
-    final adjustedSpoken = _spokenForCompare(spoken, language);
+    final adjustedSpoken = _spokenForCompare(spoken, language, correct: correct);
     final adjChars = adjustedSpoken.split('');
     if (adjChars.isEmpty) return List<bool>.filled(rawChars.length, false);
 
@@ -662,16 +688,22 @@ class ScenarioAnswerCompare {
   }
 
   static List<bool> _englishWordFlags(String correct, String spoken) {
-    final correctWords = WordCompare.splitWords(correct);
-    final spokenWords = WordCompare.splitWords(spoken);
+    final correctWords = EnglishPronunciationTokens.mergeTokens(
+      WordCompare.splitWords(correct),
+    );
+    final spokenWords = EnglishPronunciationTokens.mergeTokens(
+      WordCompare.splitWords(spoken),
+    );
     if (correctWords.isEmpty) return [];
 
     final flags = List<bool>.filled(correctWords.length, false);
     var si = 0;
     for (var ci = 0; ci < correctWords.length; ci++) {
       while (si < spokenWords.length) {
-        if (WordCompare.normalize(spokenWords[si]) ==
-            WordCompare.normalize(correctWords[ci])) {
+        if (EnglishPronunciationTokens.areEquivalent(
+          spokenWords[si],
+          correctWords[ci],
+        )) {
           flags[ci] = true;
           si++;
           break;

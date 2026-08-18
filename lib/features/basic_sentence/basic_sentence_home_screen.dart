@@ -10,9 +10,12 @@ import '../../app/sentence_progress_providers.dart';
 import '../../core/config/active5_layout.dart';
 import '../../core/constants/labels.dart';
 import '../../core/theme/language_palette.dart';
+import '../../data/models/content_chapter.dart';
 import '../../data/repositories/sentence_progress_repository.dart';
 import '../../features/dashboard/dashboard_palette.dart';
+import '../shell/floating_island_nav_bar.dart';
 import '../../features/learning/widgets/mode_guide_cards.dart';
+import '../../shared/widgets/learning_chapter_card_shell.dart';
 import 'widgets/achievement_stamps.dart';
 
 /// 기본 문장 학습 홈 — 글래스 진도 + 주제 카드 + 3단계 스탬프.
@@ -34,7 +37,7 @@ class BasicSentenceHomeScreen extends ConsumerWidget {
           error: (e, _) => Center(child: Text('오류: $e')),
           data: (content) {
             final bundle = content.bundle;
-            final categories = bundle.categoriesFor(language);
+            final chapters = bundle.sentenceChaptersFor(language);
             final percent = repo.languageProgressPercent(
               language: language,
               bundle: bundle,
@@ -85,7 +88,7 @@ class BasicSentenceHomeScreen extends ConsumerWidget {
                       ),
                     ),
                   Expanded(
-                    child: categories.isEmpty
+                    child: chapters.isEmpty
                         ? const Center(
                             child: Text(
                               '이 언어의 문장 데이터가 아직 없어요.\n콘텐츠 동기화 후 다시 시도해 주세요.',
@@ -101,9 +104,9 @@ class BasicSentenceHomeScreen extends ConsumerWidget {
                               inset,
                               18,
                               inset,
-                              28 + MediaQuery.paddingOf(context).bottom,
+                              28 + FloatingIslandNavBar.scrollBottomPadding(context),
                             ),
-                            itemCount: categories.length + 1,
+                            itemCount: chapters.length + 1,
                             separatorBuilder: (context, index) {
                               if (index == 0) {
                                 return const SizedBox(height: 12);
@@ -137,7 +140,8 @@ class BasicSentenceHomeScreen extends ConsumerWidget {
                                   ],
                                 );
                               }
-                              final category = categories[index - 1];
+                              final chapter = chapters[index - 1];
+                              final category = chapter.name;
                               final sentences =
                                   bundle.sentencesFor(language, category);
                               final summary = repo.categorySummary(
@@ -145,7 +149,7 @@ class BasicSentenceHomeScreen extends ConsumerWidget {
                                 stats: progressState.stats,
                               );
                               return _SentenceCategoryCard(
-                                category: category,
+                                chapter: chapter,
                                 summary: summary,
                                 onTap: () {
                                   if (sentences.isEmpty) {
@@ -463,12 +467,12 @@ class _StampCountChip extends StatelessWidget {
 }
 
 class _SentenceCategoryCard extends StatelessWidget {
-  final String category;
+  final ContentChapter chapter;
   final SentenceCategorySummary summary;
   final VoidCallback onTap;
 
   const _SentenceCategoryCard({
-    required this.category,
+    required this.chapter,
     required this.summary,
     required this.onTap,
   });
@@ -480,178 +484,59 @@ class _SentenceCategoryCard extends StatelessWidget {
         summary.attemptedCount > 0 ||
         summary.masteredCount > 0;
     final total = summary.total;
-    final palette = context.languagePalette ?? LanguagePalette.english;
 
-    final BoxDecoration decoration;
-    final double opacity;
-
-    if (mastered) {
-      opacity = 1;
-      decoration = BoxDecoration(
-        borderRadius: BorderRadius.circular(16),
-        border: Border.all(
-          color: const Color(0xFFFFC107).withValues(alpha: 0.55),
-          width: 1.4,
-        ),
-        gradient: LinearGradient(
-          begin: Alignment.topLeft,
-          end: Alignment.bottomRight,
-          colors: [
-            const Color(0xFFFFF8E1).withValues(alpha: 0.9),
-            Colors.white.withValues(alpha: 0.7),
-            const Color(0xFFFFECB3).withValues(alpha: 0.4),
-          ],
-        ),
-        boxShadow: [
-          BoxShadow(
-            color: const Color(0xFFFF9800).withValues(alpha: 0.14),
-            blurRadius: 12,
-            offset: const Offset(0, 4),
-          ),
-        ],
-      );
-    } else if (started) {
-      opacity = 1;
-      decoration = palette.glassCardDecoration(
-        radius: 16,
-        fillAlpha: 0.62,
-        borderAlpha: 0.48,
-        shadows: [
-          BoxShadow(
-            color: Colors.black.withValues(alpha: 0.05),
-            blurRadius: 14,
-            offset: const Offset(0, 5),
-          ),
-        ],
-      );
-    } else {
-      opacity = 0.8;
-      decoration = palette.glassCardDecoration(
-        radius: 16,
-        fillAlpha: 0.45,
-        borderAlpha: 0.38,
-        shadows: const [],
-      );
-    }
-
-    return Opacity(
-      opacity: opacity,
-      child: ClipRRect(
-        borderRadius: BorderRadius.circular(16),
-        child: BackdropFilter(
-          filter: ImageFilter.blur(sigmaX: 10, sigmaY: 10),
-          child: Material(
-            color: Colors.transparent,
-            child: InkWell(
-              onTap: onTap,
-              borderRadius: BorderRadius.circular(16),
-              child: Ink(
-                decoration: decoration,
-                child: Padding(
-                  padding: const EdgeInsets.fromLTRB(14, 13, 10, 13),
-                  child: Row(
-                crossAxisAlignment: CrossAxisAlignment.center,
-                children: [
-                  Expanded(
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        Row(
-                          children: [
-                            Expanded(
-                              child: Text(
-                                category,
-                                style: const TextStyle(
-                                  fontSize: 15.5,
-                                  fontWeight: FontWeight.w800,
-                                  color: DashboardPalette.navy,
-                                ),
-                              ),
-                            ),
-                            if (mastered) ...[
-                              Container(
-                                padding: const EdgeInsets.symmetric(
-                                  horizontal: 8,
-                                  vertical: 3,
-                                ),
-                                decoration: BoxDecoration(
-                                  color: const Color(0xFFFFC107)
-                                      .withValues(alpha: 0.22),
-                                  borderRadius: BorderRadius.circular(20),
-                                ),
-                                child: const Text(
-                                  'MASTER',
-                                  style: TextStyle(
-                                    fontSize: 10,
-                                    fontWeight: FontWeight.w900,
-                                    letterSpacing: 0.4,
-                                    color: Color(0xFFF57F17),
-                                  ),
-                                ),
-                              ),
-                              const SizedBox(width: 6),
-                            ],
-                          ],
-                        ),
-                        const SizedBox(height: 5),
-                        Text(
-                          mastered
-                              ? '이 챕터의 문장 $total개를 모두 마스터했어요!'
-                              : started
-                                  ? '읽기 ${summary.readCount} · 말하기 ${summary.attemptedCount} · 마스터 ${summary.masteredCount} / 전체 $total개'
-                                  : '문장 $total개 · 아직 시작 전',
-                          style: TextStyle(
-                            fontSize: 12,
-                            fontWeight: FontWeight.w500,
-                            color: mastered
-                                ? const Color(0xFFF57F17)
-                                : DashboardPalette.textMuted,
-                          ),
-                        ),
-                      ],
-                    ),
-                  ),
-                  const SizedBox(width: 8),
-                  AchievementStampCluster(
-                    read: summary.allRead,
-                    attempted: summary.allAttempted,
-                    mastered: summary.allMastered,
-                  ),
-                  const SizedBox(width: 2),
-                  if (mastered)
-                    const Padding(
-                      padding: EdgeInsets.only(left: 2),
-                      child: Column(
-                        mainAxisSize: MainAxisSize.min,
-                        children: [
-                          Icon(
-                            Icons.emoji_events_rounded,
-                            color: Color(0xFFF57F17),
-                            size: 22,
-                          ),
-                          Text(
-                            '완료!',
-                            style: TextStyle(
-                              fontSize: 9,
-                              fontWeight: FontWeight.w800,
-                              color: Color(0xFFF57F17),
-                            ),
-                          ),
-                        ],
-                      ),
-                    )
-                  else
-                    Icon(
-                      Icons.chevron_right_rounded,
-                      color: DashboardPalette.textMuted.withValues(alpha: 0.45),
-                    ),
-                ],
+    return LearningChapterCardShell(
+      chapter: chapter,
+      onTap: onTap,
+      thumbnailFallback: Icons.record_voice_over_rounded,
+      headerTrailing: mastered
+          ? const LearningChapterMasterBadge()
+          : Icon(
+              Icons.chevron_right_rounded,
+              color: DashboardPalette.textMuted.withValues(
+                alpha: started ? 0.55 : 0.35,
               ),
             ),
+      content: Row(
+        crossAxisAlignment: CrossAxisAlignment.center,
+        children: [
+          Expanded(
+            child: LearningChapterSubtitle(
+              mastered: mastered,
+              text: mastered
+                  ? '이 챕터의 문장 $total개를 모두 마스터했어요!'
+                  : started
+                      ? '읽기 ${summary.readCount} · 말하기 ${summary.attemptedCount} · 마스터 ${summary.masteredCount} / 전체 $total개'
+                      : '문장 $total개 · 아직 시작 전',
+            ),
           ),
-        ),
-        ),
-        ),
+          AchievementStampCluster(
+            read: summary.allRead,
+            attempted: summary.allAttempted,
+            mastered: summary.allMastered,
+          ),
+          if (mastered) ...[
+            const SizedBox(width: 6),
+            const Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Icon(
+                  Icons.emoji_events_rounded,
+                  color: Color(0xFFF57F17),
+                  size: 22,
+                ),
+                Text(
+                  '완료!',
+                  style: TextStyle(
+                    fontSize: 9,
+                    fontWeight: FontWeight.w800,
+                    color: Color(0xFFF57F17),
+                  ),
+                ),
+              ],
+            ),
+          ],
+        ],
       ),
     );
   }

@@ -17,8 +17,14 @@ VocabularyEntry? lookupWordInSentence({
   required VocabularyIndex? index,
   required String sentence,
   required int wordIndex,
+  String language = 'English',
 }) {
   if (index == null || index.isEmpty) return null;
-  final words = WordCompare.splitWords(sentence);
-  return VocabularySpanBuilder.lookupAt(index, words, wordIndex);
+  final words = WordCompare.splitTokens(sentence, language: language);
+  return VocabularySpanBuilder.lookupAt(
+    index,
+    words,
+    wordIndex,
+    language: language,
+  );
 }

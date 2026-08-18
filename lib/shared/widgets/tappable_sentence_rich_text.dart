@@ -26,28 +26,35 @@ List<TextSpan> buildTappableWordSpans({
   VocabularyIndex? vocabulary,
   GlobalKey? anchorKey,
   BuildContext? context,
+  String language = 'English',
 }) {
-  final words = WordCompare.splitWords(sentence);
+  final words = WordCompare.splitTokens(sentence, language: language);
   if (words.isEmpty) {
     return [TextSpan(text: sentence, style: baseStyle)];
   }
 
   final matches = vocabulary == null
       ? <VocabularyPhraseMatch>[]
-      : VocabularySpanBuilder.findPhraseMatches(sentence, vocabulary.entries);
+      : VocabularySpanBuilder.findPhraseMatches(
+          sentence,
+          vocabulary.entries,
+          language: language,
+        );
   final indexMap = VocabularySpanBuilder.indexMap(matches);
   final spans = <TextSpan>[];
+  final separator = WordCompare.tokenSeparator(language);
 
   var i = 0;
   while (i < words.length) {
-    if (i > 0) {
-      spans.add(TextSpan(text: ' ', style: baseStyle));
+    if (i > 0 && separator.isNotEmpty) {
+      spans.add(TextSpan(text: separator, style: baseStyle));
     }
 
     final match = indexMap[i];
     if (match != null && match.startIndex == i) {
-      final phraseText =
-          words.sublist(match.startIndex, match.endIndex + 1).join(' ');
+      final phraseText = words
+          .sublist(match.startIndex, match.endIndex + 1)
+          .join(separator);
 
       TapGestureRecognizer? recognizer;
       if (context != null && anchorKey != null) {
@@ -65,6 +72,7 @@ List<TextSpan> buildTappableWordSpans({
             wordEndIndex: end,
             textStyle: baseStyle,
             entry: entry,
+            language: language,
           );
         };
       }
@@ -90,6 +98,7 @@ List<TextSpan> buildTappableWordSpans({
 /// 문장의 시트 등록 단어만 탭하면 미니 팝업을 띄우는 [RichText].
 class TappableSentenceRichText extends ConsumerStatefulWidget {
   final String sentence;
+  final String language;
   final TextStyle style;
   final TextAlign textAlign;
   final int? maxLines;
@@ -98,6 +107,7 @@ class TappableSentenceRichText extends ConsumerStatefulWidget {
   const TappableSentenceRichText({
     super.key,
     required this.sentence,
+    this.language = 'English',
     required this.style,
     this.textAlign = TextAlign.start,
     this.maxLines,
@@ -146,6 +156,7 @@ class _TappableSentenceRichTextState
       vocabulary: vocabulary,
       anchorKey: _richTextKey,
       context: context,
+      language: widget.language,
     );
 
     return RichText(

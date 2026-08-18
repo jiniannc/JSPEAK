@@ -53,9 +53,16 @@ class WordMatch {
     final d = cleanToken(dictionaryWord);
     if (s.isEmpty || d.isEmpty) return false;
     if (s == d) return true;
+
+    // CJK는 복수형·괄호 정규화 없이 글자 일치만 본다.
+    if (_containsCjk(s) || _containsCjk(d)) return false;
+
     if (singularize(s) == d) return true;
     if (s == singularize(d)) return true;
     if (s == '${d}s' || s == '${d}es') return true;
     return false;
   }
+
+  static bool _containsCjk(String value) =>
+      RegExp(r'[\u3040-\u30FF\u4E00-\u9FFF\u3400-\u4DBF]').hasMatch(value);
 }

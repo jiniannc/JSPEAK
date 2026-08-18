@@ -9,6 +9,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../app/providers.dart';
 import '../../app/tts_providers.dart';
+import '../../core/utils/cjk_pronunciation_phrase.dart';
 import '../../data/models/sentence.dart';
 import 'pronunciation_inline_diff_text.dart';
 import 'score_celebration_overlay.dart';
@@ -114,6 +115,7 @@ class PronunciationResultSheet extends ConsumerStatefulWidget {
         ? ScoreCelebrationTier.none
         : _celebrationTierFor(accuracy);
 
+    var celebrationScheduled = false;
     return showModalBottomSheet<void>(
       context: context,
       isScrollControlled: true,
@@ -122,51 +124,53 @@ class PronunciationResultSheet extends ConsumerStatefulWidget {
       isDismissible: true,
       enableDrag: true,
       builder: (sheetContext) {
+        // 시트 라우트보다 위에 올라가도록 시트 빌드 이후에 루트 Overlay에 삽입.
+        if (!celebrationScheduled &&
+            celebrationTier != ScoreCelebrationTier.none) {
+          celebrationScheduled = true;
+          WidgetsBinding.instance.addPostFrameCallback((_) {
+            if (sheetContext.mounted) {
+              ScoreCelebrationOverlay.showOnRoot(
+                sheetContext,
+                celebrationTier,
+              );
+            }
+          });
+        }
         final screenSize = MediaQuery.sizeOf(sheetContext);
         return SizedBox(
           height: screenSize.height,
           width: screenSize.width,
-          child: Stack(
-            fit: StackFit.expand,
-            children: [
-              if (celebrationTier != ScoreCelebrationTier.none && !kIsWeb)
-                Positioned.fill(
-                  child: IgnorePointer(
-                    child: ScoreCelebrationOverlay(tier: celebrationTier),
-                  ),
-                ),
-              Align(
-                alignment: Alignment.bottomCenter,
-                child: SizedBox(
-                  height: screenSize.height * 0.6,
-                  width: screenSize.width,
-                  child: PronunciationResultSheet(
-                    sentence: sentence,
-                    accuracy: accuracy,
-                    isNoAudioDetected: isNoAudioDetected,
-                    spokenText: spokenText,
-                    onRetry: () {
-                      Navigator.of(sheetContext).pop();
-                      onRetry();
-                    },
-                    onNextSentence: onNextSentence == null
-                        ? null
-                        : () {
-                            Navigator.of(sheetContext).pop();
-                            onNextSentence();
-                          },
-                    onClose: () {
-                      Navigator.of(sheetContext).pop();
-                      onClose?.call();
-                    },
-                  ),
-                ),
+          child: Align(
+            alignment: Alignment.bottomCenter,
+            child: SizedBox(
+              height: screenSize.height * 0.75,
+              width: screenSize.width,
+              child: PronunciationResultSheet(
+                sentence: sentence,
+                accuracy: accuracy,
+                isNoAudioDetected: isNoAudioDetected,
+                spokenText: spokenText,
+                onRetry: () {
+                  Navigator.of(sheetContext).pop();
+                  onRetry();
+                },
+                onNextSentence: onNextSentence == null
+                    ? null
+                    : () {
+                        Navigator.of(sheetContext).pop();
+                        onNextSentence();
+                      },
+                onClose: () {
+                  Navigator.of(sheetContext).pop();
+                  onClose?.call();
+                },
               ),
-            ],
+            ),
           ),
         );
       },
-    );
+    ).whenComplete(ScoreCelebrationOverlay.dismissRoot);
   }
 
   @override
@@ -208,14 +212,15 @@ class _PronunciationResultSheetState extends ConsumerState<PronunciationResultSh
     if (widget.isNoAudioDetected || widget.spokenText.trim().isEmpty) {
       return null;
     }
-    // 점수와 무관하게 텍스트 diff가 있으면 항상 칩 표시.
+
+    // 100점 — 빨간 교정 칩 없음. 텍스트 완벽 일치일 때만 Match 칩 표시.
+    if (widget.accuracy >= 100) {
+      return _isTextPerfectMatch ? _PronunciationAnalysisKind.wordDiff : null;
+    }
+
     if (_hasWordDiff) return _PronunciationAnalysisKind.wordDiff;
     if (_isTextPerfectMatch && widget.accuracy < 100) {
       return _PronunciationAnalysisKind.acousticMismatch;
-    }
-    // 100점·텍스트 완벽 일치 — 말한 문장(전부 Match 칩)을 하단에 표시.
-    if (_isTextPerfectMatch && widget.accuracy >= 100) {
-      return _PronunciationAnalysisKind.wordDiff;
     }
     if (pronunciationHasPartialMatch(
           targetText: widget.sentence.sentence,
@@ -293,16 +298,30 @@ class _PronunciationResultSheetState extends ConsumerState<PronunciationResultSh
 
     return _WebSafeGlass(
       borderRadius: const BorderRadius.vertical(top: Radius.circular(28)),
-      blurSigma: 16,
+      blurSigma: 20,
+      enableWebBlur: true,
       decoration: BoxDecoration(
-        color: Colors.white.withValues(alpha: kIsWeb ? 0.97 : 0.92),
+        gradient: LinearGradient(
+          begin: Alignment.topCenter,
+          end: Alignment.bottomCenter,
+          colors: [
+            Colors.white.withValues(alpha: 0.88),
+            Colors.white.withValues(alpha: 0.76),
+          ],
+        ),
         borderRadius: const BorderRadius.vertical(top: Radius.circular(28)),
-        border: Border(
-          top: BorderSide(color: Colors.white.withValues(alpha: 0.85)),
+        border: Border.all(
+          color: Colors.white.withValues(alpha: 0.72),
+          width: 1,
         ),
         boxShadow: [
           BoxShadow(
-            color: Colors.black.withValues(alpha: 0.10),
+            color: Colors.white.withValues(alpha: 0.28),
+            blurRadius: 18,
+            offset: const Offset(0, -4),
+          ),
+          BoxShadow(
+            color: Colors.black.withValues(alpha: 0.08),
             blurRadius: 28,
             offset: const Offset(0, -6),
           ),
@@ -311,6 +330,26 @@ class _PronunciationResultSheetState extends ConsumerState<PronunciationResultSh
       child: SizedBox.expand(
         child: Stack(
           children: [
+            // 상단 유리 하이라이트 — borderRadius+비균일 border 조합 크래시 회피.
+            Positioned(
+              top: 0,
+              left: 20,
+              right: 20,
+              child: IgnorePointer(
+                child: Container(
+                  height: 1.2,
+                  decoration: BoxDecoration(
+                    gradient: LinearGradient(
+                      colors: [
+                        Colors.white.withValues(alpha: 0.0),
+                        Colors.white.withValues(alpha: 0.95),
+                        Colors.white.withValues(alpha: 0.0),
+                      ],
+                    ),
+                  ),
+                ),
+              ),
+            ),
             if (!kIsWeb)
               Positioned.fill(
                 child: IgnorePointer(
@@ -374,6 +413,9 @@ class _PronunciationResultSheetState extends ConsumerState<PronunciationResultSh
                                   _PronunciationAnalysisKind.acousticMismatch =>
                                     _AcousticMismatchCard(
                                       accuracy: widget.accuracy,
+                                      sentence: widget.sentence.sentence,
+                                      spokenText: widget.spokenText,
+                                      language: _language,
                                     ),
                                   _PronunciationAnalysisKind.noWordsRecognized =>
                                     const _NoWordsRecognizedCard(),
@@ -552,14 +594,36 @@ class _NoWordsRecognizedCard extends StatelessWidget {
   }
 }
 
-/// STT 텍스트는 일치하지만 유사도·억양 점수만 미세 감점된 경우.
+/// STT 텍스트(단어·구문 diff)는 일치하지만 글자 수 기반 점수만 미세
+/// 감점된 경우 — 실제로는 억양·속도를 분석하지 않으므로, 점수가 깎인
+/// 진짜 근거(초과 인식된 글자)를 보여준다.
 class _AcousticMismatchCard extends StatelessWidget {
   final int accuracy;
+  final String sentence;
+  final String spokenText;
+  final String language;
 
-  const _AcousticMismatchCard({required this.accuracy});
+  const _AcousticMismatchCard({
+    required this.accuracy,
+    required this.sentence,
+    required this.spokenText,
+    required this.language,
+  });
+
+  List<String> get _extraChars {
+    if (language != 'Japanese' && language != 'Chinese') return const [];
+    return CjkPronunciationPhraseBuilder.extraRecognizedChars(
+      sentence: sentence,
+      spokenText: spokenText,
+      language: language,
+    );
+  }
 
   @override
   Widget build(BuildContext context) {
+    final extraChars = _extraChars;
+    final hasReason = extraChars.isNotEmpty;
+
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
@@ -586,7 +650,7 @@ class _AcousticMismatchCard extends StatelessWidget {
             child: Padding(
               padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
               child: Text(
-                '✨ 텍스트 완벽 일치! (원어민 억양과 속도에 $accuracy% 일치해요)',
+                '✨ 텍스트·단어는 완벽 일치! (글자 수 기준 $accuracy%)',
                 textAlign: TextAlign.center,
                 style: const TextStyle(
                   fontSize: 12,
@@ -606,17 +670,37 @@ class _AcousticMismatchCard extends StatelessWidget {
             color: const Color(0xFF10B981).withValues(alpha: kIsWeb ? 0.12 : 0.08),
             borderRadius: BorderRadius.circular(16),
           ),
-          child: const Padding(
-            padding: EdgeInsets.symmetric(horizontal: 20, vertical: 20),
-            child: Text(
-              '문맥과 단어는 정확해요! 조금 더 자연스러운 억양으로 말해 보세요.',
-              textAlign: TextAlign.center,
-              style: TextStyle(
-                fontSize: 14,
-                fontWeight: FontWeight.w600,
-                color: Color(0xFF047857),
-                height: 1.5,
-              ),
+          child: Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 20),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
+                Text(
+                  hasReason
+                      ? '문맥과 단어는 정확해요! 다만 마이크에 여분의 소리가 살짝 더 잡혔어요.'
+                      : '문맥과 단어는 정확해요! 발음 인식 결과가 정답보다 아주 살짝 더 길게 잡혔어요.',
+                  textAlign: TextAlign.center,
+                  style: const TextStyle(
+                    fontSize: 14,
+                    fontWeight: FontWeight.w600,
+                    color: Color(0xFF047857),
+                    height: 1.5,
+                  ),
+                ),
+                if (hasReason) ...[
+                  const SizedBox(height: 10),
+                  Text(
+                    '초과 인식된 소리: ${extraChars.join(' ')}',
+                    textAlign: TextAlign.center,
+                    style: const TextStyle(
+                      fontSize: 13,
+                      fontWeight: FontWeight.w700,
+                      color: Color(0xFF065F46),
+                      height: 1.4,
+                    ),
+                  ),
+                ],
+              ],
             ),
           ),
         ),
@@ -922,6 +1006,11 @@ class _ResultActionRow extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    // 마지막 문장 등 다음이 없으면 '다음 문장'은 숨기고 다시 시도만 노출.
+    if (onNextSentence == null) {
+      return _PrimaryRetryButton(onPressed: onRetry);
+    }
+
     return Row(
       children: [
         Expanded(
@@ -1108,12 +1197,14 @@ class _WebSafeGlass extends StatelessWidget {
   final BoxDecoration decoration;
   final Widget child;
   final double blurSigma;
+  final bool enableWebBlur;
 
   const _WebSafeGlass({
     this.borderRadius,
     required this.decoration,
     required this.child,
     this.blurSigma = 10,
+    this.enableWebBlur = false,
   });
 
   @override
@@ -1123,15 +1214,17 @@ class _WebSafeGlass extends StatelessWidget {
       child: child,
     );
 
+    final useBlur = !kIsWeb || enableWebBlur;
+
     if (borderRadius == null) {
-      if (kIsWeb) return panel;
+      if (!useBlur) return panel;
       return BackdropFilter(
         filter: ImageFilter.blur(sigmaX: blurSigma, sigmaY: blurSigma),
         child: panel,
       );
     }
 
-    if (kIsWeb) {
+    if (!useBlur) {
       return ClipRRect(
         borderRadius: borderRadius!,
         child: panel,

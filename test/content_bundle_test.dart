@@ -98,9 +98,104 @@ void main() {
       expect(bundle.languages, ['English', 'Japanese']);
     });
 
-    test('categoriesFor는 해당 언어에 있는 카테고리만 시트 순서로 반환한다', () {
+    test('categoriesFor는 해당 언어에 있는 카테고리만 chapter_no 순으로 반환한다', () {
       expect(bundle.categoriesFor('English'), ['탑승 안내', '식사 서비스']);
       expect(bundle.categoriesFor('Japanese'), ['탑승 안내']);
+    });
+
+    test('sentenceChaptersFor는 chapter_no 순으로 정렬한다', () {
+      final sorted = ContentBundle.fromJson({
+        'categoryOrder': ['유상 판매', '이착륙 및 안전 안내', '탑승 안내'],
+        'allSentences': [
+          {
+            'language': 'English',
+            'chapter_no': 7,
+            'category': '유상 판매',
+            'sentence': 'Duty-free items',
+            'pronunciation': '',
+            'korean': '면세품',
+            'audio': '',
+            'popular': 0,
+            'important': 'No',
+          },
+          {
+            'language': 'English',
+            'chapter_no': 4,
+            'category': '이착륙 및 안전 안내',
+            'sentence': 'Fasten seatbelt',
+            'pronunciation': '',
+            'korean': '안전벨트',
+            'audio': '',
+            'popular': 0,
+            'important': 'No',
+          },
+          {
+            'language': 'English',
+            'chapter_no': 1,
+            'category': '탑승 안내',
+            'sentence': 'Boarding pass',
+            'pronunciation': '',
+            'korean': '탑승권',
+            'audio': '',
+            'popular': 0,
+            'important': 'No',
+          },
+        ],
+      });
+
+      expect(
+        sorted.categoriesFor('English'),
+        ['탑승 안내', '이착륙 및 안전 안내', '유상 판매'],
+      );
+      expect(
+        sorted.sentenceChaptersFor('English').map((c) => c.chapterNo),
+        [1, 4, 7],
+      );
+    });
+
+    test('categoriesForWords는 chapter_no 순으로 정렬한다', () {
+      final sorted = ContentBundle.fromJson({
+        'categoryOrder': ['유상 판매', '이착륙 및 안전 안내', '탑승 안내'],
+        'allSentences': const [],
+        'allWords': [
+          {
+            'language': 'English',
+            'chapter_no': 7,
+            'category': '유상 판매',
+            'word': 'duty-free',
+            'meaning': '면세',
+            'popular': 0,
+            'important': 'No',
+          },
+          {
+            'language': 'English',
+            'chapter_no': 4,
+            'category': '이착륙 및 안전 안내',
+            'word': 'safety',
+            'meaning': '안전',
+            'popular': 0,
+            'important': 'No',
+          },
+          {
+            'language': 'English',
+            'chapter_no': 1,
+            'category': '탑승 안내',
+            'word': 'boarding',
+            'meaning': '탑승',
+            'popular': 0,
+            'important': 'No',
+          },
+        ],
+      });
+
+      expect(
+        sorted.categoriesForWords('English'),
+        ['탑승 안내', '이착륙 및 안전 안내', '유상 판매'],
+      );
+      expect(
+        sorted.wordChaptersFor('English').map((c) => c.chapterNo),
+        [1, 4, 7],
+      );
     });
 
     test('sentencesFor는 언어·카테고리로 필터링한다', () {

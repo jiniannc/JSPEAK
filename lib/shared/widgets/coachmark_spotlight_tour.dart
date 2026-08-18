@@ -156,11 +156,44 @@ class _CoachmarkSpotlightTourOverlayState
     final topLeft = box.localToGlobal(Offset.zero);
     final rect = topLeft & box.size;
     const margin = CoachmarkSpotlightTour.spotlightMargin;
-    return Rect.fromLTRB(
+    final padded = Rect.fromLTRB(
       rect.left - step.padding.left - margin,
       rect.top - step.padding.top - margin,
       rect.right + step.padding.right + margin,
       rect.bottom + step.padding.bottom + margin,
+    );
+    return _clampHighlightToScreen(padded, MediaQuery.sizeOf(ctx));
+  }
+
+  static Rect _clampHighlightToScreen(Rect rect, Size screen) {
+    const edge = 10.0;
+    var top = rect.top;
+    var bottom = rect.bottom;
+    var left = rect.left;
+    var right = rect.right;
+
+    if (top < edge) {
+      bottom += edge - top;
+      top = edge;
+    }
+    if (bottom > screen.height - edge) {
+      top -= bottom - (screen.height - edge);
+      bottom = screen.height - edge;
+    }
+    if (left < edge) {
+      right += edge - left;
+      left = edge;
+    }
+    if (right > screen.width - edge) {
+      left -= right - (screen.width - edge);
+      right = screen.width - edge;
+    }
+
+    return Rect.fromLTRB(
+      left.clamp(edge, screen.width - edge),
+      top.clamp(edge, screen.height - edge),
+      right.clamp(edge, screen.width - edge),
+      bottom.clamp(edge, screen.height - edge),
     );
   }
 

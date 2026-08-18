@@ -164,7 +164,7 @@ class ContinueLearningCard extends ConsumerWidget {
         if (scenario != null) {
           context.push('/scenarios/train/${scenario.id}', extra: scenario);
         } else {
-          context.go('/scenarios/list');
+          context.go('/scenarios');
         }
       case ContinueLearningKind.learningHub:
         context.go('/scenarios');

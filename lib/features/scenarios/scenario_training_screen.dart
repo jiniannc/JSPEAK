@@ -7,6 +7,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
 import '../../app/dashboard_providers.dart';
+import '../../data/datasources/local/learning_tour_local_datasource.dart';
 import '../../app/learning_tour_providers.dart';
 import '../../app/scenario_providers.dart';
 import '../../core/config/active5_layout.dart';
@@ -41,6 +42,7 @@ class _ScenarioTrainingScreenState extends ConsumerState<ScenarioTrainingScreen>
   final ScenarioTourTargetKeys _tourKeys = ScenarioTourTargetKeys();
   bool _tourScheduled = false;
   bool _initialTourFinished = false;
+  late final LearningTourLocalDataSource _tourLocalDataSource;
 
   LanguagePalette get _palette =>
       LanguagePalette.forLanguage(widget.scenario.language);
@@ -48,6 +50,7 @@ class _ScenarioTrainingScreenState extends ConsumerState<ScenarioTrainingScreen>
   @override
   void initState() {
     super.initState();
+    _tourLocalDataSource = ref.read(learningTourLocalDataSourceProvider);
     _shakeController = AnimationController(
       vsync: this,
       duration: const Duration(milliseconds: 320),
@@ -79,9 +82,7 @@ class _ScenarioTrainingScreenState extends ConsumerState<ScenarioTrainingScreen>
   Future<void> _scheduleInitialTour() async {
     if (_tourScheduled || _initialTourFinished || !mounted) return;
 
-    final completed = await ref
-        .read(learningTourLocalDataSourceProvider)
-        .hasCompletedScenarioTour();
+    final completed = await _tourLocalDataSource.hasCompletedScenarioTour();
     if (!mounted || completed) {
       _initialTourFinished = true;
       return;
@@ -114,14 +115,10 @@ class _ScenarioTrainingScreenState extends ConsumerState<ScenarioTrainingScreen>
       context: context,
       keys: _tourKeys,
       onComplete: () async {
-        await ref
-            .read(learningTourLocalDataSourceProvider)
-            .setCompletedScenarioTour(true);
+        await _tourLocalDataSource.setCompletedScenarioTour(true);
       },
       onSkip: () async {
-        await ref
-            .read(learningTourLocalDataSourceProvider)
-            .setCompletedScenarioTour(true);
+        await _tourLocalDataSource.setCompletedScenarioTour(true);
       },
     );
   }
@@ -145,7 +142,12 @@ class _ScenarioTrainingScreenState extends ConsumerState<ScenarioTrainingScreen>
   Future<void> _leaveScreen() async {
     _dismissSnackBars();
     await ref.read(scenarioTrainingProvider.notifier).stopAll();
-    if (mounted) context.go('/scenarios/list');
+    if (!mounted) return;
+    if (context.canPop()) {
+      context.pop();
+      return;
+    }
+    context.go('/scenarios');
   }
 
   @override

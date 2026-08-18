@@ -1,5 +1,6 @@
 import 'cjk_stt_segments.dart';
 import 'pronunciation_text_tokenizer.dart';
+import 'english_pronunciation_tokens.dart';
 import 'scenario_answer_compare.dart';
 import 'word_compare.dart';
 
@@ -104,6 +105,7 @@ class WordTokenAligner {
     final spokenPrepared = PronunciationTextTokenizer.prepareSpokenForCompare(
       spokenText,
       language,
+      referenceText: targetText,
     );
     final spokenHasSlash =
         PronunciationTextTokenizer.hasSlashSegments(spokenPrepared);
@@ -129,6 +131,7 @@ class WordTokenAligner {
         spokenText,
         language: language,
         isSpoken: true,
+        referenceText: targetText,
       );
       return align(
         targetWords: targetWords.toList(),
@@ -147,6 +150,7 @@ class WordTokenAligner {
         spokenText,
         language: language,
         isSpoken: true,
+        referenceText: targetText,
       ),
       language: language,
     );
@@ -263,7 +267,8 @@ class WordTokenAligner {
       }
       return false;
     }
-    return WordCompare.normalize(a) == WordCompare.normalize(b);
+    return WordCompare.normalize(a) == WordCompare.normalize(b) ||
+        EnglishPronunciationTokens.areEquivalent(a, b);
   }
 
   static List<_IndexPair> _lcsMatchPairs(

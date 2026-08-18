@@ -1,5 +1,6 @@
 import 'cjk_pronunciation_phrase.dart';
 import 'cjk_stt_segments.dart';
+import 'english_pronunciation_tokens.dart';
 import 'scenario_answer_compare.dart';
 import 'word_compare.dart';
 
@@ -17,21 +18,35 @@ class PronunciationTextTokenizer {
       .where((s) => s.isNotEmpty)
       .toList();
 
-  static String prepareSpokenForCompare(String spoken, String language) {
+  static String prepareSpokenForCompare(
+    String spoken,
+    String language, {
+    String? referenceText,
+  }) {
     if (!CjkSttSegments.isTargetLanguage(language)) return spoken.trim();
     final preprocessed = language == 'Japanese'
         ? ScenarioAnswerCompare.preprocessSpoken(spoken, language: language)
         : spoken;
-    return CjkSttSegments.extractTargetScript(preprocessed, language);
+    return CjkSttSegments.extractTargetScript(
+      preprocessed,
+      language,
+      referenceText: referenceText,
+    );
   }
 
   static List<String> tokenizeForCompare(
     String text, {
     required String language,
     required bool isSpoken,
+    String? referenceText,
   }) {
-    final raw =
-        isSpoken ? prepareSpokenForCompare(text, language) : text.trim();
+    final raw = isSpoken
+        ? prepareSpokenForCompare(
+            text,
+            language,
+            referenceText: referenceText,
+          )
+        : text.trim();
     return tokenize(raw, language: language);
   }
 
@@ -47,7 +62,7 @@ class PronunciationTextTokenizer {
       return _tokenizeCjkSegment(trimmed, language);
     }
 
-    return WordCompare.splitWords(trimmed);
+    return EnglishPronunciationTokens.mergeTokens(WordCompare.splitWords(trimmed));
   }
 
   /// 슬래시 구간 내부 — CJK는 글자 단위, 영어는 공백 단위.
@@ -59,7 +74,7 @@ class PronunciationTextTokenizer {
       return _tokenizeCjkSegment(trimmed, language);
     }
 
-    return WordCompare.splitWords(trimmed);
+    return EnglishPronunciationTokens.mergeTokens(WordCompare.splitWords(trimmed));
   }
 
   static List<String> _tokenizeCjkSegment(String segment, String language) {

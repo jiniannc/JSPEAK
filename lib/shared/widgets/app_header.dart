@@ -100,9 +100,9 @@ class AppHeader extends StatelessWidget {
   static const trailingGap = 10.0;
   static const iconSpacing = 8.0;
   static const iconSize = 21.0;
-  static const headerSwitchDuration = Duration(milliseconds: 280);
-  static const switchInCurve = Curves.easeOutCubic;
-  static const switchOutCurve = Curves.easeInCubic;
+  static const headerSwitchDuration = Duration(milliseconds: 420);
+  static const switchInCurve = Curves.easeOutQuart;
+  static const switchOutCurve = Curves.easeOutCubic;
 
   /// 헤더 아래 본문 시작 간격.
   static const bodyGap = 16.0;
@@ -329,17 +329,16 @@ class AppHeaderShimmerOverlay extends StatelessWidget {
   }
 }
 
-/// 타이틀·서브타이틀·아이콘 — 수평/수직 슬라이드 + 페이드.
+/// 타이틀·서브타이틀·아이콘 — 페이드 전환 (탭 전환과 겹치지 않도록 슬라이드 제거).
 class AppHeaderContentTransition extends StatelessWidget {
   final Widget child;
   final Animation<double> animation;
-  final AppHeaderTransitionAxis axis;
 
   const AppHeaderContentTransition({
     super.key,
     required this.child,
     required this.animation,
-    required this.axis,
+    AppHeaderTransitionAxis axis = AppHeaderTransitionAxis.horizontal,
   });
 
   @override
@@ -350,14 +349,11 @@ class AppHeaderContentTransition extends StatelessWidget {
       reverseCurve: AppHeader.switchOutCurve,
     );
 
-    final offsetTween = axis == AppHeaderTransitionAxis.vertical
-        ? Tween<Offset>(begin: const Offset(0, 0.18), end: Offset.zero)
-        : Tween<Offset>(begin: const Offset(0.15, 0), end: Offset.zero);
-
     return FadeTransition(
       opacity: curved,
-      child: SlideTransition(
-        position: offsetTween.animate(curved),
+      child: ScaleTransition(
+        alignment: Alignment.topLeft,
+        scale: Tween<double>(begin: 0.93, end: 1.0).animate(curved),
         child: child,
       ),
     );
@@ -497,7 +493,7 @@ enum AppHeaderVariant {
       case AppHeaderVariant.basicSentence:
         return '/scenarios/sentences';
       case AppHeaderVariant.scenarioMode:
-        return '/scenarios/list';
+        return '/scenarios';
       case AppHeaderVariant.wordSwipe:
         return '/scenarios/swipe';
       case AppHeaderVariant.cabinDictionary:
@@ -519,7 +515,7 @@ enum AppHeaderVariant {
       case AppHeaderVariant.learningHub:
         return const AppHeaderStyle(
           title: 'LEARNING HUB',
-          subtitle: '기본 문장 · 시나리오 · 단어 스와이프로 기내 회화를 완성하세요',
+          subtitle: '다양한 학습 모드를 활용하여 기내 회화를 완성하세요',
           icon: Icons.school_outlined,
           titleDotColor: Color(0xFF38BDF8),
         );
@@ -547,14 +543,14 @@ enum AppHeaderVariant {
       case AppHeaderVariant.cabinDictionary:
         return const AppHeaderStyle(
           title: 'CABIN DICTIONARY',
-          subtitle: '상황별 필수 기내 표현 검색',
+          subtitle: '상황별 필수 기내 표현을 검색해보세요',
           icon: Icons.menu_book_outlined,
           titleDotColor: Color(0xFF22D3EE),
         );
       case AppHeaderVariant.myPage:
         return const AppHeaderStyle(
           title: 'MY PAGE',
-          subtitle: '프로필 설정 및 학습 statistics',
+          subtitle: '프로필 설정 및 나의 학습 통계를 확인해보세요',
           icon: Icons.person_outline_rounded,
           titleDotColor: Color(0xFF818CF8),
         );

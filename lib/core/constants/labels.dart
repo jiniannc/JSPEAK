@@ -9,6 +9,15 @@ const Map<String, String> languageLabels = {
 
 String languageLabel(String language) => languageLabels[language] ?? language;
 
+/// 학습 허브 챕터 카드 — 언어별 챕터 번호 라벨.
+String hubChapterLabel(String language, int chapterNo) {
+  return switch (language) {
+    'Japanese' => 'チャプター$chapterNo',
+    'Chinese' => '第$chapterNo章',
+    _ => 'Chapter $chapterNo',
+  };
+}
+
 /// 언어별 대표 아이콘(간단한 국기 이모지). 나중에 assets/icons 이미지로 교체 가능.
 const Map<String, String> languageEmoji = {
   'English': '🇺🇸',

@@ -14,6 +14,7 @@ import '../../shared/widgets/language_canvas_background.dart';
 import '../../data/models/sentence.dart';
 import '../../features/dashboard/dashboard_palette.dart';
 import '../../shared/widgets/sentence_card.dart';
+import 'dictionary_pronunciation_display.dart';
 
 /// 상황별 카테고리 문장 리스트 (홈에서 진입하는 서브 화면).
 class DictionaryCategoryScreen extends ConsumerWidget {
@@ -324,7 +325,19 @@ class _CabinVocabularySheet extends ConsumerWidget {
                                       ),
                                   ],
                                 ),
-                                if ((w.pronunciation ?? '').isNotEmpty) ...[
+                                if ((w.pronunciation ?? '').isNotEmpty &&
+                                    DictionaryPronunciationDisplay
+                                        .isCjkLanguage(w.language)) ...[
+                                  const SizedBox(height: 3),
+                                  Text(
+                                    w.pronunciation!,
+                                    style: const TextStyle(
+                                      fontSize: 12,
+                                      color: DashboardPalette.textMuted,
+                                    ),
+                                  ),
+                                ] else if ((w.pronunciation ?? '').isNotEmpty &&
+                                    w.language == 'English') ...[
                                   const SizedBox(height: 3),
                                   Text(
                                     w.pronunciation!,

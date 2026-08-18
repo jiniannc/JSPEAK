@@ -1,3 +1,6 @@
+import 'dart:ui' show ImageFilter;
+
+import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 
@@ -22,11 +25,17 @@ class FloatingIslandNavBar extends StatefulWidget {
   static const bottomInset = 12.0;
   static const radius = 32.0;
 
+  static const scrollBottomClearance = 90.0;
+
   /// body 하단에 남겨둘 여백 (바 높이 + 하단 여백).
   static double reservedHeight(BuildContext context) {
     final safe = MediaQuery.paddingOf(context).bottom;
     return height + bottomInset + safe * 0.35;
   }
+
+  /// 스크롤 콘텐츠 하단 패딩 — 네비 뒤로 비치되 마지막 카드는 가리지 않음.
+  static double scrollBottomPadding(BuildContext context) =>
+      scrollBottomClearance;
 
   @override
   State<FloatingIslandNavBar> createState() => _FloatingIslandNavBarState();
@@ -120,11 +129,8 @@ class _FloatingIslandNavBarState extends State<FloatingIslandNavBar> {
                 _visualIndex = widget.selectedIndex;
               });
             },
-            child: GlassSurface(
+            child: _FloatingIslandGlassBar(
               radius: FloatingIslandNavBar.radius,
-              opacity: GlassSurfaceStyle.floatingIslandFillAlpha,
-              blurSigma: GlassSurfaceStyle.floatingIslandBlur,
-              showBorder: true,
               child: SizedBox(
                 height: FloatingIslandNavBar.height,
                 child: Stack(
@@ -162,6 +168,54 @@ class _FloatingIslandNavBarState extends State<FloatingIslandNavBar> {
   }
 }
 
+/// iOS Frosted Glass — 하단 플로팅 네비 배경.
+class _FloatingIslandGlassBar extends StatelessWidget {
+  final double radius;
+  final Widget child;
+
+  const _FloatingIslandGlassBar({
+    required this.radius,
+    required this.child,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final panel = DecoratedBox(
+      decoration: BoxDecoration(
+        color: Colors.white.withValues(alpha: 0.65),
+        borderRadius: BorderRadius.circular(radius),
+        border: Border.all(
+          color: Colors.white.withValues(alpha: 0.4),
+          width: 1.2,
+        ),
+      ),
+      child: child,
+    );
+
+    return Container(
+      decoration: BoxDecoration(
+        borderRadius: BorderRadius.circular(radius),
+        boxShadow: [
+          BoxShadow(
+            color: Colors.black.withValues(alpha: 0.06),
+            blurRadius: 20,
+            offset: const Offset(0, -4),
+          ),
+        ],
+      ),
+      child: ClipRRect(
+        borderRadius: BorderRadius.circular(radius),
+        child: kIsWeb
+            ? panel
+            : BackdropFilter(
+                filter: ImageFilter.blur(sigmaX: 16, sigmaY: 16),
+                child: panel,
+              ),
+      ),
+    );
+  }
+}
+
 /// 선택 탭 — 딥 글래스 칩 + 상단 백색 반사선.
 class _DeepGlassNavChip extends StatelessWidget {
   @override
@@ -169,7 +223,10 @@ class _DeepGlassNavChip extends StatelessWidget {
     return AnimatedContainer(
       duration: const Duration(milliseconds: 200),
       curve: Curves.easeOutCubic,
-      decoration: GlassSurfaceStyle.deepDarkGlassButton(radius: 24),
+      decoration: GlassSurfaceStyle.deepDarkGlassButton(
+        radius: 24,
+        opacity: 0.9,
+      ),
       child: Stack(
         children: [
           Positioned(

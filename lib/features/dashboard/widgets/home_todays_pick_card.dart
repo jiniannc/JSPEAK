@@ -3,11 +3,13 @@ import 'dart:math' as math;
 import 'dart:ui';
 
 import 'package:flutter/material.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_svg/flutter_svg.dart';
 
+import '../../../app/speech_providers.dart';
 import '../../../data/models/sentence.dart';
+import '../../../shared/widgets/pronunciation_practice_section.dart';
 import '../dashboard_palette.dart';
-
 abstract final class _JinAirLogoAssets {
   /// 헤더 — JINAIR 워드마크
   static const headerWordmark = 'assets/images/jinair_logo2.svg';
@@ -50,24 +52,27 @@ class _JinAirLogo extends StatelessWidget {
 }
 
 /// 홈 Today's Pick — 진에어 실물 탑승권(Boarding Pass) 스타일 카드.
-class HomeTodaysPickCard extends StatelessWidget {
+class HomeTodaysPickCard extends ConsumerStatefulWidget {
   /// 헤더 밴드 아래 본문(탑승권) 최소 높이 — 짧은 문장도 볼륨감 유지.
   static const bodyMinHeight = 132.0;
 
   final Sentence sentence;
   final String flightNumber;
+  final Color accent;
   final VoidCallback? onStartLearning;
   final VoidCallback? onListen;
-  final VoidCallback? onPractice;
 
   const HomeTodaysPickCard({
     super.key,
     required this.sentence,
     required this.flightNumber,
+    required this.accent,
     this.onStartLearning,
     this.onListen,
-    this.onPractice,
   });
+
+  @override
+  ConsumerState<HomeTodaysPickCard> createState() => _HomeTodaysPickCardState();
 
   static String gateFor(Sentence sentence) {
     final gate = 1 + (sentence.id.hashCode % 30).abs();
@@ -91,15 +96,33 @@ class HomeTodaysPickCard extends StatelessWidget {
     final letter = letters[(sentence.id.hashCode >> 3).abs() % letters.length];
     return 'SEAT ${row.toString().padLeft(2, '0')}$letter';
   }
+}
+
+class _HomeTodaysPickCardState extends ConsumerState<HomeTodaysPickCard> {
+  bool _practiceOpen = false;
+
+  void _openPractice() {
+    setState(() => _practiceOpen = true);
+    ref.read(speechPracticeProvider.notifier).startPractice(widget.sentence);
+  }
+
+  bool _isPracticingThis(SpeechPracticeState speech) {
+    return speech.activeSentenceId == widget.sentence.id &&
+        (speech.isInitializing ||
+            speech.isListening ||
+            speech.isRecognizing ||
+            _practiceOpen);
+  }
 
   @override
   Widget build(BuildContext context) {
-    final category = sentence.category.trim().isNotEmpty
-        ? sentence.category.trim()
-        : sentence.language;
-    final gate = gateFor(sentence);
-    final route = routeFor(sentence);
-
+    final speech = ref.watch(speechPracticeProvider);
+    final category = widget.sentence.category.trim().isNotEmpty
+        ? widget.sentence.category.trim()
+        : widget.sentence.language;
+    final gate = HomeTodaysPickCard.gateFor(widget.sentence);
+    final route = HomeTodaysPickCard.routeFor(widget.sentence);
+    final showPractice = _isPracticingThis(speech);
     return Container(
       decoration: BoxDecoration(
         borderRadius: BorderRadius.circular(18),
@@ -164,20 +187,22 @@ class HomeTodaysPickCard extends StatelessWidget {
                                     width: bodyWidth,
                                     child: _BoardingPassMainBody(
                                       category: category,
-                                      english: sentence.sentence,
-                                      korean: sentence.korean,
-                                      onListen: onListen,
-                                      onPractice: onPractice,
+                                      english: widget.sentence.sentence,
+                                      pronunciation: widget.sentence.pronunciation,
+                                      language: widget.sentence.language,
+                                      korean: widget.sentence.korean,
+                                      onListen: widget.onListen,
+                                      onPractice: _openPractice,
                                     ),
                                   ),
                                   SizedBox(width: dividerWidth),
                                   SizedBox(
                                     width: stubWidth,
                                     child: _BoardingPassStubSection(
-                                      flightNumber: flightNumber,
+                                      flightNumber: widget.flightNumber,
                                       gate: gate,
                                       route: route,
-                                      onStartLearning: onStartLearning,
+                                      onStartLearning: widget.onStartLearning,
                                     ),
                                   ),
                                 ],
@@ -196,6 +221,21 @@ class HomeTodaysPickCard extends StatelessWidget {
                     );
                   },
                 ),
+                if (showPractice) ...[
+                  Padding(
+                    padding: const EdgeInsets.fromLTRB(10, 0, 10, 6),
+                    child: Divider(
+                      height: 1,
+                      thickness: 1,
+                      color: DashboardPalette.borderLight.withValues(alpha: 0.7),
+                    ),
+                  ),
+                  PronunciationPracticeSection(
+                    sentence: widget.sentence,
+                    accent: widget.accent,
+                    padding: const EdgeInsets.fromLTRB(10, 0, 10, 10),
+                  ),
+                ],
               ],
             ),
           ),
@@ -204,7 +244,6 @@ class HomeTodaysPickCard extends StatelessWidget {
     );
   }
 }
-
 class _JinAirHeaderBand extends StatefulWidget {
   const _JinAirHeaderBand();
 
@@ -454,6 +493,8 @@ class _StartLearningLink extends StatelessWidget {
 class _BoardingPassMainBody extends StatelessWidget {
   final String category;
   final String english;
+  final String pronunciation;
+  final String language;
   final String korean;
   final VoidCallback? onListen;
   final VoidCallback? onPractice;
@@ -461,13 +502,21 @@ class _BoardingPassMainBody extends StatelessWidget {
   const _BoardingPassMainBody({
     required this.category,
     required this.english,
+    required this.pronunciation,
+    required this.language,
     required this.korean,
     this.onListen,
     this.onPractice,
   });
 
   static const _slate = Color(0xFF0F172A);
+  static const _pronunciationColor = Color(0xFF64748B);
   static const _koreanColor = Color(0xFF475569);
+
+  bool get _showPronunciation {
+    final isCjk = language == 'Japanese' || language == 'Chinese';
+    return isCjk && pronunciation.trim().isNotEmpty;
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -529,8 +578,23 @@ class _BoardingPassMainBody extends StatelessWidget {
                             letterSpacing: -0.35,
                           ),
                         ),
+                        if (_showPronunciation) ...[
+                          const SizedBox(height: 6),
+                          Text(
+                            pronunciation.trim(),
+                            maxLines: 2,
+                            overflow: TextOverflow.ellipsis,
+                            style: const TextStyle(
+                              fontSize: 13,
+                              fontStyle: FontStyle.italic,
+                              color: _pronunciationColor,
+                              height: 1.35,
+                              fontWeight: FontWeight.w400,
+                            ),
+                          ),
+                        ],
                         if (korean.trim().isNotEmpty) ...[
-                          const SizedBox(height: 10),
+                          SizedBox(height: _showPronunciation ? 6 : 10),
                           Text(
                             korean,
                             maxLines: 3,

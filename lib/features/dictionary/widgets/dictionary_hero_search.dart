@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:math' as math;
 
 import 'package:flutter/material.dart';
@@ -40,8 +41,6 @@ class DictionaryHeroTitleAnimated extends StatelessWidget {
   final LanguagePalette palette;
   final VoidCallback? onDiceTap;
   final Animation<double>? diceSpin;
-  final int diceRestFace;
-  final int diceSpinFromFace;
 
   const DictionaryHeroTitleAnimated({
     super.key,
@@ -50,8 +49,6 @@ class DictionaryHeroTitleAnimated extends StatelessWidget {
     required this.palette,
     this.onDiceTap,
     this.diceSpin,
-    this.diceRestFace = 5,
-    this.diceSpinFromFace = 5,
   });
 
   @override
@@ -70,8 +67,6 @@ class DictionaryHeroTitleAnimated extends StatelessWidget {
         palette: palette,
         onDiceTap: onDiceTap,
         diceSpin: diceSpin,
-        diceRestFace: diceRestFace,
-        diceSpinFromFace: diceSpinFromFace,
       ),
     );
   }
@@ -83,8 +78,6 @@ class _TypingHeroContent extends StatefulWidget {
   final LanguagePalette palette;
   final VoidCallback? onDiceTap;
   final Animation<double>? diceSpin;
-  final int diceRestFace;
-  final int diceSpinFromFace;
 
   const _TypingHeroContent({
     required this.progress,
@@ -92,8 +85,6 @@ class _TypingHeroContent extends StatefulWidget {
     required this.palette,
     required this.onDiceTap,
     required this.diceSpin,
-    required this.diceRestFace,
-    required this.diceSpinFromFace,
   });
 
   @override
@@ -161,7 +152,7 @@ class _TypingHeroContentState extends State<_TypingHeroContent> {
   Widget build(BuildContext context) {
     final langLabel = languageLabel(widget.language);
     const baseStyle = TextStyle(
-      fontSize: 17,
+      fontSize: 19,
       fontWeight: FontWeight.w800,
       color: DashboardPalette.navy,
       letterSpacing: -0.35,
@@ -198,7 +189,7 @@ class _TypingHeroContentState extends State<_TypingHeroContent> {
       MediaQuery.sizeOf(context).width * 0.58,
       360.0,
     );
-    const diceSlotWidth = 42.0;
+    const diceSlotWidth = 36.0;
 
     final quotedText = Row(
       mainAxisSize: MainAxisSize.min,
@@ -239,18 +230,38 @@ class _TypingHeroContentState extends State<_TypingHeroContent> {
           const SizedBox(width: 8),
           Padding(
             padding: const EdgeInsets.only(top: 1),
-            child: AnimatedOpacity(
-              opacity: _showDice ? 1 : 0,
-              duration: const Duration(milliseconds: 180),
-              child: IgnorePointer(
-                ignoring: !_showDice,
-                child: DictionaryDiceRerollButton(
-                  accent: widget.palette.primary,
-                  spin: widget.diceSpin,
-                  restFace: widget.diceRestFace,
-                  spinFromFace: widget.diceSpinFromFace,
-                  onTap: widget.onDiceTap!,
-                ),
+            child: SizedBox(
+              width: 32,
+              height: 32,
+              child: Stack(
+                clipBehavior: Clip.none,
+                alignment: Alignment.bottomCenter,
+                children: [
+                  Positioned(
+                    bottom: 36,
+                    left: -78,
+                    right: -78,
+                      child: Align(
+                      alignment: Alignment.bottomCenter,
+                      child: _DiceHintBubble(
+                        visible: _showDice,
+                        palette: widget.palette,
+                      ),
+                    ),
+                  ),
+                  AnimatedOpacity(
+                    opacity: _showDice ? 1 : 0,
+                    duration: const Duration(milliseconds: 180),
+                    child: IgnorePointer(
+                      ignoring: !_showDice,
+                      child: DictionaryDiceRerollButton(
+                        spin: widget.diceSpin,
+                        palette: widget.palette,
+                        onTap: widget.onDiceTap!,
+                      ),
+                    ),
+                  ),
+                ],
               ),
             ),
           ),
@@ -260,21 +271,233 @@ class _TypingHeroContentState extends State<_TypingHeroContent> {
   }
 }
 
-/// 주사위 탭 — 3D 회전 + 바운스 + 1~6 면 전환 + 대기(탭 유도) 애니메이션.
+/// 주사위 버튼 안내 말풍선 — 등장 + 부드러운 플로팅 애니메이션.
+class _DiceHintBubble extends StatefulWidget {
+  final bool visible;
+  final LanguagePalette palette;
+
+  const _DiceHintBubble({
+    required this.visible,
+    required this.palette,
+  });
+
+  @override
+  State<_DiceHintBubble> createState() => _DiceHintBubbleState();
+}
+
+class _DiceHintBubbleState extends State<_DiceHintBubble>
+    with TickerProviderStateMixin {
+  static const _enterDuration = Duration(milliseconds: 520);
+  static const _floatDuration = Duration(milliseconds: 2200);
+
+  late final AnimationController _enterController;
+  late final AnimationController _floatController;
+  Timer? _revealTimer;
+
+  @override
+  void initState() {
+    super.initState();
+    _enterController = AnimationController(
+      vsync: this,
+      duration: _enterDuration,
+    );
+    _floatController = AnimationController(
+      vsync: this,
+      duration: _floatDuration,
+    );
+    _syncVisibility(force: true);
+  }
+
+  @override
+  void didUpdateWidget(covariant _DiceHintBubble oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (oldWidget.visible != widget.visible) {
+      _syncVisibility();
+    }
+  }
+
+  void _syncVisibility({bool force = false}) {
+    _revealTimer?.cancel();
+    if (widget.visible) {
+      _revealTimer = Timer(const Duration(milliseconds: 320), () {
+        if (!mounted || !widget.visible) return;
+        _enterController.forward(from: 0);
+        if (!_floatController.isAnimating) {
+          _floatController.repeat(reverse: true);
+        }
+      });
+      if (force && widget.visible) {
+        _enterController.value = 0;
+      }
+    } else {
+      _enterController.reverse();
+      _floatController.stop();
+    }
+  }
+
+  @override
+  void dispose() {
+    _revealTimer?.cancel();
+    _enterController.dispose();
+    _floatController.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return AnimatedBuilder(
+      animation: Listenable.merge([_enterController, _floatController]),
+      builder: (context, _) {
+        final enterT =
+            Curves.easeOutBack.transform(_enterController.value.clamp(0.0, 1.0));
+        final floatY = math.sin(_floatController.value * math.pi) * 2.5;
+
+        return IgnorePointer(
+          ignoring: _enterController.value < 0.04,
+          child: Opacity(
+            opacity: _enterController.value.clamp(0.0, 1.0),
+            child: Transform.translate(
+              offset: Offset(0, floatY + 10 * (1 - enterT)),
+              child: Transform.scale(
+                scale: 0.78 + 0.22 * enterT,
+                alignment: Alignment.bottomCenter,
+                child: CustomPaint(
+                  painter: _SleekSpeechBubblePainter(
+                    gradient: widget.palette.speechBubbleGradient,
+                    shadowColor: widget.palette.primary,
+                    shadowStrength:
+                        0.18 + 0.1 * math.sin(_floatController.value * math.pi),
+                  ),
+                  child: const Padding(
+                    padding: EdgeInsets.fromLTRB(14, 9, 14, 17),
+                    child: Text(
+                      '탭하면 추천 #태그가\n랜덤으로 바뀌어요',
+                      textAlign: TextAlign.center,
+                      style: TextStyle(
+                        fontSize: 11,
+                        fontWeight: FontWeight.w600,
+                        height: 1.32,
+                        letterSpacing: -0.15,
+                        color: Colors.white,
+                      ),
+                    ),
+                  ),
+                ),
+              ),
+            ),
+          ),
+        );
+      },
+    );
+  }
+}
+
+/// 둥근 몸통 + 꼬리가 이어진 슬릭 말풍선 (테두리 없음).
+class _SleekSpeechBubblePainter extends CustomPainter {
+  final List<Color> gradient;
+  final Color shadowColor;
+  final double shadowStrength;
+
+  const _SleekSpeechBubblePainter({
+    required this.gradient,
+    required this.shadowColor,
+    this.shadowStrength = 0.2,
+  });
+
+  @override
+  void paint(Canvas canvas, Size size) {
+    const radius = 20.0;
+    const tailWidth = 11.0;
+    const tailHeight = 8.0;
+    final bodyBottom = size.height - tailHeight;
+    final tailCenterX = size.width * 0.54;
+    final fillTop = gradient.first;
+    final fillBottom = gradient.length > 1 ? gradient.last : gradient.first;
+
+    final bubblePath = Path()
+      ..moveTo(radius, 0)
+      ..lineTo(size.width - radius, 0)
+      ..arcToPoint(
+        Offset(size.width, radius),
+        radius: const Radius.circular(radius),
+      )
+      ..lineTo(size.width, bodyBottom - radius)
+      ..arcToPoint(
+        Offset(size.width - radius, bodyBottom),
+        radius: const Radius.circular(radius),
+      )
+      ..lineTo(tailCenterX + tailWidth / 2, bodyBottom)
+      ..quadraticBezierTo(
+        tailCenterX,
+        bodyBottom + tailHeight + 1.5,
+        tailCenterX - tailWidth / 2,
+        bodyBottom,
+      )
+      ..lineTo(radius, bodyBottom)
+      ..arcToPoint(
+        Offset(0, bodyBottom - radius),
+        radius: const Radius.circular(radius),
+      )
+      ..lineTo(0, radius)
+      ..arcToPoint(
+        const Offset(radius, 0),
+        radius: const Radius.circular(radius),
+      )
+      ..close();
+
+    canvas.drawShadow(
+      bubblePath,
+      shadowColor.withValues(alpha: shadowStrength),
+      10,
+      false,
+    );
+
+    canvas.drawPath(
+      bubblePath,
+      Paint()
+        ..shader = LinearGradient(
+          begin: Alignment.topLeft,
+          end: Alignment.bottomRight,
+          colors: [fillTop, fillBottom],
+        ).createShader(Rect.fromLTWH(0, 0, size.width, bodyBottom)),
+    );
+
+    canvas.save();
+    canvas.clipPath(bubblePath);
+    canvas.drawRect(
+      Rect.fromLTWH(0, 0, size.width, bodyBottom * 0.45),
+      Paint()
+        ..shader = LinearGradient(
+          begin: Alignment.topCenter,
+          end: Alignment.bottomCenter,
+          colors: [
+            Colors.white.withValues(alpha: 0.16),
+            Colors.white.withValues(alpha: 0),
+          ],
+        ).createShader(Rect.fromLTWH(0, 0, size.width, bodyBottom * 0.45)),
+    );
+    canvas.restore();
+  }
+
+  @override
+  bool shouldRepaint(covariant _SleekSpeechBubblePainter oldDelegate) {
+    return oldDelegate.shadowStrength != shadowStrength ||
+        oldDelegate.shadowColor != shadowColor ||
+        oldDelegate.gradient != gradient;
+  }
+}
+
+/// 추천 태그 리롤 — 브랜드 블루 미니 원형 버튼 + 180° 회전.
 class DictionaryDiceRerollButton extends StatefulWidget {
-  final Color accent;
   final Animation<double>? spin;
+  final LanguagePalette palette;
   final VoidCallback onTap;
-  final int restFace;
-  final int spinFromFace;
 
   const DictionaryDiceRerollButton({
     super.key,
-    required this.accent,
     required this.onTap,
+    required this.palette,
     this.spin,
-    this.restFace = 5,
-    this.spinFromFace = 5,
   });
 
   @override
@@ -282,22 +505,16 @@ class DictionaryDiceRerollButton extends StatefulWidget {
       _DictionaryDiceRerollButtonState();
 }
 
-class _DictionaryDiceRerollButtonState extends State<DictionaryDiceRerollButton>
-    with SingleTickerProviderStateMixin {
-  static const _idleCycle = Duration(milliseconds: 3000);
+class _DictionaryDiceRerollButtonState extends State<DictionaryDiceRerollButton> {
+  static const _spinDuration = Duration(milliseconds: 480);
 
-  late final AnimationController _idleController;
+  double _turns = 0;
   Animation<double>? _boundSpin;
 
   @override
   void initState() {
     super.initState();
-    _idleController = AnimationController(
-      vsync: this,
-      duration: _idleCycle,
-    );
     _bindSpin(widget.spin);
-    _startIdleIfAllowed();
   }
 
   @override
@@ -305,7 +522,6 @@ class _DictionaryDiceRerollButtonState extends State<DictionaryDiceRerollButton>
     super.didUpdateWidget(oldWidget);
     if (oldWidget.spin != widget.spin) {
       _bindSpin(widget.spin);
-      _startIdleIfAllowed();
     }
   }
 
@@ -317,424 +533,48 @@ class _DictionaryDiceRerollButtonState extends State<DictionaryDiceRerollButton>
 
   void _onSpinStatus(AnimationStatus status) {
     if (status == AnimationStatus.forward) {
-      _idleController.stop();
-      return;
-    }
-    if (status == AnimationStatus.completed ||
-        status == AnimationStatus.dismissed) {
-      _startIdleIfAllowed();
-    }
-  }
-
-  void _startIdleIfAllowed() {
-    if (!mounted) return;
-    if (_boundSpin?.isAnimating == true) return;
-    if (!_idleController.isAnimating) {
-      _idleController.repeat();
+      setState(() => _turns += 0.5);
     }
   }
 
   @override
   void dispose() {
     _boundSpin?.removeStatusListener(_onSpinStatus);
-    _idleController.dispose();
     super.dispose();
   }
 
-  ({double rotY, double rotX, double lift, double scale, double glow})
-      _idleMotion(double phase) {
-    const baseRotX = 0.32;
-
-    if (phase < 0.68) {
-      final breathe = math.sin(phase / 0.68 * math.pi * 2) * 0.018;
-      return (
-        rotY: 0,
-        rotX: baseRotX,
-        lift: 0,
-        scale: 1 + breathe,
-        glow: 0.06 + breathe * 2.5,
-      );
-    }
-
-    final t = ((phase - 0.68) / 0.32).clamp(0.0, 1.0);
-    final envelope = math.sin(t * math.pi);
-    final wiggle = math.sin(t * math.pi * 4.2);
-
-    return (
-      rotY: wiggle * envelope * 0.62,
-      rotX: baseRotX + envelope * 0.14,
-      lift: envelope * 4.5,
-      scale: 1 + envelope * 0.08,
-      glow: envelope * 0.48,
-    );
-  }
-
   @override
   Widget build(BuildContext context) {
-    final spinAnim = widget.spin;
+    final accent = widget.palette.searchAccent;
+    final buttonBg = widget.palette.diceButtonBackground;
 
-    if (spinAnim == null) {
-      return AnimatedBuilder(
-        animation: _idleController,
-        builder: (context, _) {
-          final idle = _idleMotion(_idleController.value);
-          return _DiceFace(
-            accent: widget.accent,
-            onTap: widget.onTap,
-            rotationY: idle.rotY,
-            rotationX: idle.rotX,
-            lift: idle.lift,
-            scale: idle.scale,
-            glowStrength: idle.glow,
-            dice: _ColorfulDiceVisual(
-              accent: widget.accent,
-              face: widget.restFace,
-            ),
-          );
-        },
-      );
-    }
-
-    return AnimatedBuilder(
-      animation: Listenable.merge([spinAnim, _idleController]),
-      builder: (context, _) {
-        final raw = spinAnim.value;
-        final t = Curves.easeInOutCubic.transform(raw);
-        final spinning = spinAnim.isAnimating;
-
-        var rotationY = spinning ? t * 3.6 * math.pi : 0.0;
-        var rotationX = spinning
-            ? 0.32 + math.sin(t * 3.6 * math.pi * 1.4) * 0.18
-            : 0.32;
-        var lift = spinning ? math.sin(t * math.pi) * 5.0 : 0.0;
-        var scale = 1.0;
-        var glowStrength = 0.0;
-
-        if (!spinning) {
-          final idle = _idleMotion(_idleController.value);
-          rotationY += idle.rotY;
-          rotationX += idle.rotX - 0.32;
-          lift += idle.lift;
-          scale = idle.scale;
-          glowStrength = idle.glow;
-        }
-
-        final spinStep = (rotationY / (math.pi / 2.05)).floor().abs();
-        final face = spinning
-            ? ((widget.spinFromFace - 1 + spinStep) % 6) + 1
-            : widget.restFace;
-
-        return _DiceFace(
-          accent: widget.accent,
+    return AnimatedRotation(
+      turns: _turns,
+      duration: _spinDuration,
+      curve: Curves.easeInOutCubic,
+      child: Material(
+        color: Colors.transparent,
+        child: InkWell(
           onTap: widget.onTap,
-          rotationY: rotationY,
-          rotationX: rotationX,
-          lift: lift,
-          scale: scale,
-          glowStrength: glowStrength,
-          dice: _ColorfulDiceVisual(accent: widget.accent, face: face),
-        );
-      },
-    );
-  }
-}
-
-class _DiceFace extends StatelessWidget {
-  final Color accent;
-  final VoidCallback onTap;
-  final double rotationY;
-  final double rotationX;
-  final double lift;
-  final double scale;
-  final double glowStrength;
-  final Widget dice;
-
-  const _DiceFace({
-    required this.accent,
-    required this.onTap,
-    required this.rotationY,
-    required this.rotationX,
-    required this.lift,
-    this.scale = 1,
-    this.glowStrength = 0,
-    required this.dice,
-  });
-
-  @override
-  Widget build(BuildContext context) {
-    return Material(
-      color: Colors.transparent,
-      child: InkWell(
-        onTap: onTap,
-        customBorder: const CircleBorder(),
-        splashColor: accent.withValues(alpha: 0.14),
-        highlightColor: accent.withValues(alpha: 0.08),
-        child: SizedBox(
-          width: 34,
-          height: 34,
-          child: Stack(
-            alignment: Alignment.center,
-            clipBehavior: Clip.none,
-            children: [
-              if (glowStrength > 0.01)
-                IgnorePointer(
-                  child: Container(
-                    width: 36,
-                    height: 36,
-                    decoration: BoxDecoration(
-                      shape: BoxShape.circle,
-                      boxShadow: [
-                        BoxShadow(
-                          color: accent.withValues(
-                            alpha: 0.22 * glowStrength,
-                          ),
-                          blurRadius: 8 + 10 * glowStrength,
-                          spreadRadius: 0.5 + 1.5 * glowStrength,
-                        ),
-                      ],
-                    ),
-                  ),
-                ),
-              Transform.translate(
-                offset: Offset(0, -lift),
-                child: Transform.scale(
-                  scale: scale,
-                  child: Transform(
-                    alignment: Alignment.center,
-                    transform: Matrix4.identity()
-                      ..setEntry(3, 2, 0.002)
-                      ..rotateX(rotationX)
-                      ..rotateY(rotationY),
-                    child: dice,
-                  ),
-                ),
-              ),
-            ],
+          customBorder: const CircleBorder(),
+          splashColor: accent.withValues(alpha: 0.12),
+          highlightColor: accent.withValues(alpha: 0.06),
+          child: Container(
+            width: 32,
+            height: 32,
+            decoration: BoxDecoration(
+              shape: BoxShape.circle,
+              color: buttonBg,
+            ),
+            child: Icon(
+              Icons.casino_outlined,
+              size: 18,
+              color: accent,
+            ),
           ),
         ),
       ),
     );
-  }
-}
-
-/// 등각(isometric) 투영 육각형 주사위 — MaskFilter 없이 Path만 사용.
-class _ColorfulDiceVisual extends StatelessWidget {
-  final Color accent;
-  final int face;
-
-  const _ColorfulDiceVisual({
-    required this.accent,
-    this.face = 5,
-  });
-
-  @override
-  Widget build(BuildContext context) {
-    return RepaintBoundary(
-      child: CustomPaint(
-        size: const Size(32, 28),
-        painter: _IsometricDicePainter(
-          accent: accent,
-          face: face.clamp(1, 6),
-        ),
-      ),
-    );
-  }
-}
-
-class _IsometricDiceGeometry {
-  static const _sqrt3Over2 = 0.8660254037844386;
-
-  final double edge;
-  final Offset origin;
-
-  const _IsometricDiceGeometry({
-    required this.edge,
-    required this.origin,
-  });
-
-  double get w => edge * _sqrt3Over2;
-  double get h => edge * 0.5;
-
-  Offset get top => origin;
-  Offset get upperRight => origin + Offset(w, h);
-  Offset get lowerRight => origin + Offset(w, h + edge);
-  Offset get bottom => origin + Offset(0, edge * 2);
-  Offset get lowerLeft => origin + Offset(-w, h + edge);
-  Offset get upperLeft => origin + Offset(-w, h);
-  Offset get topFaceBottom => origin + Offset(0, edge);
-
-  Path get hexOutline => Path()
-    ..moveTo(top.dx, top.dy)
-    ..lineTo(upperRight.dx, upperRight.dy)
-    ..lineTo(lowerRight.dx, lowerRight.dy)
-    ..lineTo(bottom.dx, bottom.dy)
-    ..lineTo(lowerLeft.dx, lowerLeft.dy)
-    ..lineTo(upperLeft.dx, upperLeft.dy)
-    ..close();
-
-  Path get leftFace => Path()
-    ..moveTo(upperLeft.dx, upperLeft.dy)
-    ..lineTo(topFaceBottom.dx, topFaceBottom.dy)
-    ..lineTo(bottom.dx, bottom.dy)
-    ..lineTo(lowerLeft.dx, lowerLeft.dy)
-    ..close();
-
-  Path get rightFace => Path()
-    ..moveTo(upperRight.dx, upperRight.dy)
-    ..lineTo(lowerRight.dx, lowerRight.dy)
-    ..lineTo(bottom.dx, bottom.dy)
-    ..lineTo(topFaceBottom.dx, topFaceBottom.dy)
-    ..close();
-
-  Path get topFace => Path()
-    ..moveTo(top.dx, top.dy)
-    ..lineTo(upperRight.dx, upperRight.dy)
-    ..lineTo(topFaceBottom.dx, topFaceBottom.dy)
-    ..lineTo(upperLeft.dx, upperLeft.dy)
-    ..close();
-
-  /// [-1, 1] 정규 좌표 → 윗면 마름모 위 점.
-  Offset pipPosition(double ax, double ay) {
-    final x = ax * w * 0.74;
-    final y = edge * 0.52 + ay * edge * 0.36;
-    return Offset(origin.dx + x, origin.dy + y);
-  }
-}
-
-class _IsometricDicePainter extends CustomPainter {
-  final Color accent;
-  final int face;
-
-  const _IsometricDicePainter({
-    required this.accent,
-    required this.face,
-  });
-
-  static const _pipColors = [
-    Color(0xFFE53935),
-    Color(0xFF1E88E5),
-    Color(0xFF43A047),
-    Color(0xFFFB8C00),
-    Color(0xFF8E24AA),
-    Color(0xFF00897B),
-  ];
-
-  static const _facePipOffsets = <int, List<Offset>>{
-    1: [Offset(0, 0)],
-    2: [Offset(-0.68, -0.68), Offset(0.68, 0.68)],
-    3: [
-      Offset(-0.68, -0.68),
-      Offset(0, 0),
-      Offset(0.68, 0.68),
-    ],
-    4: [
-      Offset(-0.68, -0.68),
-      Offset(0.68, -0.68),
-      Offset(-0.68, 0.68),
-      Offset(0.68, 0.68),
-    ],
-    5: [
-      Offset(-0.68, -0.68),
-      Offset(0.68, -0.68),
-      Offset(0, 0),
-      Offset(-0.68, 0.68),
-      Offset(0.68, 0.68),
-    ],
-    6: [
-      Offset(-0.68, -0.82),
-      Offset(-0.68, 0),
-      Offset(-0.68, 0.82),
-      Offset(0.68, -0.82),
-      Offset(0.68, 0),
-      Offset(0.68, 0.82),
-    ],
-  };
-
-  @override
-  void paint(Canvas canvas, Size size) {
-    const edge = 11.0;
-    final geo = _IsometricDiceGeometry(
-      edge: edge,
-      origin: Offset(size.width / 2, 3.5),
-    );
-
-    canvas.save();
-    canvas.translate(1.2, 2.4);
-    canvas.drawPath(
-      geo.hexOutline,
-      Paint()..color = const Color(0xFF1E293B).withValues(alpha: 0.13),
-    );
-    canvas.restore();
-
-    final leftPaint = Paint()
-      ..color = Color.lerp(accent, const Color(0xFF1E3A5F), 0.55)!;
-    final rightPaint = Paint()
-      ..color = Color.lerp(accent, Colors.white, 0.28)!;
-
-    canvas.drawPath(geo.leftFace, leftPaint);
-    canvas.drawPath(geo.rightFace, rightPaint);
-
-    final topBounds = Rect.fromPoints(geo.upperLeft, geo.lowerRight);
-    canvas.drawPath(
-      geo.topFace,
-      Paint()
-        ..shader = LinearGradient(
-          begin: Alignment.topCenter,
-          end: Alignment.bottomCenter,
-          colors: [
-            Color.lerp(accent, Colors.white, 0.92)!,
-            Colors.white,
-          ],
-        ).createShader(topBounds),
-    );
-
-    canvas.drawPath(
-      geo.topFace,
-      Paint()
-        ..shader = LinearGradient(
-          begin: Alignment.topLeft,
-          end: Alignment.bottomRight,
-          colors: [
-            Colors.white.withValues(alpha: 0.55),
-            Colors.transparent,
-          ],
-        ).createShader(topBounds),
-    );
-
-    canvas.drawPath(
-      geo.hexOutline,
-      Paint()
-        ..color = Colors.white.withValues(alpha: 0.72)
-        ..style = PaintingStyle.stroke
-        ..strokeWidth = 0.65
-        ..strokeJoin = StrokeJoin.round,
-    );
-
-    final pips = _facePipOffsets[face] ?? _facePipOffsets[5]!;
-    for (var i = 0; i < pips.length; i++) {
-      final center = geo.pipPosition(pips[i].dx, pips[i].dy);
-      final pipColor = _pipColors[i % _pipColors.length];
-      canvas.drawCircle(
-        center + const Offset(0, 0.45),
-        2.35,
-        Paint()..color = pipColor.withValues(alpha: 0.22),
-      );
-      canvas.drawCircle(
-        center,
-        2.35,
-        Paint()..color = pipColor,
-      );
-      canvas.drawCircle(
-        center + const Offset(0, -0.35),
-        0.9,
-        Paint()..color = Colors.white.withValues(alpha: 0.45),
-      );
-    }
-  }
-
-  @override
-  bool shouldRepaint(covariant _IsometricDicePainter oldDelegate) {
-    return oldDelegate.accent != accent || oldDelegate.face != face;
   }
 }
 
@@ -770,7 +610,7 @@ class _HeroQuoteMark extends StatelessWidget {
 class DictionaryQuickSearchChips extends StatefulWidget {
   final List<String> tags;
   final int generation;
-  final Color accent;
+  final LanguagePalette palette;
   final ValueChanged<String> onTagSelected;
   final List<Animation<double>>? entryAnimations;
 
@@ -778,7 +618,7 @@ class DictionaryQuickSearchChips extends StatefulWidget {
     super.key,
     required this.tags,
     required this.generation,
-    required this.accent,
+    required this.palette,
     required this.onTagSelected,
     this.entryAnimations,
   });
@@ -854,7 +694,7 @@ class _DictionaryQuickSearchChipsState extends State<DictionaryQuickSearchChips>
         animation: entryAnim,
         child: _GlassQuickChip(
           label: label,
-          accent: widget.accent,
+          palette: widget.palette,
           onTap: () => widget.onTagSelected(label),
         ),
       );
@@ -884,7 +724,7 @@ class _DictionaryQuickSearchChipsState extends State<DictionaryQuickSearchChips>
       },
       child: _GlassQuickChip(
         label: label,
-        accent: widget.accent,
+        palette: widget.palette,
         onTap: () => widget.onTagSelected(label),
       ),
     );
@@ -923,41 +763,38 @@ class _EntryAnimatedChip extends StatelessWidget {
 
 class _GlassQuickChip extends StatelessWidget {
   final String label;
-  final Color accent;
+  final LanguagePalette palette;
   final VoidCallback onTap;
 
   const _GlassQuickChip({
     required this.label,
-    required this.accent,
+    required this.palette,
     required this.onTap,
   });
 
   @override
   Widget build(BuildContext context) {
+    final accent = palette.searchAccent;
     return Material(
       color: Colors.transparent,
       child: InkWell(
         onTap: onTap,
         borderRadius: BorderRadius.circular(14),
-        splashColor: accent.withValues(alpha: 0.06),
-        highlightColor: accent.withValues(alpha: 0.04),
+        splashColor: accent.withValues(alpha: 0.08),
+        highlightColor: accent.withValues(alpha: 0.05),
         child: Ink(
-          padding: const EdgeInsets.symmetric(horizontal: 9, vertical: 4),
+          padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
           decoration: BoxDecoration(
-            color: Colors.white.withValues(alpha: 0.28),
+            color: palette.searchTagBackground,
             borderRadius: BorderRadius.circular(14),
-            border: Border.all(
-              color: Colors.white.withValues(alpha: 0.55),
-              width: 0.8,
-            ),
           ),
           child: Text(
             '#$label',
             style: TextStyle(
-              fontSize: 11,
+              fontSize: 12,
               fontWeight: FontWeight.w600,
               letterSpacing: -0.1,
-              color: DashboardPalette.textMuted.withValues(alpha: 0.88),
+              color: palette.searchTagForeground,
             ),
           ),
         ),

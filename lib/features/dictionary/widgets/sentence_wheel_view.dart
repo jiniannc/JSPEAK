@@ -9,6 +9,7 @@ import '../../../app/learning_tour_providers.dart';
 import '../../../app/providers.dart';
 import '../../../app/speech_providers.dart';
 import '../../../core/config/active5_layout.dart';
+import '../../../core/services/audio_prefetch.dart';
 import '../../../core/theme/language_palette.dart';
 import '../../../data/models/sentence.dart';
 import '../../../features/basic_sentence/widgets/in_flight_briefing_tour.dart';
@@ -126,6 +127,7 @@ class _SentenceWheelViewState extends ConsumerState<SentenceWheelView>
     );
     WidgetsBinding.instance.addPostFrameCallback((_) {
       widget.onIndexChanged?.call(_currentIndex);
+      AudioPrefetch.around(widget.sentences, _currentIndex);
       _scheduleInitialTour();
     });
   }
@@ -249,6 +251,7 @@ class _SentenceWheelViewState extends ConsumerState<SentenceWheelView>
       _speechPracticeController.reset();
       setState(() => _currentIndex = targetIndex);
       widget.onIndexChanged?.call(targetIndex);
+      AudioPrefetch.around(widget.sentences, targetIndex);
     }
 
     final wheelFuture = _controller.hasClients
@@ -446,58 +449,49 @@ class _SentenceWheelViewState extends ConsumerState<SentenceWheelView>
                 ),
               ),
 
-              // 레이어 2: 펼쳐진 중앙 카드 — Browse(요약) 상태에서는 투명하게
-              // 숨어 휠의 요약 슬롯을 그대로 드러내고, 정착 직후에만
-              // easeOutCubic으로 풀 학습 패널까지 부드럽게 펼쳐진다.
+              // 레이어 2: 펼쳐진 중앙 카드 + 스와이프 코치 — 투어 5단계 컷홀 타겟.
               Align(
                 alignment: Alignment.center,
-                child: ConstrainedBox(
-                  constraints: BoxConstraints(
-                    maxWidth: maxFocusWidth,
-                    maxHeight: maxFocusHeight,
-                  ),
-                  child: _CenterFocusCard(
-                    key: ValueKey(widget.sentences[_currentIndex].id),
-                    sentence: widget.sentences[_currentIndex],
-                    displayIndex: _currentIndex + 1,
-                    totalCount: widget.sentences.length,
-                    horizontalPadding: 0,
-                    accent: accent,
-                    expand: _expandController,
-                    fullHeight: maxFocusHeight,
-                    tourKeys: _tourKeys,
-                    onNextSentence: _currentIndex <
-                            widget.sentences.length - 1
-                        ? () => _settleTo(_currentIndex + 1)
-                        : null,
+                child: KeyedSubtree(
+                  key: _tourKeys.swipeKey,
+                  child: Column(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      if (!_hideSwipeHint && widget.sentences.length > 1)
+                        Padding(
+                          padding: const EdgeInsets.only(bottom: 10),
+                          child: _WheelSwipeCoach(
+                            animation: _swipeHintController,
+                            accent: accent,
+                            hasNext:
+                                _currentIndex < widget.sentences.length - 1,
+                          ),
+                        ),
+                      ConstrainedBox(
+                        constraints: BoxConstraints(
+                          maxWidth: maxFocusWidth,
+                          maxHeight: maxFocusHeight,
+                        ),
+                        child: _CenterFocusCard(
+                          key: ValueKey(widget.sentences[_currentIndex].id),
+                          sentence: widget.sentences[_currentIndex],
+                          displayIndex: _currentIndex + 1,
+                          totalCount: widget.sentences.length,
+                          horizontalPadding: 0,
+                          accent: accent,
+                          expand: _expandController,
+                          fullHeight: maxFocusHeight,
+                          tourKeys: _tourKeys,
+                          onNextSentence: _currentIndex <
+                                  widget.sentences.length - 1
+                              ? () => _settleTo(_currentIndex + 1)
+                              : null,
+                        ),
+                      ),
+                    ],
                   ),
                 ),
               ),
-
-              // 메인 카드 위 여백 중앙 — 스와이프 코치 (카드와 겹치지 않음)
-              if (!_hideSwipeHint && widget.sentences.length > 1)
-                Positioned(
-                  top: 0,
-                  left: horizontalPad,
-                  right: horizontalPad,
-                  // 실제 카드는 maxFocusHeight보다 짧은 경우가 많아 여백을 아래로 조금 확장
-                  height:
-                      (((constraints.maxHeight - maxFocusHeight) / 2) + 40)
-                          .clamp(0.0, constraints.maxHeight * 0.48),
-                  child: Align(
-                    alignment: const Alignment(0, 0.35),
-                    child: IgnorePointer(
-                      child: FittedBox(
-                        fit: BoxFit.scaleDown,
-                        child: _WheelSwipeCoach(
-                          animation: _swipeHintController,
-                          accent: accent,
-                          hasNext: _currentIndex < widget.sentences.length - 1,
-                        ),
-                      ),
-                    ),
-                  ),
-                ),
 
               // 마지막 카드 하단 — Shimmer 글래스 완료 칩.
               if (!_hideCompletionHint &&
@@ -640,7 +634,6 @@ class _WheelSlotItem extends StatelessWidget {
                   child: _NeighborPreview(
                     sentence: sentence,
                     displayIndex: index + 1,
-                    accent: accent,
                     isActiveTarget: isActiveTarget,
                     showSnapGlow: showSnapGlow,
                     shimmerAnimation: shimmerAnimation,
@@ -726,9 +719,7 @@ class _CenterFocusCard extends StatelessWidget {
                 child: Padding(
                   // 2중 그림자가 부모 ConstrainedBox에 잘리지 않도록 여백 확보.
                   padding: EdgeInsets.fromLTRB(4, 4, 4, 12 * t + 4),
-                  child: KeyedSubtree(
-                    key: tourKeys?.swipeKey,
-                    child: DecoratedBox(
+                  child: DecoratedBox(
                       decoration: BoxDecoration(
                         borderRadius: BorderRadius.circular(24),
                         boxShadow: [
@@ -776,7 +767,6 @@ class _CenterFocusCard extends StatelessWidget {
                   ),
                 ),
               ),
-            ),
           );
         },
         child: WheelLearningPanel(
@@ -797,7 +787,6 @@ class _NeighborPreview extends StatelessWidget {
 
   final Sentence sentence;
   final int displayIndex;
-  final Color accent;
 
   /// 3D 휠 중심에 가장 가까운(다음 스냅 대상) 카드인지 여부 — 맑은 리얼
   /// 글래스 + 살짝 커진 크기로 '착!' 하고 눈에 띄는 Active Preview Indicator.
@@ -810,7 +799,6 @@ class _NeighborPreview extends StatelessWidget {
   const _NeighborPreview({
     required this.sentence,
     required this.displayIndex,
-    required this.accent,
     required this.isActiveTarget,
     required this.showSnapGlow,
     required this.shimmerAnimation,
@@ -882,25 +870,6 @@ class _NeighborPreview extends StatelessWidget {
                         mainAxisAlignment: MainAxisAlignment.center,
                         crossAxisAlignment: CrossAxisAlignment.start,
                         children: [
-                          if (isActiveTarget)
-                            Padding(
-                              padding: const EdgeInsets.only(top: 5, right: 6),
-                              child: Container(
-                                width: 5,
-                                height: 5,
-                                decoration: BoxDecoration(
-                                  color: accent,
-                                  shape: BoxShape.circle,
-                                  boxShadow: [
-                                    BoxShadow(
-                                      color: accent.withValues(alpha: 0.55),
-                                      blurRadius: 5,
-                                      spreadRadius: 0.5,
-                                    ),
-                                  ],
-                                ),
-                              ),
-                            ),
                           Flexible(
                             child: Text(
                               sentence.sentence,

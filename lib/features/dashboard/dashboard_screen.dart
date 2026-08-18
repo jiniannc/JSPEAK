@@ -6,15 +6,14 @@ import 'package:go_router/go_router.dart';
 import '../../app/dashboard_providers.dart';
 import '../../app/learning_hub_language_provider.dart';
 import '../../app/learning_providers.dart';
-import '../../app/sentence_progress_providers.dart';
-import '../../app/speech_providers.dart';
 import '../../app/providers.dart';
+import '../../app/sentence_progress_providers.dart';
 import '../../core/config/active5_layout.dart';
 import '../../core/theme/animated_language_scope.dart';
 import '../../core/widgets/device_scaffold.dart';
 import '../../shared/widgets/cascade_entrance.dart';
 import '../../shared/widgets/glass_surface.dart';
-import '../../shared/widgets/spoken_sentence_rich_text.dart';
+import '../shell/floating_island_nav_bar.dart';
 import '../shell/main_shell_tab_header.dart';
 import 'widgets/continue_learning_card.dart';
 import 'widgets/crew_check_in_banner.dart';
@@ -30,7 +29,6 @@ class DashboardScreen extends ConsumerWidget {
     final metrics = Active5Layout.of(context);
     final language = ref.watch(learningHubLanguageProvider);
     final dashboardAsync = ref.watch(dashboardProvider);
-    final speechState = ref.watch(speechPracticeProvider);
 
     return DeviceScaffold(
       safeAreaBottom: false,
@@ -49,9 +47,6 @@ class DashboardScreen extends ConsumerWidget {
                   error: (e, _) => Center(child: Text('대시보드 로드 실패: $e')),
                   data: (data) {
                     final recommended = ref.watch(homeDailySentenceProvider);
-                    final isPracticingRecommended =
-                        recommended != null &&
-                        speechState.activeSentenceId == recommended.id;
                     final flightNumber = recommended == null
                         ? '—'
                         : DashboardData.flightNumberFor(recommended);
@@ -60,7 +55,7 @@ class DashboardScreen extends ConsumerWidget {
                       padding: metrics.pagePadding.copyWith(
                         bottom:
                             metrics.pagePadding.bottom +
-                            MediaQuery.paddingOf(context).bottom,
+                            FloatingIslandNavBar.scrollBottomPadding(context),
                       ),
                       child: Column(
                         crossAxisAlignment: CrossAxisAlignment.stretch,
@@ -79,6 +74,7 @@ class DashboardScreen extends ConsumerWidget {
                                 : HomeTodaysPickCard(
                                     sentence: recommended,
                                     flightNumber: flightNumber,
+                                    accent: palette.accent,
                                     onStartLearning: () {
                                       selectLearningLanguage(
                                         ref,
@@ -97,9 +93,6 @@ class DashboardScreen extends ConsumerWidget {
                                         '&sentenceId=${Uri.encodeComponent(recommended.id)}',
                                       );
                                     },
-                                    onPractice: () => ref
-                                        .read(speechPracticeProvider.notifier)
-                                        .toggle(recommended),
                                     onListen: recommended.audioUrl.isEmpty
                                         ? null
                                         : () => ref
@@ -107,16 +100,6 @@ class DashboardScreen extends ConsumerWidget {
                                               .toggle(recommended),
                                   ),
                           ),
-                          if (recommended != null &&
-                              isPracticingRecommended &&
-                              (speechState.spokenText.isNotEmpty ||
-                                  speechState.isListening)) ...[
-                            const SizedBox(height: 10),
-                            _DashboardPracticeFeedback(
-                              correctSentence: recommended.sentence,
-                              speechState: speechState,
-                            ),
-                          ],
                           const SizedBox(height: 16),
                           const CascadeEntrance(
                             delay: Duration(milliseconds: 160),
@@ -159,69 +142,6 @@ class _DashboardEmptyCard extends StatelessWidget {
             color: GlassSurfaceStyle.subtitleColor,
             height: 1.5,
           ),
-        ),
-      ),
-    );
-  }
-}
-
-class _DashboardPracticeFeedback extends StatelessWidget {
-  final String correctSentence;
-  final SpeechPracticeState speechState;
-
-  const _DashboardPracticeFeedback({
-    required this.correctSentence,
-    required this.speechState,
-  });
-
-  @override
-  Widget build(BuildContext context) {
-    final metrics = Active5Layout.of(context);
-
-    return GlassSurface(
-      opacity: 0.72,
-      child: Padding(
-        padding: const EdgeInsets.all(16),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Text(
-              speechState.isListening ? '인식 중…' : '내 발음',
-              style: const TextStyle(
-                fontSize: 13,
-                fontWeight: FontWeight.w600,
-                color: GlassSurfaceStyle.iconColor,
-              ),
-            ),
-            const SizedBox(height: 6),
-            if (speechState.spokenText.isEmpty)
-              Text(
-                '말해 주세요',
-                style: TextStyle(
-                  fontSize: metrics.sentenceFontSize - 2,
-                  color: GlassSurfaceStyle.subtitleColor,
-                  fontStyle: FontStyle.italic,
-                ),
-              )
-            else
-              SpokenSentenceRichText(
-                correctSentence: correctSentence,
-                spokenText: speechState.spokenText,
-                style: TextStyle(
-                  fontSize: metrics.sentenceFontSize - 2,
-                  fontWeight: FontWeight.w600,
-                  height: 1.35,
-                ),
-                correctColor: GlassSurfaceStyle.titleColor,
-              ),
-            if (speechState.error != null) ...[
-              const SizedBox(height: 8),
-              Text(
-                speechState.error!,
-                style: const TextStyle(fontSize: 12, color: Colors.red),
-              ),
-            ],
-          ],
         ),
       ),
     );

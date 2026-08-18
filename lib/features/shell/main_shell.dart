@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
+import '../../app/dictionary_providers.dart';
 import '../../app/shell_providers.dart';
 import 'floating_island_nav_bar.dart';
 import 'main_shell_tab_header.dart';
@@ -36,17 +37,19 @@ class MainShell extends ConsumerWidget {
   ];
 
   void _onTabSelected(WidgetRef ref, int index) {
+    final isReselect = index == navigationShell.currentIndex;
+    if (isReselect && index == kDictionaryShellTabIndex) {
+      resetDictionaryHome(ref);
+    }
     ref.read(shellTabIndexProvider.notifier).setIndex(index);
     navigationShell.goBranch(
       index,
-      initialLocation: index == navigationShell.currentIndex,
+      initialLocation: isReselect,
     );
   }
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
-    final mq = MediaQuery.of(context);
-    final reserved = FloatingIslandNavBar.reservedHeight(context);
     final tabIndex = navigationShell.currentIndex;
 
     return Scaffold(
@@ -58,12 +61,7 @@ class MainShell extends ConsumerWidget {
           Positioned.fill(
             child: MainShellBackground(tabIndex: tabIndex),
           ),
-          MediaQuery(
-            data: mq.copyWith(
-              padding: mq.padding.copyWith(bottom: reserved),
-            ),
-            child: navigationShell,
-          ),
+          navigationShell,
           Positioned(
             top: 0,
             left: 0,

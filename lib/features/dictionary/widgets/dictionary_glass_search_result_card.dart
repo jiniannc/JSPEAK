@@ -8,6 +8,7 @@ import '../../../app/dictionary_favorite_providers.dart';
 import '../../../app/providers.dart';
 import '../../../core/utils/search_highlight.dart';
 import '../../../data/models/sentence.dart';
+import '../dictionary_pronunciation_display.dart';
 import '../dictionary_item_kind_colors.dart';
 import '../../../shared/widgets/glass_surface.dart';
 import '../../dashboard/dashboard_palette.dart';
@@ -43,6 +44,9 @@ class DictionaryGlassSearchResultCard extends ConsumerWidget {
     final isFavorite = favState.contains(sentence.storageFavoriteKey);
     final categoryLabel = sentence.category.trim();
     final hasAudio = sentence.audioUrl.isNotEmpty;
+    if (hasAudio) {
+      ref.read(audioProvider.notifier).prefetch(sentence);
+    }
 
     return Container(
       margin: const EdgeInsets.only(bottom: 8),
@@ -173,19 +177,7 @@ class _SentencePreview extends StatelessWidget {
       color: DashboardPalette.navy,
       height: 1.35,
     );
-    const subStyle = TextStyle(
-      fontSize: 12.5,
-      fontWeight: FontWeight.w500,
-      fontStyle: FontStyle.italic,
-      color: DashboardPalette.textMuted,
-      height: 1.3,
-    );
-    const koreanStyle = TextStyle(
-      fontSize: 12.5,
-      fontWeight: FontWeight.w500,
-      color: Color(0xFF94A3B8),
-      height: 1.3,
-    );
+    const koreanStyle = DictionaryPronunciationDisplay.sentenceKoreanStyle;
 
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
@@ -202,7 +194,9 @@ class _SentencePreview extends StatelessWidget {
           SearchHighlightText(
             text: sentence.pronunciation,
             query: query,
-            style: subStyle,
+            style: DictionaryPronunciationDisplay.sentencePronunciationStyle(
+              sentence.language,
+            ),
             highlightColor: SearchHighlightStyle.fill,
             highlightTextColor: SearchHighlightStyle.text,
           ),
