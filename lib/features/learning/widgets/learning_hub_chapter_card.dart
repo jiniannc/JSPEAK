@@ -3,8 +3,8 @@ import 'dart:ui' show ImageFilter;
 
 import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:flutter/material.dart';
-import 'package:lottie/lottie.dart';
 import 'package:go_router/go_router.dart';
+import 'package:lottie/lottie.dart';
 
 import '../../../core/constants/labels.dart';
 import '../../../core/utils/learning_hub_icon.dart';
@@ -14,6 +14,7 @@ import '../../../data/models/scenario.dart';
 import '../../../data/repositories/sentence_progress_repository.dart';
 import '../../dashboard/dashboard_palette.dart';
 import '../../word_swipe/word_swipe_training_screen.dart';
+import 'mode_guide_cards.dart';
 
 enum _ChapterLearningStatus { notStarted, inProgress, completed }
 
@@ -83,7 +84,12 @@ class LearningHubChapterCard extends StatefulWidget {
   final VoidCallback? onWordPlay;
   final VoidCallback? onWordReview;
   final VoidCallback? onSentencePlay;
-  final bool showTapHint;
+  final bool isExpanded;
+  final bool isLast;
+  final VoidCallback onExpandRequested;
+
+  /// 짧은 스와이프 스냅 시 증가 — 카드에 바운스 피드백을 트리거한다.
+  final int snapToken;
 
   const LearningHubChapterCard({
     super.key,
@@ -92,57 +98,68 @@ class LearningHubChapterCard extends StatefulWidget {
     required this.wordCount,
     required this.scenarios,
     required this.isScenarioCompleted,
+    required this.isExpanded,
+    required this.onExpandRequested,
+    this.isLast = false,
+    this.snapToken = 0,
     this.swipeProgress,
     this.sentenceSummary,
     this.onWordPlay,
     this.onWordReview,
     this.onSentencePlay,
-    this.showTapHint = false,
   });
 
-  static const _neumorphicLight = Color(0xFFFFFFFF);
-  static const _neumorphicDark = Color(0xFFB8C5D6);
+  static const _compactHeight = 88.0;
+  static const _outerRadius = 20.0;
+  static const _innerImageRadius = 20.0;
 
-  static List<BoxShadow> _neumorphicShadow({double depth = 1.0}) => [
-        BoxShadow(
-          color: _neumorphicLight.withValues(alpha: 0.88),
-          offset: Offset(-5 * depth, -5 * depth),
-          blurRadius: 14 * depth,
-          spreadRadius: 0.5,
-        ),
-        BoxShadow(
-          color: _neumorphicDark.withValues(alpha: 0.48),
-          offset: Offset(6 * depth, 7 * depth),
-          blurRadius: 16 * depth,
-        ),
-        BoxShadow(
-          color: const Color(0xFF94A3B8).withValues(alpha: 0.07),
-          offset: Offset(0, 4 * depth),
-          blurRadius: 22 * depth,
-        ),
-      ];
+  /// 펼쳐진(포커스) 카드 — 존재감 있는 이중 드롭섀도우.
+  static final _cardShadow = [
+    BoxShadow(
+      color: const Color(0xFF0F172A).withValues(alpha: 0.12),
+      blurRadius: 24,
+      spreadRadius: 1,
+      offset: const Offset(0, 10),
+    ),
+    BoxShadow(
+      color: const Color(0xFF0F172A).withValues(alpha: 0.06),
+      blurRadius: 8,
+      spreadRadius: 0,
+      offset: const Offset(0, 2),
+    ),
+  ];
 
-  static final _cardShadow = _neumorphicShadow();
-  static final _cardShadowInProgress = _neumorphicShadow(depth: 1.22);
+  static final _cardShadowInProgress = [
+    BoxShadow(
+      color: const Color(0xFF0F172A).withValues(alpha: 0.16),
+      blurRadius: 28,
+      spreadRadius: 1,
+      offset: const Offset(0, 12),
+    ),
+    BoxShadow(
+      color: const Color(0xFF0F172A).withValues(alpha: 0.07),
+      blurRadius: 8,
+      spreadRadius: 0,
+      offset: const Offset(0, 2),
+    ),
+  ];
 
-  static const _rimWidth = 1.2;
+  /// 압축(스택) 타일 — 촘촘하게 겹쳐도 지저분하지 않도록 더 짧고 또렷한 그림자.
+  static final _compactShadow = [
+    BoxShadow(
+      color: const Color(0xFF0F172A).withValues(alpha: 0.14),
+      blurRadius: 14,
+      spreadRadius: 0,
+      offset: const Offset(0, 6),
+    ),
+    BoxShadow(
+      color: const Color(0xFF0F172A).withValues(alpha: 0.06),
+      blurRadius: 3,
+      spreadRadius: 0,
+      offset: const Offset(0, 1),
+    ),
+  ];
 
-  static Gradient _neumorphicRimGradient() => LinearGradient(
-        begin: Alignment.topLeft,
-        end: Alignment.bottomRight,
-        colors: [
-          Colors.white.withValues(alpha: 0.58),
-          _neumorphicDark.withValues(alpha: 0.34),
-        ],
-      );
-
-  static const _completedRimGradient = LinearGradient(
-    begin: Alignment.topLeft,
-    end: Alignment.bottomRight,
-    colors: [Color(0xFFFDE68A), Color(0xFFEAB308)],
-  );
-
-  static const _cardRadius = 24.0;
   static const _modeBandHeight = 136.0;
   static const _modeBandBottomInset = 12.0;
   static const _heroTextBottomInset = 18.0;
@@ -175,10 +192,10 @@ class LearningHubChapterCard extends StatefulWidget {
     required bool wordComplete,
   }) {
     if (wordCount == 0) return 'empty';
-    final known = swipeProgress?.knownCount.clamp(0, wordCount) ?? 0;
-    final total = (swipeProgress?.totalCount ?? wordCount).clamp(0, 9999);
-    final safeTotal = total <= 0 ? wordCount : total;
-    return '${wordComplete ? 1 : 0}:$known/$safeTotal';
+    final known = (swipeProgress?.isMastered ?? false)
+        ? wordCount
+        : (swipeProgress?.knownCount.clamp(0, wordCount) ?? 0);
+    return '${wordComplete ? 1 : 0}:$known/$wordCount';
   }
 
   static String sentenceModeProgressSignature({
@@ -207,24 +224,734 @@ class LearningHubChapterCard extends StatefulWidget {
 }
 
 class _LearningHubChapterCardState extends State<LearningHubChapterCard>
-    with SingleTickerProviderStateMixin {
-  late final AnimationController _expandController;
-  late final Animation<double> _expand;
+    with TickerProviderStateMixin {
   double? _imageAspectRatio;
   ImageStream? _imageAspectStream;
   ImageStreamListener? _imageAspectListener;
   String? _resolvedAspectAsset;
+  late final AnimationController _fold;
+  late final Animation<double> _foldT;
+  late final AnimationController _expandShimmer;
+  late final AnimationController _snapPulse;
+  late final Animation<double> _snapScale;
+  bool _expandShimmerArmed = false;
+  int _lastSnapToken = 0;
+
+  static const _fallbackAspectRatio = 4 / 3;
+  static const _compactOverlap = 16.0;
+
+  @override
+  void initState() {
+    super.initState();
+    _fold = AnimationController(
+      vsync: this,
+      duration: const Duration(milliseconds: 680),
+      reverseDuration: const Duration(milliseconds: 420),
+    );
+    _foldT = CurvedAnimation(
+      parent: _fold,
+      curve: const Cubic(0.16, 1.0, 0.3, 1.0),
+      reverseCurve: const Cubic(0.55, 0.0, 0.45, 1.0),
+    );
+    _expandShimmer = AnimationController(
+      vsync: this,
+      duration: const Duration(milliseconds: 920),
+    );
+    _snapPulse = AnimationController(
+      vsync: this,
+      duration: const Duration(milliseconds: 480),
+    );
+    _snapScale = TweenSequence<double>([
+      TweenSequenceItem(
+        tween: Tween(begin: 1.0, end: 0.962),
+        weight: 28,
+      ),
+      TweenSequenceItem(
+        tween: Tween(begin: 0.962, end: 1.016),
+        weight: 44,
+      ),
+      TweenSequenceItem(
+        tween: Tween(begin: 1.016, end: 1.0),
+        weight: 28,
+      ),
+    ]).animate(
+      CurvedAnimation(parent: _snapPulse, curve: Curves.easeOutCubic),
+    );
+    _fold.addListener(_handleExpandShimmer);
+    if (widget.isExpanded) _fold.value = 1;
+    _resolveImageAspectRatio(_heroAssetPath());
+  }
+
+  void _handleExpandShimmer() {
+    if (_fold.status == AnimationStatus.reverse ||
+        _fold.status == AnimationStatus.dismissed) {
+      if (_expandShimmerArmed || _expandShimmer.value > 0) {
+        _expandShimmerArmed = false;
+        _expandShimmer.reset();
+      }
+      return;
+    }
+    if (_fold.status != AnimationStatus.forward) return;
+    if (_expandShimmerArmed || _foldT.value < 0.5) return;
+    _expandShimmerArmed = true;
+    _expandShimmer.forward(from: 0);
+  }
+
+  @override
+  void didUpdateWidget(covariant LearningHubChapterCard oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (oldWidget.chapter.chapterImage != widget.chapter.chapterImage ||
+        oldWidget.chapter.name != widget.chapter.name) {
+      _resolveImageAspectRatio(_heroAssetPath());
+    }
+    if (oldWidget.isExpanded != widget.isExpanded) {
+      if (widget.isExpanded) {
+        _fold.forward();
+      } else {
+        _fold.reverse();
+      }
+    }
+    if (widget.snapToken != _lastSnapToken &&
+        widget.snapToken > 0 &&
+        widget.isExpanded) {
+      _lastSnapToken = widget.snapToken;
+      _snapPulse.forward(from: 0);
+    }
+  }
+
+  String _heroAssetPath() {
+    return resolveHubChapterIcon(
+      chapterImage: widget.chapter.chapterImage,
+      category: widget.chapter.name,
+    );
+  }
+
+  void _resolveImageAspectRatio(String assetPath) {
+    final listener = _imageAspectListener;
+    final stream = _imageAspectStream;
+    if (listener != null && stream != null) {
+      stream.removeListener(listener);
+    }
+    _imageAspectListener = null;
+    _imageAspectStream = null;
+
+    if (assetPath.isEmpty) {
+      if (_imageAspectRatio != _fallbackAspectRatio) {
+        setState(() => _imageAspectRatio = _fallbackAspectRatio);
+      }
+      _resolvedAspectAsset = assetPath;
+      return;
+    }
+
+    if (_resolvedAspectAsset == assetPath && _imageAspectRatio != null) {
+      return;
+    }
+
+    _resolvedAspectAsset = assetPath;
+    final imageStream =
+        AssetImage(assetPath).resolve(const ImageConfiguration());
+    _imageAspectStream = imageStream;
+    _imageAspectListener = ImageStreamListener(
+      (ImageInfo info, _) {
+        if (!mounted) return;
+        final height = info.image.height.toDouble();
+        final ratio = height <= 0
+            ? _fallbackAspectRatio
+            : info.image.width / height;
+        setState(() => _imageAspectRatio = ratio);
+      },
+      onError: (_, __) {
+        if (!mounted) return;
+        setState(() => _imageAspectRatio = _fallbackAspectRatio);
+      },
+    );
+    imageStream.addListener(_imageAspectListener!);
+  }
+
+  @override
+  void dispose() {
+    final listener = _imageAspectListener;
+    final stream = _imageAspectStream;
+    if (listener != null && stream != null) {
+      stream.removeListener(listener);
+    }
+    _fold.removeListener(_handleExpandShimmer);
+    _fold.dispose();
+    _expandShimmer.dispose();
+    _snapPulse.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final iconAsset = _heroAssetPath();
+    final wordComplete = LearningHubChapterCard.isWordModeComplete(
+      widget.wordCount,
+      widget.swipeProgress,
+    );
+    final sentenceComplete = LearningHubChapterCard.isSentenceModeComplete(
+      widget.sentenceSummary,
+    );
+    final scenarioComplete = LearningHubChapterCard.isScenarioModeComplete(
+      widget.scenarios,
+      widget.isScenarioCompleted,
+    );
+    final allModesCleared =
+        wordComplete && sentenceComplete && scenarioComplete;
+    final chapterStatus = _resolveChapterStatus(
+      wordCount: widget.wordCount,
+      swipeProgress: widget.swipeProgress,
+      sentenceSummary: widget.sentenceSummary,
+      scenarios: widget.scenarios,
+      isScenarioCompleted: widget.isScenarioCompleted,
+    );
+
+    return LayoutBuilder(
+      builder: (context, constraints) {
+        final cardWidth = constraints.maxWidth;
+        final aspectRatio = _imageAspectRatio ?? _fallbackAspectRatio;
+        final expandedHeight = cardWidth / aspectRatio;
+        const compactHeight = LearningHubChapterCard._compactHeight;
+
+        return AnimatedBuilder(
+          animation: Listenable.merge([_foldT, _expandShimmer, _snapPulse]),
+          builder: (context, _) {
+            final t = _foldT.value.clamp(0.0, 1.0);
+            final letterboxT = Curves.easeOutCubic.transform(
+              ((t - 0.03) / 0.72).clamp(0.0, 1.0),
+            );
+            final visualHeight = compactHeight +
+                (expandedHeight - compactHeight) * t;
+            final overlap =
+                widget.isLast ? 0.0 : _compactOverlap * (1 - t);
+            final layoutHeight = visualHeight - overlap;
+            final peel = Curves.easeIn.transform(
+              (t / 0.58).clamp(0.0, 1.0),
+            );
+            final posterScale = 1.08 - 0.08 * t;
+            final radius = BorderRadius.circular(
+              LearningHubChapterCard._outerRadius,
+            );
+            final shimmerT = Curves.easeInOutCubic.transform(
+              _expandShimmer.value,
+            );
+            final shimmerFade = shimmerT <= 0
+                ? 0.0
+                : (shimmerT < 0.68
+                        ? 1.0
+                        : (1 - (shimmerT - 0.68) / 0.32).clamp(0.0, 1.0)) *
+                    0.88;
+
+            final cardShadow = t < 0.45
+                ? LearningHubChapterCard._compactShadow
+                : chapterStatus == _ChapterLearningStatus.inProgress
+                    ? LearningHubChapterCard._cardShadowInProgress
+                    : LearningHubChapterCard._cardShadow;
+            final cardColor = Color.lerp(
+              Colors.white,
+              Colors.black,
+              Curves.easeIn.transform(t),
+            )!;
+
+            return Transform.scale(
+              scale: widget.isExpanded ? _snapScale.value : 1.0,
+              alignment: Alignment.center,
+              child: Padding(
+              padding: EdgeInsets.fromLTRB(0, 8 * t, 0, 8 * t),
+              child: SizedBox(
+                width: cardWidth,
+                height: layoutHeight,
+                child: OverflowBox(
+                  alignment: Alignment.topCenter,
+                  minHeight: visualHeight,
+                  maxHeight: visualHeight,
+                  child: DecoratedBox(
+                    decoration: BoxDecoration(
+                      borderRadius: radius,
+                      boxShadow: cardShadow,
+                    ),
+                    child: ClipRRect(
+                      borderRadius: radius,
+                      child: ColoredBox(
+                        color: cardColor,
+                        child: SizedBox(
+                          width: cardWidth,
+                          height: visualHeight,
+                          child: Stack(
+                            clipBehavior: Clip.hardEdge,
+                            children: [
+                              if (t > 0.02)
+                                Positioned(
+                                  top: 0,
+                                  left: 0,
+                                  right: 0,
+                                  height: expandedHeight,
+                                  child: Transform.scale(
+                                    scale: posterScale,
+                                    alignment: Alignment.topCenter,
+                                    child: _ExpandedChapterVisual(
+                                      chapter: widget.chapter,
+                                      language: widget.language,
+                                      wordCount: widget.wordCount,
+                                      swipeProgress: widget.swipeProgress,
+                                      sentenceSummary:
+                                          widget.sentenceSummary,
+                                      scenarios: widget.scenarios,
+                                      isScenarioCompleted:
+                                          widget.isScenarioCompleted,
+                                      onWordPlay: widget.onWordPlay,
+                                      onWordReview: widget.onWordReview,
+                                      onSentencePlay: widget.onSentencePlay,
+                                      iconAsset: iconAsset,
+                                      cardWidth: cardWidth,
+                                      cardHeight: expandedHeight,
+                                      allModesCleared: allModesCleared,
+                                      chapterStatus: chapterStatus,
+                                      cinemaRevealT: letterboxT,
+                                    ),
+                                  ),
+                                ),
+                              if (peel < 0.999)
+                                Positioned(
+                                  top: 0,
+                                  left: 0,
+                                  right: 0,
+                                  height: compactHeight,
+                                  child: IgnorePointer(
+                                    ignoring: t > 0.18,
+                                    child: Opacity(
+                                      opacity: (1 - peel).clamp(0.0, 1.0),
+                                      child: Transform.translate(
+                                        offset: Offset(0, -22 * peel),
+                                        child: _ChapterCompactTile(
+                                          chapter: widget.chapter,
+                                          language: widget.language,
+                                          iconAsset: iconAsset,
+                                          imageAspectRatio: aspectRatio,
+                                          status: chapterStatus,
+                                          onTap: widget.onExpandRequested,
+                                        ),
+                                      ),
+                                    ),
+                                  ),
+                                ),
+                              if (shimmerFade > 0)
+                                Positioned.fill(
+                                  child: IgnorePointer(
+                                    child: Opacity(
+                                      opacity: shimmerFade,
+                                      child: CustomPaint(
+                                        painter: _ModeShimmerSweepPainter(
+                                          progress: shimmerT,
+                                        ),
+                                      ),
+                                    ),
+                                  ),
+                                ),
+                            ],
+                          ),
+                        ),
+                      ),
+                    ),
+                  ),
+                ),
+              ),
+            ),
+            );
+          },
+        );
+      },
+    );
+  }
+}
+
+/// 영화관 레터박스 — 이미지 중앙 슬릿에서 위·아래로 펼쳐지며 reveal.
+class _CinemaLetterboxReveal extends StatelessWidget {
+  const _CinemaLetterboxReveal({
+    required this.revealT,
+    required this.child,
+  });
+
+  final double revealT;
+  final Widget child;
+
+  @override
+  Widget build(BuildContext context) {
+    final open = revealT.clamp(0.0, 1.0);
+    final visibleFactor = (0.035 + open * 0.965).clamp(0.02, 1.0);
+    final barFraction = (1 - open) * 0.5;
+
+    return LayoutBuilder(
+      builder: (context, constraints) {
+        final h = constraints.maxHeight;
+        return Stack(
+          fit: StackFit.expand,
+          clipBehavior: Clip.hardEdge,
+          children: [
+            ClipRect(
+              child: Align(
+                alignment: Alignment.center,
+                heightFactor: visibleFactor,
+                child: child,
+              ),
+            ),
+            if (barFraction > 0.002) ...[
+              Positioned(
+                top: 0,
+                left: 0,
+                right: 0,
+                height: h * barFraction,
+                child: DecoratedBox(
+                  decoration: BoxDecoration(
+                    color: Colors.black,
+                    boxShadow: [
+                      BoxShadow(
+                        color: Colors.black.withValues(alpha: 0.55),
+                        blurRadius: 6,
+                        offset: const Offset(0, 1),
+                      ),
+                    ],
+                  ),
+                ),
+              ),
+              Positioned(
+                bottom: 0,
+                left: 0,
+                right: 0,
+                height: h * barFraction,
+                child: const ColoredBox(color: Colors.black),
+              ),
+            ],
+          ],
+        );
+      },
+    );
+  }
+}
+
+/// 펼침 메인 3D 일러스트 — 핸드헬드 카메라 모션 적용.
+class _ChapterHeroImageLayer extends StatelessWidget {
+  const _ChapterHeroImageLayer({
+    required this.assetPath,
+    required this.width,
+    required this.height,
+    required this.motionDx,
+    required this.motionDy,
+    required this.motionAngle,
+  });
+
+  final String assetPath;
+  final double width;
+  final double height;
+  final double motionDx;
+  final double motionDy;
+  final double motionAngle;
+
+  @override
+  Widget build(BuildContext context) {
+    return Transform.translate(
+      offset: Offset(motionDx, motionDy),
+      child: Transform.rotate(
+        angle: motionAngle,
+        child: Transform.scale(
+          scale: 1.06,
+          child: Image.asset(
+            assetPath,
+            width: width,
+            height: height,
+            fit: BoxFit.cover,
+            alignment: Alignment.topCenter,
+            errorBuilder: (context, error, stackTrace) => Container(
+              color: const Color(0xFF1E293B),
+              alignment: Alignment.center,
+              child: const Icon(
+                Icons.flight_rounded,
+                size: 48,
+                color: Color(0xFF94A3B8),
+              ),
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+/// 압축(Accordion Collapsed) 상태 — 88px 미니 타일. BackdropFilter/Lottie 없이 가벼움.
+class _ChapterCompactTile extends StatelessWidget {
+  const _ChapterCompactTile({
+    super.key,
+    required this.chapter,
+    required this.language,
+    required this.iconAsset,
+    required this.imageAspectRatio,
+    required this.status,
+    required this.onTap,
+  });
+
+  final LearningHubChapter chapter;
+  final String language;
+  final String iconAsset;
+  final double imageAspectRatio;
+  final _ChapterLearningStatus status;
+  final VoidCallback onTap;
+
+  static const _thumbSize = 56.0;
+
+  /// 56dp × 4 — 긴 변 기준 다운샘플 디코딩(비율 유지, 앨리어싱 완화).
+  static const _thumbCacheLongEdge = 224;
+
+  @override
+  Widget build(BuildContext context) {
+    final statusMeta = switch (status) {
+      _ChapterLearningStatus.notStarted => const (
+          fg: Color(0xFF64748B),
+          label: '시작 전',
+        ),
+      _ChapterLearningStatus.inProgress => const (
+          fg: Color(0xFF0284C7),
+          label: '진행 중',
+        ),
+      _ChapterLearningStatus.completed => const (
+          fg: Color(0xFFD97706),
+          label: '완료',
+        ),
+    };
+
+    return SizedBox(
+      width: double.infinity,
+      height: LearningHubChapterCard._compactHeight,
+      child: Material(
+        color: Colors.transparent,
+        child: InkWell(
+          onTap: onTap,
+          child: Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+            child: Row(
+              children: [
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    mainAxisAlignment: MainAxisAlignment.center,
+                    children: [
+                      Text.rich(
+                        TextSpan(
+                          children: [
+                            TextSpan(
+                              text: hubChapterLabel(
+                                language,
+                                chapter.chapterNo,
+                              ),
+                              style: const TextStyle(
+                                fontSize: 11,
+                                fontWeight: FontWeight.w700,
+                                color: Color(0xFF0284C7),
+                                height: 1.1,
+                              ),
+                            ),
+                            TextSpan(
+                              text: '  ·  ${statusMeta.label}',
+                              style: TextStyle(
+                                fontSize: 11,
+                                fontWeight: FontWeight.w600,
+                                color: statusMeta.fg,
+                                height: 1.1,
+                              ),
+                            ),
+                          ],
+                        ),
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                      ),
+                      const SizedBox(height: 6),
+                      Text(
+                        chapter.name,
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        style: const TextStyle(
+                          fontSize: 15,
+                          fontWeight: FontWeight.w700,
+                          color: Color(0xFF0F172A),
+                          letterSpacing: -0.2,
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+                const SizedBox(width: 12),
+                Container(
+                  width: _thumbSize,
+                  height: _thumbSize,
+                  decoration: BoxDecoration(
+                    borderRadius: BorderRadius.circular(12),
+                    border: Border.all(
+                      color: Colors.black.withValues(alpha: 0.08),
+                      width: 1,
+                    ),
+                    boxShadow: [
+                      BoxShadow(
+                        color: const Color(0xFF0F172A).withValues(alpha: 0.12),
+                        blurRadius: 8,
+                        offset: const Offset(0, 3),
+                      ),
+                    ],
+                  ),
+                  child: ClipRRect(
+                    borderRadius: BorderRadius.circular(11),
+                    child: ColoredBox(
+                      color: const Color(0xFF1E293B),
+                      child: Image.asset(
+                        iconAsset,
+                        width: _thumbSize,
+                        height: _thumbSize,
+                        fit: BoxFit.contain,
+                        alignment: Alignment.center,
+                        filterQuality: FilterQuality.high,
+                        isAntiAlias: true,
+                        cacheWidth: imageAspectRatio >= 1
+                            ? _thumbCacheLongEdge
+                            : null,
+                        cacheHeight: imageAspectRatio >= 1
+                            ? null
+                            : _thumbCacheLongEdge,
+                        errorBuilder: (context, error, stackTrace) => Container(
+                          width: _thumbSize,
+                          height: _thumbSize,
+                          color: const Color(0xFF1E293B),
+                          alignment: Alignment.center,
+                          child: const Icon(
+                            Icons.flight_rounded,
+                            size: 22,
+                            color: Color(0xFF94A3B8),
+                          ),
+                        ),
+                      ),
+                    ),
+                  ),
+                ),
+                const SizedBox(width: 4),
+                const Icon(
+                  Icons.keyboard_arrow_down_rounded,
+                  color: Color(0xFF94A3B8),
+                  size: 22,
+                ),
+              ],
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+/// 스크롤 flick과 경합하지 않는 탭 레이어 — Listener로 탭만 감지.
+class _HeroTapToRevealLayer extends StatefulWidget {
+  const _HeroTapToRevealLayer({required this.onTap});
+
+  final VoidCallback onTap;
+
+  @override
+  State<_HeroTapToRevealLayer> createState() => _HeroTapToRevealLayerState();
+}
+
+class _HeroTapToRevealLayerState extends State<_HeroTapToRevealLayer> {
+  Offset? _down;
+  bool _cancelled = false;
+
+  static const _tapSlop = 18.0;
+
+  void _reset() {
+    _down = null;
+    _cancelled = false;
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Listener(
+      behavior: HitTestBehavior.translucent,
+      onPointerDown: (event) {
+        _down = event.position;
+        _cancelled = false;
+      },
+      onPointerMove: (event) {
+        if (_down == null || _cancelled) return;
+        if ((event.position - _down!).distance > _tapSlop) {
+          _cancelled = true;
+        }
+      },
+      onPointerUp: (_) {
+        if (!_cancelled && _down != null) {
+          widget.onTap();
+        }
+        _reset();
+      },
+      onPointerCancel: (_) => _reset(),
+      child: const SizedBox.expand(),
+    );
+  }
+}
+
+/// 펼침(Accordion Expanded) 상태 — 기존 3D 일러스트 + 리빌 글래스모피즘 학습 모드 카드.
+class _ExpandedChapterVisual extends StatefulWidget {
+  const _ExpandedChapterVisual({
+    super.key,
+    required this.chapter,
+    required this.language,
+    required this.wordCount,
+    required this.swipeProgress,
+    required this.sentenceSummary,
+    required this.scenarios,
+    required this.isScenarioCompleted,
+    required this.onWordPlay,
+    required this.onWordReview,
+    required this.onSentencePlay,
+    required this.iconAsset,
+    required this.cardWidth,
+    required this.cardHeight,
+    required this.allModesCleared,
+    required this.chapterStatus,
+    required this.cinemaRevealT,
+  });
+
+  final LearningHubChapter chapter;
+  final String language;
+  final int wordCount;
+  final SwipeCategoryProgress? swipeProgress;
+  final SentenceCategorySummary? sentenceSummary;
+  final List<Scenario> scenarios;
+  final bool Function(String scenarioId) isScenarioCompleted;
+  final VoidCallback? onWordPlay;
+  final VoidCallback? onWordReview;
+  final VoidCallback? onSentencePlay;
+  final String iconAsset;
+  final double cardWidth;
+  final double cardHeight;
+  final bool allModesCleared;
+  final _ChapterLearningStatus chapterStatus;
+  final double cinemaRevealT;
+
+  @override
+  State<_ExpandedChapterVisual> createState() =>
+      _ExpandedChapterVisualState();
+}
+
+class _ExpandedChapterVisualState extends State<_ExpandedChapterVisual>
+    with TickerProviderStateMixin {
+  late final AnimationController _expandController;
+  late final Animation<double> _expand;
+  late final AnimationController _cameraMotionController;
   bool _modeShimmerArmed = false;
   final List<int?> _modeShimmerDelaysMs = [null, null, null];
 
-  static const _fallbackAspectRatio = 4 / 3;
+  /// 학습 모드 밴드는 오직 사용자의 탭으로만 리빌된다(스크롤 자동 리빌 없음).
+  bool _revealed = false;
 
   @override
   void initState() {
     super.initState();
     _expandController = AnimationController(
       vsync: this,
-      duration: const Duration(milliseconds: 760),
+      duration: const Duration(milliseconds: 520),
     );
     _expand = CurvedAnimation(
       parent: _expandController,
@@ -232,7 +959,28 @@ class _LearningHubChapterCardState extends State<LearningHubChapterCard>
       reverseCurve: Curves.easeInOutCubic,
     );
     _expand.addListener(_handleExpandForShimmer);
-    _resolveImageAspectRatio(_heroAssetPath());
+    _cameraMotionController = AnimationController(
+      vsync: this,
+      duration: const Duration(milliseconds: 5500),
+    )..repeat(reverse: true);
+    // 기본 세팅: 챕터 no·제목·hook만 보이는 '접힌' 상태로 시작한다.
+  }
+
+  ({double dx, double dy, double angle}) _handheldCameraMotion(double t) {
+    return (
+      dx: math.sin(t * math.pi * 2) * 4.5,
+      dy: math.cos(t * math.pi * 1.5) * 3.5,
+      angle: math.sin(t * math.pi) * 0.005,
+    );
+  }
+
+  void _toggleReveal() {
+    setState(() => _revealed = !_revealed);
+    if (_revealed) {
+      _expandController.forward();
+    } else {
+      _expandController.reverse();
+    }
   }
 
   void _handleExpandForShimmer() {
@@ -307,12 +1055,8 @@ class _LearningHubChapterCardState extends State<LearningHubChapterCard>
   }
 
   @override
-  void didUpdateWidget(covariant LearningHubChapterCard oldWidget) {
+  void didUpdateWidget(covariant _ExpandedChapterVisual oldWidget) {
     super.didUpdateWidget(oldWidget);
-    if (oldWidget.chapter.chapterImage != widget.chapter.chapterImage ||
-        oldWidget.chapter.name != widget.chapter.name) {
-      _resolveImageAspectRatio(_heroAssetPath());
-    }
 
     final oldWordComplete = LearningHubChapterCard.isWordModeComplete(
       oldWidget.wordCount,
@@ -351,11 +1095,7 @@ class _LearningHubChapterCardState extends State<LearningHubChapterCard>
     var needsReset = false;
     for (var i = 0; i < 3; i++) {
       if (oldKeys[i] != newKeys[i]) {
-        _resetModeIntroIfSignatureChanged(
-          i,
-          oldKeys[i],
-          newKeys[i],
-        );
+        _resetModeIntroIfSignatureChanged(i, oldKeys[i], newKeys[i]);
         needsReset = true;
       }
     }
@@ -369,73 +1109,16 @@ class _LearningHubChapterCardState extends State<LearningHubChapterCard>
     }
   }
 
-  String _heroAssetPath() {
-    return resolveHubChapterIcon(
-      chapterImage: widget.chapter.chapterImage,
-      category: widget.chapter.name,
-    );
-  }
-
-  void _resolveImageAspectRatio(String assetPath) {
-    final listener = _imageAspectListener;
-    final stream = _imageAspectStream;
-    if (listener != null && stream != null) {
-      stream.removeListener(listener);
-    }
-    _imageAspectListener = null;
-    _imageAspectStream = null;
-
-    if (assetPath.isEmpty) {
-      if (_imageAspectRatio != _fallbackAspectRatio) {
-        setState(() => _imageAspectRatio = _fallbackAspectRatio);
-      }
-      _resolvedAspectAsset = assetPath;
-      return;
-    }
-
-    if (_resolvedAspectAsset == assetPath && _imageAspectRatio != null) {
-      return;
-    }
-
-    _resolvedAspectAsset = assetPath;
-    final imageStream =
-        AssetImage(assetPath).resolve(const ImageConfiguration());
-    _imageAspectStream = imageStream;
-    _imageAspectListener = ImageStreamListener(
-      (ImageInfo info, _) {
-        if (!mounted) return;
-        final height = info.image.height.toDouble();
-        final ratio = height <= 0
-            ? _fallbackAspectRatio
-            : info.image.width / height;
-        setState(() => _imageAspectRatio = ratio);
-      },
-      onError: (_, __) {
-        if (!mounted) return;
-        setState(() => _imageAspectRatio = _fallbackAspectRatio);
-      },
-    );
-    imageStream.addListener(_imageAspectListener!);
-  }
-
   @override
   void dispose() {
-    final listener = _imageAspectListener;
-    final stream = _imageAspectStream;
-    if (listener != null && stream != null) {
-      stream.removeListener(listener);
-    }
     _expand.removeListener(_handleExpandForShimmer);
     _expandController.dispose();
+    _cameraMotionController.dispose();
     super.dispose();
   }
 
   @override
   Widget build(BuildContext context) {
-    final iconAsset = resolveHubChapterIcon(
-      chapterImage: widget.chapter.chapterImage,
-      category: widget.chapter.name,
-    );
     final hook = widget.chapter.hook.trim();
     final wordComplete = LearningHubChapterCard.isWordModeComplete(
       widget.wordCount,
@@ -448,216 +1131,283 @@ class _LearningHubChapterCardState extends State<LearningHubChapterCard>
       widget.scenarios,
       widget.isScenarioCompleted,
     );
-    final allModesCleared =
-        wordComplete && sentenceComplete && scenarioComplete;
     final modeReplayKeys = _modeReplayKeys(
       wordComplete: wordComplete,
       sentenceComplete: sentenceComplete,
       scenarioComplete: scenarioComplete,
     );
-    final chapterStatus = _resolveChapterStatus(
-      wordCount: widget.wordCount,
-      swipeProgress: widget.swipeProgress,
-      sentenceSummary: widget.sentenceSummary,
-      scenarios: widget.scenarios,
-      isScenarioCompleted: widget.isScenarioCompleted,
-    );
+    final innerWidth = widget.cardWidth;
+    final innerHeight = widget.cardHeight;
 
-    return LayoutBuilder(
-      builder: (context, constraints) {
-        final cardWidth = constraints.maxWidth;
-        final aspectRatio = _imageAspectRatio ?? _fallbackAspectRatio;
-        final cardHeight = cardWidth / aspectRatio;
-
-        return AnimatedBuilder(
-          animation: _expand,
-          builder: (context, _) {
-            final t = _expand.value;
-            final imageT = Curves.easeInOut.transform(t);
-            final modeT = Curves.easeOutCubic.transform(t);
-            final imageSlide =
-                LearningHubChapterCard._imageSlideMax * imageT;
-            final modeLift =
-                (1 - modeT) * LearningHubChapterCard._modeRevealLift;
-            final heroTextBottomCollapsed =
-                LearningHubChapterCard._heroTextBottomInset;
-            final heroTextBottomExpanded =
-                LearningHubChapterCard._modeBandBottomInset +
+    return AnimatedBuilder(
+      animation: Listenable.merge([_expand, _cameraMotionController]),
+      builder: (context, _) {
+        final t = _expand.value;
+        final cameraT = _cameraMotionController.value;
+        final motion = _handheldCameraMotion(cameraT);
+        final imageT = Curves.easeInOut.transform(t);
+        final modeT = Curves.easeOutCubic.transform(t);
+        final imageSlide = LearningHubChapterCard._imageSlideMax * imageT;
+        final modeLift =
+            (1 - modeT) * LearningHubChapterCard._modeRevealLift;
+        final heroTextBottomCollapsed =
+            LearningHubChapterCard._heroTextBottomInset;
+        final heroTextBottomExpanded =
+            LearningHubChapterCard._modeBandBottomInset +
                 LearningHubChapterCard._modeBandHeight +
                 LearningHubChapterCard._heroTextAboveModesGap;
-            final heroTextBottom = heroTextBottomCollapsed +
-                (heroTextBottomExpanded - heroTextBottomCollapsed) * modeT;
-            final textCompactT = Curves.easeInOutCubic.transform(
-              ((modeT - 0.08) / 0.72).clamp(0.0, 1.0),
-            );
+        final heroTextBottom = heroTextBottomCollapsed +
+            (heroTextBottomExpanded - heroTextBottomCollapsed) * modeT;
+        final textCompactT = Curves.easeInOutCubic.transform(
+          ((modeT - 0.08) / 0.72).clamp(0.0, 1.0),
+        );
 
-            final cardShadow = chapterStatus == _ChapterLearningStatus.inProgress
-                ? LearningHubChapterCard._cardShadowInProgress
-                : LearningHubChapterCard._cardShadow;
-            const rimWidth = LearningHubChapterCard._rimWidth;
-            const cardRadius = LearningHubChapterCard._cardRadius;
-            final innerRadius = cardRadius - rimWidth;
-
-            return Container(
-              width: cardWidth,
-              margin: const EdgeInsets.only(bottom: 20),
-              decoration: BoxDecoration(
-                borderRadius: BorderRadius.circular(cardRadius),
-                gradient: allModesCleared
-                    ? LearningHubChapterCard._completedRimGradient
-                    : LearningHubChapterCard._neumorphicRimGradient(),
-                boxShadow: cardShadow,
+        return SizedBox(
+          width: innerWidth,
+          height: innerHeight,
+          child: Stack(
+            clipBehavior: Clip.hardEdge,
+            children: [
+              const Positioned.fill(
+                child: ColoredBox(color: Colors.black),
               ),
-              padding: const EdgeInsets.all(rimWidth),
-              child: ClipRRect(
-                borderRadius: BorderRadius.circular(innerRadius),
-                child: SizedBox(
-                  width: cardWidth - rimWidth * 2,
-                  height: cardHeight - rimWidth * 2,
-                  child: Stack(
-                  clipBehavior: Clip.hardEdge,
+              Positioned(
+                left: 0,
+                right: 0,
+                top: 0,
+                height: innerHeight + LearningHubChapterCard._imageSlideMax,
+                child: _CinemaLetterboxReveal(
+                  revealT: widget.cinemaRevealT,
+                  child: Transform.translate(
+                    offset: Offset(0, -imageSlide),
+                    child: Transform.scale(
+                      scale: 1.0 +
+                          (1 - widget.cinemaRevealT.clamp(0.0, 1.0)) * 0.06,
+                      alignment: Alignment.center,
+                      child: Stack(
+                        fit: StackFit.expand,
+                        children: [
+                          _ChapterHeroImageLayer(
+                            assetPath: widget.iconAsset,
+                            width: innerWidth,
+                            height: innerHeight +
+                                LearningHubChapterCard._imageSlideMax,
+                            motionDx: motion.dx,
+                            motionDy: motion.dy,
+                            motionAngle: motion.angle,
+                          ),
+                          if (widget.allModesCleared && t > 0.45)
+                            Positioned(
+                              top: 14,
+                              left: 0,
+                              right: 0,
+                              child: Opacity(
+                                opacity:
+                                    ((t - 0.45) / 0.35).clamp(0.0, 1.0),
+                                child: const _ChapterAllClearRibbon(),
+                              ),
+                            ),
+                        ],
+                      ),
+                    ),
+                  ),
+                ),
+              ),
+              Positioned.fill(
+                child: IgnorePointer(
+                  child: _ChapterUnifiedBottomScrim(
+                    expansion: modeT,
+                    cardHeight: innerHeight,
+                  ),
+                ),
+              ),
+              if (modeT > 0.001)
+                Positioned(
+                  left: 14,
+                  right: 14,
+                  bottom: LearningHubChapterCard._modeBandBottomInset,
+                  child: Transform.translate(
+                    offset: Offset(0, modeLift),
+                    child: _ChapterModeRow(
+                      expandAnimation: _expand,
+                      shimmerDelaysMs: _modeShimmerDelaysMs,
+                      modeReplayKeys: modeReplayKeys,
+                      wordCount: widget.wordCount,
+                      swipeProgress: widget.swipeProgress,
+                      wordComplete: wordComplete,
+                      onWordPlay: widget.onWordPlay,
+                      onWordReview: widget.onWordReview,
+                      sentenceSummary: widget.sentenceSummary,
+                      sentenceComplete: sentenceComplete,
+                      onSentencePlay: widget.onSentencePlay,
+                      scenarios: widget.scenarios,
+                      scenarioComplete: scenarioComplete,
+                      isScenarioCompleted: widget.isScenarioCompleted,
+                    ),
+                  ),
+                ),
+              Positioned(
+                left: 20,
+                right: 20,
+                bottom: heroTextBottom,
+                child: _ChapterHeroHeaderTexts(
+                  language: widget.language,
+                  chapterNo: widget.chapter.chapterNo,
+                  title: widget.chapter.name,
+                  hook: hook,
+                  compactProgress: textCompactT,
+                  modeRevealProgress: modeT,
+                ),
+              ),
+              Positioned(
+                top: 14,
+                right: 14,
+                child: Row(
+                  mainAxisSize: MainAxisSize.min,
                   children: [
-                    Positioned.fill(
-                      child: Transform.translate(
-                        offset: Offset(0, -imageSlide),
-                        child: Stack(
-                          fit: StackFit.expand,
-                          children: [
-                            Image.asset(
-                              iconAsset,
-                              width: cardWidth,
-                              height: cardHeight,
-                              fit: BoxFit.cover,
-                              alignment: Alignment.center,
-                              errorBuilder: (context, error, stackTrace) =>
-                                  Container(
-                                color: const Color(0xFF1E293B),
-                                alignment: Alignment.center,
-                                child: const Icon(
-                                  Icons.flight_rounded,
-                                  size: 48,
-                                  color: Color(0xFF94A3B8),
-                                ),
-                              ),
-                            ),
-                            if (allModesCleared && t > 0.45)
-                              Positioned(
-                                top: 14,
-                                left: 0,
-                                right: 0,
-                                child: Opacity(
-                                  opacity: ((t - 0.45) / 0.35).clamp(0.0, 1.0),
-                                  child: const _ChapterAllClearRibbon(),
-                                ),
-                              ),
-                          ],
-                        ),
-                      ),
+                    _ChapterStatusBadge(status: widget.chapterStatus),
+                    const SizedBox(width: 6),
+                    Icon(
+                      Icons.keyboard_arrow_up_rounded,
+                      size: 20,
+                      color: Colors.white.withValues(alpha: 0.72),
                     ),
-                    Positioned.fill(
-                      child: IgnorePointer(
-                        child: _ChapterUnifiedBottomScrim(
-                          expansion: modeT,
-                          cardHeight: cardHeight,
-                        ),
-                      ),
-                    ),
-                    if (modeT > 0.001)
-                      Positioned(
-                        left: 14,
-                        right: 14,
-                        bottom: LearningHubChapterCard._modeBandBottomInset,
-                        child: Transform.translate(
-                          offset: Offset(0, modeLift),
-                          child: _ChapterModeRow(
-                            expandAnimation: _expand,
-                            shimmerDelaysMs: _modeShimmerDelaysMs,
-                            modeReplayKeys: modeReplayKeys,
-                            wordCount: widget.wordCount,
-                            swipeProgress: widget.swipeProgress,
-                            wordComplete: wordComplete,
-                            onWordPlay: widget.onWordPlay,
-                            onWordReview: widget.onWordReview,
-                            sentenceSummary: widget.sentenceSummary,
-                            sentenceComplete: sentenceComplete,
-                            onSentencePlay: widget.onSentencePlay,
-                            scenarios: widget.scenarios,
-                            scenarioComplete: scenarioComplete,
-                            isScenarioCompleted: widget.isScenarioCompleted,
-                          ),
-                        ),
-                      ),
-                    Positioned(
-                      left: 20,
-                      right: 20,
-                      bottom: heroTextBottom,
-                      child: _ChapterHeroHeaderTexts(
-                        language: widget.language,
-                        chapterNo: widget.chapter.chapterNo,
-                        title: widget.chapter.name,
-                        hook: hook,
-                        compactProgress: textCompactT,
-                        modeRevealProgress: modeT,
-                      ),
-                    ),
-                    if (t > 0.04)
-                      Positioned(
-                        left: 0,
-                        right: 0,
-                        top: 0,
-                        bottom: heroTextBottomExpanded + 72,
-                        child: GestureDetector(
-                          behavior: HitTestBehavior.translucent,
-                          onTap: () {
-                            if (!_expandController.isAnimating) {
-                              _expandController.reverse();
-                            }
-                          },
-                        ),
-                      ),
-                    Positioned(
-                      top: 14,
-                      right: 14,
-                      child: _ChapterStatusBadge(status: chapterStatus),
-                    ),
-                    if (t < 0.04) ...[
-                      Positioned.fill(
-                        child: GestureDetector(
-                          behavior: HitTestBehavior.opaque,
-                          onTap: () {
-                            if (!_expandController.isAnimating) {
-                              _expandController.forward();
-                            }
-                          },
-                        ),
-                      ),
-                      if (widget.showTapHint)
-                        Positioned.fill(
-                          child: IgnorePointer(
-                            child: Opacity(
-                              opacity: (1 - t / 0.04).clamp(0.0, 1.0),
-                              child: const Center(
-                                child: _ChapterTapFingerHint(),
-                              ),
-                            ),
-                          ),
-                        ),
-                    ],
                   ],
                 ),
               ),
-            ),
-            );
-          },
+              if (t > 0.04)
+                Positioned(
+                  left: 0,
+                  right: 0,
+                  top: 0,
+                  bottom: heroTextBottomExpanded + 72,
+                  child: _HeroTapToRevealLayer(
+                    onTap: () {
+                      if (!_expandController.isAnimating) {
+                        _toggleReveal();
+                      }
+                    },
+                  ),
+                ),
+              if (t < 0.04) ...[
+                Positioned.fill(
+                  child: _HeroTapToRevealLayer(
+                    onTap: () {
+                      if (!_expandController.isAnimating) {
+                        _toggleReveal();
+                      }
+                    },
+                  ),
+                ),
+                Positioned.fill(
+                  child: IgnorePointer(
+                    child: Opacity(
+                      opacity: (1 - t / 0.04).clamp(0.0, 1.0),
+                      child: const Center(
+                        child: _ChapterTapRevealHint(),
+                      ),
+                    ),
+                  ),
+                ),
+              ],
+            ],
+          ),
         );
       },
     );
   }
 }
 
+/// 카드 중앙 터치 유도 — Lottie 탭 아이콘 + 안내 문구 (펼쳐진 카드 1개에서만 렌더되므로 가벼움).
+class _ChapterTapRevealHint extends StatefulWidget {
+  const _ChapterTapRevealHint();
+
+  static const _assetPath = 'assets/lottie/touch1.json';
+
+  @override
+  State<_ChapterTapRevealHint> createState() => _ChapterTapRevealHintState();
+}
+
+class _ChapterTapRevealHintState extends State<_ChapterTapRevealHint>
+    with SingleTickerProviderStateMixin {
+  late final AnimationController _float;
+  late final Animation<double> _offsetY;
+
+  @override
+  void initState() {
+    super.initState();
+    _float = AnimationController(
+      vsync: this,
+      duration: const Duration(milliseconds: 1700),
+    )..repeat(reverse: true);
+    _offsetY = Tween<double>(begin: 3.5, end: -5.5).animate(
+      CurvedAnimation(parent: _float, curve: Curves.easeInOutSine),
+    );
+  }
+
+  @override
+  void dispose() {
+    _float.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Column(
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        SizedBox(
+          width: 64,
+          height: 72,
+          child: AnimatedBuilder(
+            animation: _offsetY,
+            child: Lottie.asset(
+              _ChapterTapRevealHint._assetPath,
+              width: 64,
+              height: 64,
+              fit: BoxFit.contain,
+              repeat: true,
+            ),
+            builder: (context, child) {
+              return Align(
+                alignment: Alignment.center,
+                child: Transform.translate(
+                  offset: Offset(0, _offsetY.value),
+                  child: child,
+                ),
+              );
+            },
+          ),
+        ),
+        const SizedBox(height: 6),
+        Container(
+          padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+          decoration: BoxDecoration(
+            color: Colors.black.withValues(alpha: 0.32),
+            borderRadius: BorderRadius.circular(999),
+          ),
+          child: const Text(
+            'Touch to start',
+            style: TextStyle(
+              fontSize: 12,
+              fontWeight: FontWeight.w700,
+              color: Colors.white,
+              letterSpacing: -0.2,
+              height: 1.1,
+            ),
+          ),
+        ),
+      ],
+    );
+  }
+}
+
 class _HubChapterGoldTheme {
   static const amberDeep = Color(0xFFD97706);
+  static const amber = Color(0xFFF59E0B);
+  static const champagne = Color(0xFFFCD34D);
   static const hairline = Color(0xFFFDE68A);
+  static const iconGold = Color(0xFFB45309);
 }
 
 /// 카드 우측 상단 — 챕터 학습 상태 미니 뱃지.
@@ -732,13 +1482,24 @@ class _ChapterStatusBadgeState extends State<_ChapterStatusBadge>
             ),
           ],
         ),
-      _ChapterLearningStatus.completed => const Text(
-          '✓ 완료',
-          style: TextStyle(
-            fontSize: 11,
-            fontWeight: FontWeight.w800,
-            color: Colors.white,
-          ),
+      _ChapterLearningStatus.completed => const Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Icon(
+              Icons.check_rounded,
+              size: 12,
+              color: Colors.white,
+            ),
+            SizedBox(width: 3),
+            Text(
+              '완료',
+              style: TextStyle(
+                fontSize: 11,
+                fontWeight: FontWeight.w800,
+                color: Colors.white,
+              ),
+            ),
+          ],
         ),
     };
 
@@ -773,49 +1534,6 @@ class _ChapterStatusBadgeState extends State<_ChapterStatusBadge>
                 ),
               ),
       ),
-    );
-  }
-}
-
-/// 카드 중앙 터치 유도 — Lottie 탭 아이콘 + 안내 문구.
-class _ChapterTapFingerHint extends StatelessWidget {
-  const _ChapterTapFingerHint();
-
-  static const _assetPath = 'assets/lottie/touch1.json';
-
-  @override
-  Widget build(BuildContext context) {
-    return Column(
-      mainAxisSize: MainAxisSize.min,
-      children: [
-        SizedBox(
-          width: 64,
-          height: 64,
-          child: Lottie.asset(
-            _assetPath,
-            fit: BoxFit.contain,
-            repeat: true,
-          ),
-        ),
-        const SizedBox(height: 8),
-        Container(
-          padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
-          decoration: BoxDecoration(
-            color: Colors.black.withValues(alpha: 0.32),
-            borderRadius: BorderRadius.circular(999),
-          ),
-          child: const Text(
-            '터치하여 학습 시작',
-            style: TextStyle(
-              fontSize: 12,
-              fontWeight: FontWeight.w700,
-              color: Colors.white,
-              letterSpacing: -0.2,
-              height: 1.1,
-            ),
-          ),
-        ),
-      ],
     );
   }
 }
@@ -870,9 +1588,8 @@ class _ChapterUnifiedBottomScrim extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    // expansion에 따라 하단 딤을 아주 소폭만 보강 (과도한 검은 단색 레이어 제거).
-    final bottomAlpha = 0.65 + 0.08 * expansion.clamp(0.0, 1.0);
-    final fadeStop = 0.45 + 0.06 * expansion.clamp(0.0, 1.0);
+    final bottomAlpha = 0.82 + 0.1 * expansion.clamp(0.0, 1.0);
+    final fadeStop = 0.55 + 0.08 * expansion.clamp(0.0, 1.0);
 
     return DecoratedBox(
       decoration: BoxDecoration(
@@ -881,9 +1598,10 @@ class _ChapterUnifiedBottomScrim extends StatelessWidget {
           end: Alignment.topCenter,
           colors: [
             Colors.black.withValues(alpha: bottomAlpha),
+            Colors.black.withValues(alpha: bottomAlpha * 0.45),
             Colors.transparent,
           ],
-          stops: [0.0, fadeStop],
+          stops: [0.0, fadeStop * 0.55, fadeStop],
         ),
       ),
     );
@@ -1301,6 +2019,7 @@ class _LiquidGlassChip extends StatelessWidget {
   final bool completed;
   final VoidCallback? onTap;
   final double revealProgress;
+  final Widget? howItWorks;
 
   const _LiquidGlassChip({
     required this.child,
@@ -1308,6 +2027,7 @@ class _LiquidGlassChip extends StatelessWidget {
     this.completed = false,
     this.onTap,
     this.revealProgress = 1.0,
+    this.howItWorks,
   });
 
   static const _radius = 16.0;
@@ -1325,28 +2045,70 @@ class _LiquidGlassChip extends StatelessWidget {
       decoration: BoxDecoration(
         color: Colors.white.withValues(alpha: fillAlpha),
         borderRadius: BorderRadius.circular(_radius),
-        border: Border.all(
-          color: Colors.white.withValues(alpha: borderAlpha),
-          width: 1.2,
+        border: completed
+            ? null
+            : Border.all(
+                color: Colors.white.withValues(alpha: borderAlpha),
+                width: 1.2,
+              ),
+      ),
+    );
+
+    final glassBody = Stack(
+      fit: StackFit.expand,
+      children: [
+        if (blurSigma <= 0.5)
+          glassFill
+        else
+          BackdropFilter(
+            filter: ImageFilter.blur(
+              sigmaX: blurSigma,
+              sigmaY: blurSigma,
+            ),
+            child: glassFill,
+          ),
+        if (completed)
+          const Positioned.fill(
+            child: IgnorePointer(
+              child: ColoredBox(
+                color: Color(0x14F59E0B),
+              ),
+            ),
+          ),
+        Opacity(
+          opacity: contentOpacity,
+          child: child,
         ),
-      ),
-      child: Opacity(
-        opacity: contentOpacity,
-        child: child,
-      ),
+        if (completed)
+          const Positioned.fill(
+            child: IgnorePointer(child: _ChampagneSparkleOverlay()),
+          ),
+        if (completed)
+          const Positioned(
+            top: 5,
+            left: 5,
+            child: IgnorePointer(child: _ModeClearTrophyBadge()),
+          ),
+        if (howItWorks != null)
+          Positioned(
+            top: 5,
+            right: 5,
+            child: howItWorks!,
+          ),
+        if (completed)
+          const Positioned.fill(
+            child: IgnorePointer(
+              child: CustomPaint(
+                painter: _ChampagneGoldBorderPainter(radius: _radius),
+              ),
+            ),
+          ),
+      ],
     );
 
     final panel = ClipRRect(
       borderRadius: BorderRadius.circular(_radius),
-      child: blurSigma <= 0.5
-          ? glassFill
-          : BackdropFilter(
-              filter: ImageFilter.blur(
-                sigmaX: blurSigma,
-                sigmaY: blurSigma,
-              ),
-              child: glassFill,
-            ),
+      child: glassBody,
     );
 
     if (onTap == null) return panel;
@@ -1360,6 +2122,253 @@ class _LiquidGlassChip extends StatelessWidget {
         highlightColor: Colors.white.withValues(alpha: 0.06 * glassReveal),
         child: panel,
       ),
+    );
+  }
+}
+
+class _ModeClearTrophyBadge extends StatelessWidget {
+  const _ModeClearTrophyBadge();
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      width: 18,
+      height: 18,
+      decoration: BoxDecoration(
+        shape: BoxShape.circle,
+        color: Colors.white.withValues(alpha: 0.10),
+        border: Border.all(
+          color: _HubChapterGoldTheme.hairline.withValues(alpha: 0.55),
+          width: 0.9,
+        ),
+      ),
+      alignment: Alignment.center,
+      child: Icon(
+        Icons.emoji_events_rounded,
+        size: 11,
+        color: _HubChapterGoldTheme.hairline.withValues(alpha: 0.88),
+      ),
+    );
+  }
+}
+
+class _ChampagneGoldBorderPainter extends CustomPainter {
+  const _ChampagneGoldBorderPainter({required this.radius});
+
+  final double radius;
+
+  @override
+  void paint(Canvas canvas, Size size) {
+    if (size.isEmpty) return;
+    final rrect = RRect.fromRectAndRadius(
+      Offset.zero & size,
+      Radius.circular(radius),
+    ).deflate(0.7);
+    final paint = Paint()
+      ..style = PaintingStyle.stroke
+      ..strokeWidth = 1.15
+      ..shader = LinearGradient(
+        begin: Alignment.topLeft,
+        end: Alignment.bottomRight,
+        colors: [
+          _HubChapterGoldTheme.hairline.withValues(alpha: 0.48),
+          _HubChapterGoldTheme.amber.withValues(alpha: 0.32),
+        ],
+      ).createShader(Offset.zero & size);
+    canvas.drawRRect(rrect, paint);
+  }
+
+  @override
+  bool shouldRepaint(covariant _ChampagneGoldBorderPainter oldDelegate) {
+    return oldDelegate.radius != radius;
+  }
+}
+
+class _ChampagneSparkleOverlay extends StatefulWidget {
+  const _ChampagneSparkleOverlay();
+
+  @override
+  State<_ChampagneSparkleOverlay> createState() =>
+      _ChampagneSparkleOverlayState();
+}
+
+class _ChampagneSparkleOverlayState extends State<_ChampagneSparkleOverlay>
+    with SingleTickerProviderStateMixin {
+  late final AnimationController _twinkle;
+  late final double _phase;
+
+  @override
+  void initState() {
+    super.initState();
+    _phase = math.Random().nextDouble();
+    _twinkle = AnimationController(
+      vsync: this,
+      duration: const Duration(milliseconds: 3800),
+    )..repeat();
+  }
+
+  @override
+  void dispose() {
+    _twinkle.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return AnimatedBuilder(
+      animation: _twinkle,
+      builder: (context, _) {
+        return CustomPaint(
+          painter: _ChampagneSparklePainter(
+            t: (_twinkle.value + _phase) % 1.0,
+          ),
+        );
+      },
+    );
+  }
+}
+
+class _SparkleSpec {
+  const _SparkleSpec({
+    required this.x,
+    required this.y,
+    required this.size,
+    required this.phase,
+    required this.speed,
+    this.star = true,
+  });
+
+  final double x;
+  final double y;
+  final double size;
+  final double phase;
+  final double speed;
+  final bool star;
+}
+
+class _ChampagneSparklePainter extends CustomPainter {
+  const _ChampagneSparklePainter({required this.t});
+
+  final double t;
+
+  static const _specks = [
+    _SparkleSpec(x: 0.50, y: 0.13, size: 9.4, phase: 0.00, speed: 1.00),
+    _SparkleSpec(x: 0.27, y: 0.20, size: 8.2, phase: 0.18, speed: 1.10),
+    _SparkleSpec(x: 0.75, y: 0.18, size: 9.8, phase: 0.34, speed: 0.90),
+    _SparkleSpec(x: 0.16, y: 0.34, size: 7.8, phase: 0.52, speed: 1.14),
+    _SparkleSpec(x: 0.84, y: 0.32, size: 8.6, phase: 0.68, speed: 1.06),
+    _SparkleSpec(x: 0.30, y: 0.50, size: 9.0, phase: 0.12, speed: 0.86),
+    _SparkleSpec(x: 0.70, y: 0.48, size: 8.0, phase: 0.82, speed: 1.02),
+    _SparkleSpec(x: 0.42, y: 0.26, size: 5.0, phase: 0.44, speed: 1.24, star: false),
+    _SparkleSpec(x: 0.60, y: 0.40, size: 4.6, phase: 0.61, speed: 0.94, star: false),
+  ];
+
+  @override
+  void paint(Canvas canvas, Size size) {
+    if (size.isEmpty) return;
+
+    for (final spec in _specks) {
+      final wave = math.sin((t * spec.speed + spec.phase) * math.pi * 2);
+      final spark = math.max(0.0, wave);
+      final intensity = math.pow(spark, 2.6).toDouble();
+      if (intensity < 0.04) continue;
+
+      final center = Offset(spec.x * size.width, spec.y * size.height);
+      final radius = spec.size * (0.55 + 0.45 * intensity);
+      final gold = _HubChapterGoldTheme.hairline.withValues(
+        alpha: 0.18 + 0.62 * intensity,
+      );
+      final white = Colors.white.withValues(alpha: 0.10 + 0.42 * intensity);
+
+      if (spec.star) {
+        _drawStar(canvas, center, radius, gold);
+        _drawStar(canvas, center, radius * 0.38, white);
+      } else {
+        canvas.drawCircle(
+          center,
+          radius * 0.42,
+          Paint()..color = gold,
+        );
+        canvas.drawCircle(
+          center,
+          radius * 0.18,
+          Paint()..color = white,
+        );
+      }
+    }
+  }
+
+  void _drawStar(Canvas canvas, Offset c, double r, Color color) {
+    if (r <= 0.2) return;
+    final pinch = r * 0.18;
+    final path = Path()
+      ..moveTo(c.dx, c.dy - r)
+      ..quadraticBezierTo(c.dx, c.dy - pinch, c.dx + r, c.dy)
+      ..quadraticBezierTo(c.dx + pinch, c.dy, c.dx, c.dy + r)
+      ..quadraticBezierTo(c.dx, c.dy + pinch, c.dx - r, c.dy)
+      ..quadraticBezierTo(c.dx - pinch, c.dy, c.dx, c.dy - r)
+      ..close();
+    canvas.drawPath(
+      path,
+      Paint()
+        ..color = color
+        ..style = PaintingStyle.fill,
+    );
+  }
+
+  @override
+  bool shouldRepaint(covariant _ChampagneSparklePainter oldDelegate) {
+    return oldDelegate.t != t;
+  }
+}
+
+class _CompletedGoldIcon extends StatelessWidget {
+  const _CompletedGoldIcon({
+    required this.icon,
+    required this.shimmerT,
+  });
+
+  final IconData icon;
+  final double shimmerT;
+
+  @override
+  Widget build(BuildContext context) {
+    // 하이라이트가 아이콘 왼쪽 밖 → 오른쪽 밖으로 완전히 빠져나가
+    // t=0 과 t=1 이 같은 베이스 골드만 보이게 해서 루프가 이어진다.
+    final shift = -2.6 + (5.2 * shimmerT);
+    return Stack(
+      alignment: Alignment.center,
+      children: [
+        Icon(
+          icon,
+          size: 21,
+          color: _HubChapterGoldTheme.iconGold,
+        ),
+        ShaderMask(
+          blendMode: BlendMode.srcIn,
+          shaderCallback: (bounds) {
+            return LinearGradient(
+              begin: Alignment(shift - 0.7, -0.28),
+              end: Alignment(shift + 0.7, 0.28),
+              colors: const [
+                _HubChapterGoldTheme.iconGold,
+                _HubChapterGoldTheme.iconGold,
+                _HubChapterGoldTheme.amberDeep,
+                _HubChapterGoldTheme.hairline,
+                _HubChapterGoldTheme.amberDeep,
+                _HubChapterGoldTheme.iconGold,
+                _HubChapterGoldTheme.iconGold,
+              ],
+              stops: const [0.0, 0.28, 0.42, 0.50, 0.58, 0.72, 1.0],
+            ).createShader(bounds);
+          },
+          child: Icon(
+            icon,
+            size: 21,
+            color: Colors.white,
+          ),
+        ),
+      ],
     );
   }
 }
@@ -1388,6 +2397,7 @@ class _ModeGlassIconState extends State<_ModeGlassIcon>
   late final AnimationController _ring;
   late final AnimationController _iconPop;
   late final AnimationController _idle;
+  late final AnimationController _iconShimmer;
   late final Animation<double> _ringCurve;
   late final Animation<double> _iconPopScale;
   bool _started = false;
@@ -1411,6 +2421,10 @@ class _ModeGlassIconState extends State<_ModeGlassIcon>
     _idle = AnimationController(
       vsync: this,
       duration: const Duration(milliseconds: 2800),
+    )..repeat();
+    _iconShimmer = AnimationController(
+      vsync: this,
+      duration: const Duration(milliseconds: 2200),
     )..repeat();
     _ringCurve = CurvedAnimation(
       parent: _ring,
@@ -1474,6 +2488,7 @@ class _ModeGlassIconState extends State<_ModeGlassIcon>
     _ring.dispose();
     _iconPop.dispose();
     _idle.dispose();
+    _iconShimmer.dispose();
     super.dispose();
   }
 
@@ -1483,7 +2498,7 @@ class _ModeGlassIconState extends State<_ModeGlassIcon>
     final hasProgress = target > 0.001;
 
     return AnimatedBuilder(
-      animation: Listenable.merge([_ringCurve, _iconPopScale, _idle]),
+      animation: Listenable.merge([_ringCurve, _iconPopScale, _idle, _iconShimmer]),
       builder: (context, _) {
         final fillT = _ringCurve.value;
         final isFilling = hasProgress && _ring.isAnimating;
@@ -1502,14 +2517,29 @@ class _ModeGlassIconState extends State<_ModeGlassIcon>
         final idleSway = 0.028 * idleAmp * math.sin(idleT * 0.86 + 0.65);
         final idleBob = 0.9 * idleAmp * math.sin(idleT * 1.08 + 1.15);
 
-        final ringColor = hasProgress
-            ? (isFilling
-                ? widget.color
-                : widget.color.withValues(alpha: 0.92))
-            : Colors.white.withValues(alpha: 0.22);
+        final ringFull = hasProgress && displayed >= 0.995;
+        final shimmerT =
+            (_iconShimmer.value + widget.idlePhase * 0.05) % 1.0;
+        final ringColor = ringFull
+            ? _HubChapterGoldTheme.hairline.withValues(alpha: 0.82)
+            : hasProgress
+                ? (isFilling
+                    ? widget.color
+                    : widget.color.withValues(alpha: 0.92))
+                : Colors.white.withValues(alpha: 0.22);
         final trackColor = hasProgress
             ? Colors.white.withValues(alpha: isFilling ? 0.18 : 0.12)
             : Colors.white.withValues(alpha: 0.08);
+        final innerFill = ringFull
+            ? Color.lerp(
+                Colors.white.withValues(alpha: 0.50),
+                _HubChapterGoldTheme.champagne,
+                0.10,
+              )!
+            : Colors.white.withValues(alpha: 0.50);
+        final innerBorder = ringFull
+            ? _HubChapterGoldTheme.hairline.withValues(alpha: 0.42)
+            : Colors.white.withValues(alpha: 0.65);
 
         final body = SizedBox(
           width: _outer,
@@ -1554,9 +2584,9 @@ class _ModeGlassIconState extends State<_ModeGlassIcon>
                   height: _inner,
                   decoration: BoxDecoration(
                     shape: BoxShape.circle,
-                    color: Colors.white.withValues(alpha: 0.50),
+                    color: innerFill,
                     border: Border.all(
-                      color: Colors.white.withValues(alpha: 0.65),
+                      color: innerBorder,
                       width: 1.1,
                     ),
                     boxShadow: [
@@ -1567,11 +2597,16 @@ class _ModeGlassIconState extends State<_ModeGlassIcon>
                       ),
                     ],
                   ),
-                  child: Icon(
-                    widget.icon,
-                    size: 21,
-                    color: widget.color,
-                  ),
+                  child: ringFull
+                      ? _CompletedGoldIcon(
+                          icon: widget.icon,
+                          shimmerT: shimmerT,
+                        )
+                      : Icon(
+                          widget.icon,
+                          size: 21,
+                          color: widget.color,
+                        ),
                 ),
               ),
             ],
@@ -1654,36 +2689,70 @@ class _ModeProgressRingPainter extends CustomPainter {
 class _ModeProgressChip extends StatelessWidget {
   final String label;
   final Color color;
+  final bool completed;
   final VoidCallback? onTap;
 
   const _ModeProgressChip({
     required this.label,
     required this.color,
+    this.completed = false,
     this.onTap,
   });
 
   @override
   Widget build(BuildContext context) {
-    final chip = Container(
-      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
-      decoration: BoxDecoration(
-        color: Colors.white.withValues(alpha: 0.08),
-        borderRadius: BorderRadius.circular(10),
-        border: Border.all(
-          color: color.withValues(alpha: 0.38),
-          width: 0.8,
-        ),
-      ),
-      child: Text(
-        label,
-        style: TextStyle(
-          fontSize: 10,
-          fontWeight: FontWeight.w700,
-          color: color,
-          height: 1.1,
-        ),
-      ),
-    );
+    final chip = completed
+        ? Container(
+            padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+            decoration: BoxDecoration(
+              color: _HubChapterGoldTheme.amber.withValues(alpha: 0.12),
+              borderRadius: BorderRadius.circular(10),
+              border: Border.all(
+                color: _HubChapterGoldTheme.amber.withValues(alpha: 0.42),
+                width: 0.9,
+              ),
+            ),
+            child: Row(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Icon(
+                  Icons.check_rounded,
+                  size: 10,
+                  color: _HubChapterGoldTheme.hairline.withValues(alpha: 0.92),
+                ),
+                const SizedBox(width: 3),
+                Text(
+                  '완료',
+                  style: TextStyle(
+                    fontSize: 10,
+                    fontWeight: FontWeight.w800,
+                    color: _HubChapterGoldTheme.hairline.withValues(alpha: 0.92),
+                    height: 1.1,
+                  ),
+                ),
+              ],
+            ),
+          )
+        : Container(
+            padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+            decoration: BoxDecoration(
+              color: Colors.white.withValues(alpha: 0.08),
+              borderRadius: BorderRadius.circular(10),
+              border: Border.all(
+                color: color.withValues(alpha: 0.38),
+                width: 0.8,
+              ),
+            ),
+            child: Text(
+              label,
+              style: TextStyle(
+                fontSize: 10,
+                fontWeight: FontWeight.w700,
+                color: color,
+                height: 1.1,
+              ),
+            ),
+          );
 
     if (onTap == null) return chip;
 
@@ -1703,6 +2772,7 @@ class _ModeVerticalBody extends StatelessWidget {
   final double revealProgress;
   final String title;
   final String progressLabel;
+  final bool completed;
   final VoidCallback? onProgressTap;
   final double idlePhase;
 
@@ -1714,6 +2784,7 @@ class _ModeVerticalBody extends StatelessWidget {
     required this.revealProgress,
     required this.title,
     required this.progressLabel,
+    this.completed = false,
     this.onProgressTap,
     this.idlePhase = 0,
   });
@@ -1756,6 +2827,7 @@ class _ModeVerticalBody extends StatelessWidget {
           _ModeProgressChip(
             label: progressLabel,
             color: progressColor,
+            completed: completed,
             onTap: onProgressTap,
           ),
         ],
@@ -1786,10 +2858,12 @@ class _WordModeCell extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final known = progress?.knownCount.clamp(0, wordCount) ?? 0;
     final unknown = progress?.unknownCount ?? 0;
-    final total = (progress?.totalCount ?? wordCount).clamp(0, 9999);
-    final safeTotal = total <= 0 ? wordCount : total;
+    final mastered = progress?.isMastered ?? false;
+    final known = mastered
+        ? wordCount
+        : (progress?.knownCount.clamp(0, wordCount) ?? 0);
+    final safeTotal = wordCount;
     final ratio = safeTotal <= 0 ? 0.0 : known / safeTotal;
     final canReview = onReview != null && unknown > 0;
 
@@ -1806,6 +2880,11 @@ class _WordModeCell extends StatelessWidget {
         completed: completed,
         revealProgress: revealProgress,
         onTap: wordCount > 0 ? onPlay : null,
+        howItWorks: _ModeHowItWorksButton(
+          accent: _accent,
+          guideBuilder: (dismiss) =>
+              WordSwipeModeGuideCard(onDismiss: dismiss),
+        ),
         child: _ModeVerticalBody(
           icon: Icons.style_rounded,
           accentColor: _accent,
@@ -1814,6 +2893,7 @@ class _WordModeCell extends StatelessWidget {
           revealProgress: revealProgress,
           title: '단어 스와이프',
           progressLabel: progressLabel,
+          completed: completed,
           onProgressTap: canReview ? onReview : null,
           idlePhase: 0,
         ),
@@ -1851,6 +2931,11 @@ class _SentenceModeCell extends StatelessWidget {
         completed: completed,
         revealProgress: revealProgress,
         onTap: total > 0 ? onPlay : null,
+        howItWorks: _ModeHowItWorksButton(
+          accent: _accent,
+          guideBuilder: (dismiss) =>
+              BasicSentenceModeGuideCard(onDismiss: dismiss),
+        ),
         child: _ModeVerticalBody(
           icon: Icons.view_carousel_rounded,
           accentColor: _accent,
@@ -1859,6 +2944,7 @@ class _SentenceModeCell extends StatelessWidget {
           revealProgress: revealProgress,
           title: '문장 스피킹',
           progressLabel: total == 0 ? '0/0' : '$mastered/$total',
+          completed: completed,
           idlePhase: 2.1,
         ),
       ),
@@ -1904,6 +2990,11 @@ class _ScenarioModeCellState extends State<_ScenarioModeCell> {
           completed: widget.completed,
           revealProgress: widget.revealProgress,
           onTap: total == 0 ? null : () => _showScenarioPopup(context),
+          howItWorks: _ModeHowItWorksButton(
+            accent: _ScenarioModeCell._accent,
+            guideBuilder: (dismiss) =>
+                ScenarioModeGuideCard(onDismiss: dismiss),
+          ),
           child: _ModeVerticalBody(
             icon: Icons.forum_rounded,
             accentColor: _ScenarioModeCell._accent,
@@ -1912,6 +3003,7 @@ class _ScenarioModeCellState extends State<_ScenarioModeCell> {
             revealProgress: widget.revealProgress,
             title: '시나리오 롤플레잉',
             progressLabel: total == 0 ? '0/0' : '$done/$total',
+            completed: widget.completed,
             idlePhase: 4.2,
           ),
         ),
@@ -1950,6 +3042,218 @@ class _ScenarioModeCellState extends State<_ScenarioModeCell> {
     );
 
     overlay.insert(entry);
+  }
+}
+
+/// 학습 모드 카드 우상단 `!` — How it works 안내를 근처 오버레이로 띄운다.
+class _ModeHowItWorksButton extends StatefulWidget {
+  const _ModeHowItWorksButton({
+    required this.accent,
+    required this.guideBuilder,
+  });
+
+  final Color accent;
+  final Widget Function(VoidCallback onDismiss) guideBuilder;
+
+  @override
+  State<_ModeHowItWorksButton> createState() => _ModeHowItWorksButtonState();
+}
+
+class _ModeHowItWorksButtonState extends State<_ModeHowItWorksButton> {
+  OverlayEntry? _entry;
+
+  @override
+  void dispose() {
+    _removeOverlay();
+    super.dispose();
+  }
+
+  void _removeOverlay() {
+    _entry?.remove();
+    _entry = null;
+  }
+
+  void _showOverlay() {
+    if (_entry != null) {
+      _removeOverlay();
+      return;
+    }
+
+    final box = context.findRenderObject() as RenderBox?;
+    if (box == null || !box.hasSize) return;
+    final origin = box.localToGlobal(Offset.zero);
+    final buttonSize = box.size;
+
+    final overlay = Overlay.of(context);
+    late OverlayEntry entry;
+    entry = OverlayEntry(
+      builder: (overlayContext) {
+        return _ModeHowItWorksOverlay(
+          anchor: origin,
+          anchorSize: buttonSize,
+          guide: widget.guideBuilder(() {
+            entry.remove();
+            if (_entry == entry) _entry = null;
+          }),
+          onDismiss: () {
+            entry.remove();
+            if (_entry == entry) _entry = null;
+          },
+        );
+      },
+    );
+    _entry = entry;
+    overlay.insert(entry);
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Material(
+      color: Colors.transparent,
+      child: InkWell(
+        onTap: _showOverlay,
+        customBorder: const CircleBorder(),
+        child: Container(
+          width: 22,
+          height: 22,
+          alignment: Alignment.center,
+          decoration: BoxDecoration(
+            color: Colors.black.withValues(alpha: 0.48),
+            shape: BoxShape.circle,
+            border: Border.all(
+              color: Colors.white.withValues(alpha: 0.78),
+              width: 1,
+            ),
+            boxShadow: [
+              BoxShadow(
+                color: widget.accent.withValues(alpha: 0.28),
+                blurRadius: 6,
+                offset: const Offset(0, 1),
+              ),
+            ],
+          ),
+          child: const Text(
+            '!',
+            style: TextStyle(
+              fontSize: 13,
+              fontWeight: FontWeight.w900,
+              color: Colors.white,
+              height: 1,
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+class _ModeHowItWorksOverlay extends StatefulWidget {
+  const _ModeHowItWorksOverlay({
+    required this.anchor,
+    required this.anchorSize,
+    required this.guide,
+    required this.onDismiss,
+  });
+
+  final Offset anchor;
+  final Size anchorSize;
+  final Widget guide;
+  final VoidCallback onDismiss;
+
+  @override
+  State<_ModeHowItWorksOverlay> createState() => _ModeHowItWorksOverlayState();
+}
+
+class _ModeHowItWorksOverlayState extends State<_ModeHowItWorksOverlay>
+    with SingleTickerProviderStateMixin {
+  late final AnimationController _entry;
+
+  @override
+  void initState() {
+    super.initState();
+    _entry = AnimationController(
+      vsync: this,
+      duration: const Duration(milliseconds: 240),
+    )..forward();
+  }
+
+  @override
+  void dispose() {
+    _entry.dispose();
+    super.dispose();
+  }
+
+  Future<void> _dismiss() async {
+    if (_entry.status == AnimationStatus.reverse ||
+        _entry.status == AnimationStatus.dismissed) {
+      return;
+    }
+    await _entry.reverse();
+    if (mounted) widget.onDismiss();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final size = MediaQuery.sizeOf(context);
+    final pad = MediaQuery.paddingOf(context);
+    final popupWidth = (size.width - 28).clamp(280.0, 360.0);
+    final maxHeight = size.height * 0.62;
+    final spaceAbove = widget.anchor.dy - pad.top - 12;
+    final spaceBelow = size.height -
+        pad.bottom -
+        (widget.anchor.dy + widget.anchorSize.height) -
+        12;
+    final showAbove = spaceAbove >= 200 || spaceAbove >= spaceBelow;
+    var left = widget.anchor.dx + widget.anchorSize.width / 2 - popupWidth / 2;
+    left = left.clamp(14.0, size.width - popupWidth - 14.0);
+
+    final curved = CurvedAnimation(
+      parent: _entry,
+      curve: Curves.easeOutBack,
+      reverseCurve: Curves.easeInCubic,
+    );
+
+    return Stack(
+      children: [
+        Positioned.fill(
+          child: GestureDetector(
+            behavior: HitTestBehavior.opaque,
+            onTap: _dismiss,
+            child: FadeTransition(
+              opacity: _entry,
+              child: ColoredBox(
+                color: Colors.black.withValues(alpha: 0.22),
+              ),
+            ),
+          ),
+        ),
+        Positioned(
+          left: left,
+          width: popupWidth,
+          top: showAbove
+              ? null
+              : widget.anchor.dy + widget.anchorSize.height + 8,
+          bottom: showAbove ? size.height - widget.anchor.dy + 8 : null,
+          child: FadeTransition(
+            opacity: _entry,
+            child: ScaleTransition(
+              scale: Tween<double>(begin: 0.92, end: 1).animate(curved),
+              alignment:
+                  showAbove ? Alignment.bottomCenter : Alignment.topCenter,
+              child: Material(
+                color: Colors.transparent,
+                child: ConstrainedBox(
+                  constraints: BoxConstraints(maxHeight: maxHeight),
+                  child: SingleChildScrollView(
+                    child: widget.guide,
+                  ),
+                ),
+              ),
+            ),
+          ),
+        ),
+      ],
+    );
   }
 }
 

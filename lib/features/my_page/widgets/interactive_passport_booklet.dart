@@ -1,10 +1,12 @@
 import 'dart:math' as math;
 
 import 'package:flutter/material.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
 
-import 'aviation_title_stamp.dart';
 import '../../../app/my_page_report_providers.dart';
+import '../../../app/title_badge_providers.dart';
 import 'my_page_section_header.dart';
+import 'title_badge_tile.dart';
 
 // ── Passport palette ─────────────────────────────────────────
 
@@ -82,10 +84,19 @@ class _InteractivePassportBookletState extends State<InteractivePassportBooklet>
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
-        const MyPageSectionHeader(
-          icon: Icons.badge_outlined,
-          title: 'CREW LEARNING PASSPORT',
-          subtitle: '학습 미션 달성 스탬프 및 자격 칭호',
+        Row(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            const Expanded(
+              child: MyPageSectionHeader(
+                icon: Icons.badge_outlined,
+                title: 'CREW LEARNING PASSPORT',
+                subtitle: '학습 미션 달성 스탬프 및 자격 칭호',
+              ),
+            ),
+            const SizedBox(width: 8),
+            _TitleBadgeDebugUnlockSwitch(),
+          ],
         ),
         const SizedBox(height: 12),
         _PassportBookletView(
@@ -99,6 +110,46 @@ class _InteractivePassportBookletState extends State<InteractivePassportBooklet>
           onTabSelected: _goToPage,
         ),
       ],
+    );
+  }
+}
+
+/// QA용 — 헤더 옆 전체 칭호 해제 미리보기 스위치.
+class _TitleBadgeDebugUnlockSwitch extends ConsumerWidget {
+  const _TitleBadgeDebugUnlockSwitch();
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final enabled = ref.watch(titleBadgeDebugUnlockAllProvider);
+
+    return Tooltip(
+      message: enabled ? '전체 칭호 해제 (테스트 ON)' : '전체 칭호 해제 (테스트 OFF)',
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Text(
+            'TEST',
+            style: TextStyle(
+              fontSize: 9,
+              fontWeight: FontWeight.w800,
+              letterSpacing: 0.6,
+              color: enabled
+                  ? _PassportPalette.inkNavy
+                  : _PassportPalette.slate.withValues(alpha: 0.55),
+            ),
+          ),
+          Transform.scale(
+            scale: 0.82,
+            child: Switch(
+              value: enabled,
+              materialTapTargetSize: MaterialTapTargetSize.shrinkWrap,
+              onChanged: (value) => ref
+                  .read(titleBadgeDebugUnlockAllProvider.notifier)
+                  .setEnabled(value),
+            ),
+          ),
+        ],
+      ),
     );
   }
 }
@@ -186,9 +237,7 @@ class _PassportBookletView extends StatelessWidget {
                                       controller: pageController,
                                       onPageChanged: onPageChanged,
                                       children: [
-                                        _TitleStampsPage(
-                                          badges: report.titleBadges,
-                                        ),
+                                        const _TitleStampsPage(),
                                         _SentenceStampsPage(mission: mission),
                                         _ScenarioPassportPage(mission: mission),
                                         _WordSwipePassportPage(mission: mission),
@@ -445,18 +494,15 @@ class _PassportOfficialHeader extends StatelessWidget {
   }
 }
 
-// ── PAGE 1: 칭호 잉크 도장 ───────────────────────────────────
+// ── PAGE 1: 칭호 뱃지 스탬프 그리드 ──────────────────────────
 
-class _TitleStampsPage extends StatelessWidget {
-  final List<PassportTitleBadge> badges;
-
-  const _TitleStampsPage({required this.badges});
+class _TitleStampsPage extends ConsumerWidget {
+  const _TitleStampsPage();
 
   @override
-  Widget build(BuildContext context) {
-    final split = (badges.length / 2).ceil();
-    final leftBadges = badges.sublist(0, split);
-    final rightBadges = badges.sublist(split);
+  Widget build(BuildContext context, WidgetRef ref) {
+    final badges = ref.watch(titleBadgesProvider);
+    final unlockedCount = badges.where((b) => b.isUnlocked).length;
 
     return Padding(
       padding: const EdgeInsets.fromLTRB(
@@ -468,137 +514,65 @@ class _TitleStampsPage extends StatelessWidget {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
-          Text(
-            'OFFICIAL CREW TITLE STAMPS',
-            style: TextStyle(
-              fontSize: 9,
-              fontWeight: FontWeight.w700,
-              letterSpacing: 1.2,
-              color: _PassportPalette.slate.withValues(alpha: 0.7),
-            ),
+          Row(
+            children: [
+              Text(
+                'OFFICIAL CREW TITLE STAMPS',
+                style: TextStyle(
+                  fontSize: 9,
+                  fontWeight: FontWeight.w700,
+                  letterSpacing: 1.2,
+                  color: _PassportPalette.slate.withValues(alpha: 0.7),
+                ),
+              ),
+              const Spacer(),
+              Text(
+                '$unlockedCount / ${badges.length}',
+                style: TextStyle(
+                  fontSize: 10,
+                  fontWeight: FontWeight.w700,
+                  color: _PassportPalette.slate.withValues(alpha: 0.85),
+                ),
+              ),
+            ],
           ),
-          const SizedBox(height: 8),
+          const SizedBox(height: 6),
           Expanded(
-            child: Row(
-              crossAxisAlignment: CrossAxisAlignment.stretch,
-              children: [
-                Expanded(
-                  child: Padding(
-                    padding: const EdgeInsets.only(right: 16),
-                    child: _TitleStampHalfGrid(
-                      badges: leftBadges,
-                      startIndex: 0,
-                    ),
+            child: LayoutBuilder(
+              builder: (context, constraints) {
+                if (constraints.maxWidth <= 0) return const SizedBox.shrink();
+
+                const crossSpacing = 10.0;
+                const mainSpacing = 12.0;
+                final cellWidth =
+                    ((constraints.maxWidth - crossSpacing * 2) / 3)
+                        .clamp(40.0, double.infinity);
+                final tileHeight =
+                    (((cellWidth - 6).clamp(56.0, 88.0) * 1.5).clamp(84.0, 132.0)) *
+                    0.8;
+
+                return GridView.builder(
+                  physics: const BouncingScrollPhysics(),
+                  clipBehavior: Clip.none,
+                  padding: const EdgeInsets.symmetric(vertical: 4),
+                  gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
+                    crossAxisCount: 3,
+                    mainAxisExtent: tileHeight + 32,
+                    mainAxisSpacing: mainSpacing,
+                    crossAxisSpacing: crossSpacing,
                   ),
-                ),
-                Expanded(
-                  child: Padding(
-                    padding: const EdgeInsets.only(left: 16),
-                    child: _TitleStampHalfGrid(
-                      badges: rightBadges,
-                      startIndex: split,
-                    ),
-                  ),
-                ),
-              ],
+                  itemCount: badges.length,
+                  itemBuilder: (context, i) {
+                    return Center(
+                      child: TitleBadgeTile(badge: badges[i], height: tileHeight),
+                    );
+                  },
+                );
+              },
             ),
           ),
         ],
       ),
-    );
-  }
-}
-
-class _TitleStampHalfGrid extends StatelessWidget {
-  final List<PassportTitleBadge> badges;
-  final int startIndex;
-
-  const _TitleStampHalfGrid({
-    required this.badges,
-    required this.startIndex,
-  });
-
-  @override
-  Widget build(BuildContext context) {
-    return LayoutBuilder(
-      builder: (context, constraints) {
-        if (constraints.maxWidth <= 0) {
-          return const SizedBox.shrink();
-        }
-
-        const crossSpacing = 8.0;
-        const mainSpacing = 10.0;
-        const horizontalPad = 6.0;
-        const rotationPad = 10.0;
-        final cellWidth = ((constraints.maxWidth -
-                    horizontalPad * 2 -
-                    crossSpacing) /
-                2)
-            .clamp(40.0, double.infinity);
-        final stampSize = (cellWidth - 2).clamp(68.0, 96.0);
-
-        return GridView.builder(
-          physics: const BouncingScrollPhysics(),
-          clipBehavior: Clip.none,
-          padding: const EdgeInsets.fromLTRB(
-            horizontalPad,
-            8,
-            horizontalPad,
-            12,
-          ),
-          gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
-            crossAxisCount: 2,
-            mainAxisExtent: stampSize + rotationPad * 2,
-            mainAxisSpacing: mainSpacing,
-            crossAxisSpacing: crossSpacing,
-          ),
-          itemCount: badges.length,
-          itemBuilder: (context, i) {
-            return Center(
-              child: _TitleInkStampSlot(
-                badge: badges[i],
-                index: startIndex + i,
-                size: stampSize,
-              ),
-            );
-          },
-        );
-      },
-    );
-  }
-}
-
-class _TitleInkStampSlot extends StatelessWidget {
-  final PassportTitleBadge badge;
-  final int index;
-  final double size;
-
-  const _TitleInkStampSlot({
-    required this.badge,
-    required this.index,
-    this.size = 112,
-  });
-
-  void _onTap(BuildContext context) {
-    if (badge.unlocked) return;
-    ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(
-        content: Text(badge.lockHint),
-        behavior: SnackBarBehavior.floating,
-        duration: const Duration(seconds: 2),
-      ),
-    );
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    if (badge.unlocked) {
-      return AviationTitleStamp(badge: badge, index: index, size: size);
-    }
-
-    return GestureDetector(
-      onTap: () => _onTap(context),
-      child: AviationLockedStamp(badge: badge, index: index, size: size),
     );
   }
 }

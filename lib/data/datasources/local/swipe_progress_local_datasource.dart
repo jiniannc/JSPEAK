@@ -22,7 +22,16 @@ class SwipeCategoryProgress {
 
   int get knownCount {
     if (!played) return 0;
-    if (knownWordIds.isNotEmpty) return knownWordIds.length;
+    // 모르는 단어가 없으면 카테고리 전체를 완료로 본다.
+    // (중복 ID 때문에 knownWordIds.length < totalCount 가 되는 경우 보정)
+    if (unknownCount == 0) {
+      if (totalCount > 0) return totalCount;
+      return knownWordIds.length;
+    }
+    if (knownWordIds.isNotEmpty) {
+      final counted = knownWordIds.length;
+      return totalCount > 0 ? counted.clamp(0, totalCount) : counted;
+    }
     return (totalCount - unknownCount).clamp(0, totalCount);
   }
 

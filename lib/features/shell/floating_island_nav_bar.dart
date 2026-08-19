@@ -1,6 +1,5 @@
 import 'dart:ui' show ImageFilter;
 
-import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 
@@ -168,7 +167,7 @@ class _FloatingIslandNavBarState extends State<FloatingIslandNavBar> {
   }
 }
 
-/// iOS Frosted Glass — 하단 플로팅 네비 배경.
+/// 학습 모드 칩과 동일한 Frosted Glass — BackdropFilter + 얇은 유리 채움.
 class _FloatingIslandGlassBar extends StatelessWidget {
   final double radius;
   final Widget child;
@@ -180,24 +179,12 @@ class _FloatingIslandGlassBar extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final panel = DecoratedBox(
-      decoration: BoxDecoration(
-        color: Colors.white.withValues(alpha: 0.65),
-        borderRadius: BorderRadius.circular(radius),
-        border: Border.all(
-          color: Colors.white.withValues(alpha: 0.4),
-          width: 1.2,
-        ),
-      ),
-      child: child,
-    );
-
     return Container(
       decoration: BoxDecoration(
         borderRadius: BorderRadius.circular(radius),
         boxShadow: [
           BoxShadow(
-            color: Colors.black.withValues(alpha: 0.06),
+            color: Colors.black.withValues(alpha: 0.08),
             blurRadius: 20,
             offset: const Offset(0, -4),
           ),
@@ -205,12 +192,34 @@ class _FloatingIslandGlassBar extends StatelessWidget {
       ),
       child: ClipRRect(
         borderRadius: BorderRadius.circular(radius),
-        child: kIsWeb
-            ? panel
-            : BackdropFilter(
-                filter: ImageFilter.blur(sigmaX: 16, sigmaY: 16),
-                child: panel,
+        child: Stack(
+          fit: StackFit.passthrough,
+          children: [
+            Positioned.fill(
+              child: BackdropFilter(
+                filter: ImageFilter.blur(
+                  sigmaX: GlassSurfaceStyle.floatingIslandBlur,
+                  sigmaY: GlassSurfaceStyle.floatingIslandBlur,
+                ),
+                child: DecoratedBox(
+                  decoration: BoxDecoration(
+                    color: Colors.white.withValues(
+                      alpha: GlassSurfaceStyle.floatingIslandFillAlpha,
+                    ),
+                    borderRadius: BorderRadius.circular(radius),
+                    border: Border.all(
+                      color: Colors.white.withValues(
+                        alpha: GlassSurfaceStyle.floatingIslandBorderAlpha,
+                      ),
+                      width: 1.2,
+                    ),
+                  ),
+                ),
               ),
+            ),
+            child,
+          ],
+        ),
       ),
     );
   }

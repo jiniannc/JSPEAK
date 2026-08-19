@@ -8,12 +8,15 @@ import '../../app/learning_providers.dart';
 import '../../app/my_page_report_providers.dart';
 import '../../app/my_page_stats_providers.dart';
 import '../../app/providers.dart';
+import '../../app/title_badge_providers.dart';
 import '../../core/config/active5_layout.dart';
 import '../../core/config/app_config.dart';
 import '../../core/theme/animated_language_scope.dart';
 import '../../core/widgets/device_scaffold.dart';
+import '../../data/models/title_badge.dart';
 import '../shell/floating_island_nav_bar.dart';
 import '../shell/main_shell_tab_header.dart';
+import 'widgets/badge_unlock_dialog.dart';
 import 'widgets/interactive_passport_booklet.dart';
 import 'widgets/my_page_section_header.dart';
 import '../dictionary/widgets/bookmark_vault_modal.dart';
@@ -27,6 +30,46 @@ class MyPageScreen extends ConsumerStatefulWidget {
 }
 
 class _MyPageScreenState extends ConsumerState<MyPageScreen> {
+  bool _celebrationShowing = false;
+
+  void _handleBadgeUnlockState(
+    TitleBadgeUnlockState? previous,
+    TitleBadgeUnlockState next,
+  ) {
+    if (_celebrationShowing) return;
+    if (next.pendingCelebrations.isEmpty) return;
+
+    final badgeId = next.pendingCelebrations.first;
+    final badges = ref.read(titleBadgesProvider);
+    TitleBadge? badge;
+    for (final b in badges) {
+      if (b.id == badgeId) {
+        badge = b;
+        break;
+      }
+    }
+
+    if (badge == null) {
+      ref.read(titleBadgeUnlockProvider.notifier).acknowledgeCelebration(
+            badgeId,
+          );
+      return;
+    }
+
+    _celebrationShowing = true;
+    final unlockedBadge = badge;
+    WidgetsBinding.instance.addPostFrameCallback((_) async {
+      if (!mounted) return;
+      await showBadgeUnlockDialog(context, unlockedBadge);
+      if (mounted) {
+        ref
+            .read(titleBadgeUnlockProvider.notifier)
+            .acknowledgeCelebration(badgeId);
+      }
+      _celebrationShowing = false;
+    });
+  }
+
   Future<void> _syncContent() async {
     final syncing = ref.read(contentProvider).value?.syncing ?? false;
     if (syncing) return;
@@ -60,6 +103,11 @@ class _MyPageScreenState extends ConsumerState<MyPageScreen> {
 
   @override
   Widget build(BuildContext context) {
+    ref.listen<TitleBadgeUnlockState>(
+      titleBadgeUnlockProvider,
+      _handleBadgeUnlockState,
+    );
+
     final metrics = Active5Layout.of(context);
     final language = ref.watch(learningHubLanguageProvider);
     final passportReport = ref.watch(myPagePassportReportProvider);

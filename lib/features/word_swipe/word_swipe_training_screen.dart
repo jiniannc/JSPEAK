@@ -217,7 +217,7 @@ class _WordSwipeTrainingScreenState
       language: _language,
       onRetryLimited: () {
         _resultPresented = false;
-        final retryDeck = _unknownWords.take(5).toList();
+        final retryDeck = List<WordModel>.from(_unknownWords);
         if (retryDeck.isEmpty) return;
         _startSession(
           language: _language,

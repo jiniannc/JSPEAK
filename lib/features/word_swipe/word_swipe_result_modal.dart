@@ -243,7 +243,7 @@ class _WordSwipeResultModalState extends ConsumerState<WordSwipeResultModal>
 
   @override
   Widget build(BuildContext context) {
-    final retryCount = math.min(5, _unknownCount);
+    final retryCount = _unknownCount;
     final checkIn = ref.watch(crewCheckInProvider);
     final streak = math.max(
       1,

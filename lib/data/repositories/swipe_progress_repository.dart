@@ -19,15 +19,19 @@ class SwipeProgressRepository {
     required List<String> unknownWordIds,
   }) async {
     final stats = await _local.load();
-    final unknown = unknownWordIds.toSet();
-    final known = {
+    final uniqueAll = {
       for (final id in allWordIds)
-        if (!unknown.contains(id)) id,
+        if (id.trim().isNotEmpty) id,
     };
+    final unknown = {
+      for (final id in unknownWordIds)
+        if (uniqueAll.contains(id)) id,
+    };
+    final known = uniqueAll.difference(unknown);
     final now = DateTime.now();
     final progress = SwipeCategoryProgress(
       played: true,
-      totalCount: allWordIds.length,
+      totalCount: uniqueAll.length,
       unknownWordIds: unknown,
       knownWordIds: known,
       lastStudiedAt: now,
