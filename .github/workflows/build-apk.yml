@@ -1,0 +1,46 @@
+name: Build APK
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [main]
+
+env:
+  CONTENT_URL: https://script.google.com/macros/s/AKfycbxSpFlw58q42sCEFS5ItNu-jME7OBuycRm-Ffm7lcpIlUprVN-OP_dhwODyzlqJ9c-Y/exec
+
+jobs:
+  build-apk:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Java 17
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "17"
+
+      - name: Set up Flutter
+        uses: subosito/flutter-action@v2
+        with:
+          flutter-version: "3.47.1"
+          cache: true
+
+      - name: Install dependencies
+        run: flutter pub get
+
+      - name: Build release APK
+        run: >
+          flutter build apk --release
+          --dart-define=CONTENT_URL=${{ env.CONTENT_URL }}
+
+      - name: Upload APK artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: jspeak-release-apk
+          path: build/app/outputs/flutter-apk/app-release.apk
+          retention-days: 30
