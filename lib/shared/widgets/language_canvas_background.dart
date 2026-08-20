@@ -22,7 +22,6 @@ class LanguageCanvasBackground extends StatelessWidget {
           end: Alignment.bottomRight,
           colors: [
             Color.lerp(palette.canvas, Colors.white, 0.35)!,
-            palette.canvas,
             Color.lerp(palette.softFill, palette.canvas, 0.55)!,
           ],
         ),

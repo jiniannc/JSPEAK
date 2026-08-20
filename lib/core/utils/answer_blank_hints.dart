@@ -1,9 +1,9 @@
-import 'dart:math' as math;
-
 import 'package:flutter/material.dart';
 
+import '../../shared/widgets/hint_run_badge.dart';
 import 'scenario_answer_compare.dart';
 import 'word_compare.dart';
+import 'word_token_alignment.dart';
 
 /// 정답 문장을 글자 단위 언더라인으로 보여주고,
 /// 인식/입력 텍스트와 순차 매칭해 맞은 글자는 공개·틀린 글자는 빨간색으로 표시한다.
@@ -14,6 +14,30 @@ class AnswerBlankHints {
   AnswerBlankHints._();
 
   static final RegExp _stripPunct = RegExp(r'[.,!?;:"()\[\]…。、？！]');
+
+  static bool isPunctuationChar(String char) =>
+      char.isNotEmpty && char.replaceAll(_stripPunct, '').isEmpty;
+
+  static String _wordCore(String word) {
+    var end = word.length;
+    while (end > 0 && isPunctuationChar(word[end - 1])) {
+      end--;
+    }
+    return word.substring(0, end);
+  }
+
+  static String _trailingPunctuation(String word) {
+    final chars = <String>[];
+    for (var i = word.length - 1; i >= 0; i--) {
+      final c = word[i];
+      if (isPunctuationChar(c)) {
+        chars.add(c);
+      } else {
+        break;
+      }
+    }
+    return chars.reversed.join();
+  }
 
   /// `____`, `____.`, `( )`, `（）`, 전각 밑줄 등 빈칸 표기.
   static final RegExp _blankPattern = RegExp(
@@ -48,16 +72,21 @@ class AnswerBlankHints {
     final isCjk = language == 'Japanese' || language == 'Chinese';
 
     if (isCjk) {
-      final chars = correct
-          .replaceAll(_stripPunct, '')
-          .split('')
-          .where((c) => c.trim().isNotEmpty)
-          .toList();
       var keyWordCounter = -1;
       var inKeyRun = false;
+      var letterIdx = 0;
       final out = <BlankLetter>[];
-      for (var i = 0; i < chars.length; i++) {
-        final isKey = i < keyFlags.length ? keyFlags[i] : true;
+      for (final c in correct.split('')) {
+        if (c.trim().isEmpty) continue;
+        if (isPunctuationChar(c)) {
+          inKeyRun = false;
+          out.add(
+            BlankLetter(char: c, isKey: false, isPunctuation: true),
+          );
+          continue;
+        }
+        final isKey = letterIdx < keyFlags.length ? keyFlags[letterIdx] : true;
+        letterIdx++;
         if (isKey) {
           if (!inKeyRun) {
             keyWordCounter++;
@@ -65,14 +94,14 @@ class AnswerBlankHints {
           }
           out.add(
             BlankLetter(
-              char: chars[i],
+              char: c,
               isKey: true,
               keyWordIndex: keyWordCounter,
             ),
           );
         } else {
           inKeyRun = false;
-          out.add(BlankLetter(char: chars[i], isKey: false));
+          out.add(BlankLetter(char: c, isKey: false));
         }
       }
       return out;
@@ -86,18 +115,27 @@ class AnswerBlankHints {
     for (final word in words) {
       if (!firstWord) out.add(const BlankLetter.gap());
       firstWord = false;
-      final letters = word
-          .replaceAll(_stripPunct, '')
-          .split('')
-          .where((c) => c.isNotEmpty)
-          .toList();
-      if (letters.isEmpty) continue;
 
-      final wordIsKey = letterIndex < keyFlags.length && keyFlags[letterIndex];
-      final keyIdx = wordIsKey ? (++keyWordCounter) : -1;
-      for (final ch in letters) {
-        out.add(BlankLetter(char: ch, isKey: wordIsKey, keyWordIndex: keyIdx));
-        letterIndex++;
+      final core = _wordCore(word);
+      final trailing = _trailingPunctuation(word);
+      final letters = core.split('').where((c) => c.isNotEmpty).toList();
+      if (letters.isEmpty && trailing.isEmpty) continue;
+
+      if (letters.isNotEmpty) {
+        final wordIsKey =
+            letterIndex < keyFlags.length && keyFlags[letterIndex];
+        final keyIdx = wordIsKey ? (++keyWordCounter) : -1;
+        for (final ch in letters) {
+          out.add(
+            BlankLetter(char: ch, isKey: wordIsKey, keyWordIndex: keyIdx),
+          );
+          letterIndex++;
+        }
+      }
+      for (final p in trailing.split('')) {
+        out.add(
+          BlankLetter(char: p, isKey: false, isPunctuation: true),
+        );
       }
     }
     return out;
@@ -383,6 +421,8 @@ class AnswerBlankHints {
     for (final d in display) {
       if (d.isGap) {
         displayToMatch.add(null);
+      } else if (d.isPunctuation) {
+        displayToMatch.add(null);
       } else {
         displayToMatch.add(matchChars.length);
         matchChars.add(
@@ -405,7 +445,11 @@ class AnswerBlankHints {
       return const BlankLetterState.blank();
     });
 
-    void matchAgainst(List<int> indices, String input) {
+    void matchAgainst(
+      List<int> indices,
+      String input, {
+      bool englishWordAligned = false,
+    }) {
       if (indices.isEmpty) return;
       final fixedInput = language == 'Japanese'
           ? ScenarioAnswerCompare.preprocessSpoken(input, language: language)
@@ -417,6 +461,17 @@ class AnswerBlankHints {
       final targetChars = [for (final i in indices) matchChars[i]];
 
       if (language == 'English') {
+        if (englishWordAligned) {
+          _matchEnglishWordAligned(
+            indices: indices,
+            matchChars: matchChars,
+            matchStates: matchStates,
+            spoken: fixedInput,
+            correct: correct,
+            blankFrame: blankFrame,
+          );
+          return;
+        }
         // 타이핑 힌트: LCS(부분수열) 대신 왼쪽부터 순차 접두사.
         for (var ti = 0; ti < targetChars.length; ti++) {
           if (ti >= spokenMatch.length) break;
@@ -474,26 +529,372 @@ class AnswerBlankHints {
         );
       }
     } else {
-      matchAgainst([
-        for (var i = 0; i < matchChars.length; i++)
-          if (!structureActive || isKeyMatch[i]) i,
-      ], adjustedSpoken);
+      matchAgainst(
+        [
+          for (var i = 0; i < matchChars.length; i++)
+            if (!structureActive || isKeyMatch[i]) i,
+        ],
+        adjustedSpoken,
+        englishWordAligned: language == 'English',
+      );
     }
 
     return [
       for (var i = 0; i < display.length; i++)
         if (display[i].isGap)
           const BlankLetterState.blank()
+        else if (display[i].isPunctuation)
+          BlankLetterState.structure(display[i].char)
         else
           matchStates[displayToMatch[i]!],
     ];
   }
+
+  /// 언더라인 슬롯 + 상태 (틀린 영어 단어 overflow 칸 포함).
+  static BlankHintLayout layout({
+    required String correct,
+    required String spoken,
+    required String language,
+    String blankFrame = '',
+    bool structureRevealed = false,
+    List<String>? blankInputs,
+    List<List<int>>? keyRuns,
+    List<String>? blankRunInputs,
+  }) {
+    final letters = displayLetters(
+      correct,
+      language: language,
+      blankFrame: blankFrame,
+    );
+    final states = letterStates(
+      correct: correct,
+      spoken: spoken,
+      language: language,
+      blankFrame: blankFrame,
+      structureRevealed: structureRevealed,
+      blankInputs: blankInputs,
+      keyRuns: keyRuns,
+      blankRunInputs: blankRunInputs,
+    );
+    if (language != 'English' ||
+        spoken.trim().isEmpty ||
+        (structureRevealed && blankRunInputs != null)) {
+      return BlankHintLayout(letters: letters, states: states);
+    }
+    return _expandEnglishWrongOverflow(
+      letters: letters,
+      states: states,
+      spoken: spoken,
+      correct: correct,
+    );
+  }
+
+  /// 틀린 영어 단어가 정답보다 길면 해당 단어 뒤에 overflow 슬롯 추가.
+  static BlankHintLayout _expandEnglishWrongOverflow({
+    required List<BlankLetter> letters,
+    required List<BlankLetterState> states,
+    required String spoken,
+    required String correct,
+  }) {
+    final alignment = _englishWordBlankAlignment(
+      correct: correct,
+      spoken: spoken,
+    );
+    final expandedLetters = <BlankLetter>[];
+    final expandedStates = <BlankLetterState>[];
+
+    var wordIdx = 0;
+    var i = 0;
+    while (i < letters.length) {
+      if (letters[i].isGap) {
+        expandedLetters.add(letters[i]);
+        expandedStates.add(states[i]);
+        i++;
+        continue;
+      }
+
+      final wordStart = i;
+      while (i < letters.length && !letters[i].isGap) {
+        expandedLetters.add(letters[i]);
+        expandedStates.add(states[i]);
+        i++;
+      }
+      var coreEnd = i;
+      while (coreEnd > wordStart && letters[coreEnd - 1].isPunctuation) {
+        coreEnd--;
+      }
+      final wordSlotCount = coreEnd - wordStart;
+      final info = alignment[wordIdx];
+
+      if (info != null &&
+          info.kind == _EnglishWordBlankKind.wrong &&
+          info.spokenWord != null) {
+        final spokenLetters = matchLetters(info.spokenWord!, language: 'English')
+            .where((c) => c.trim().isNotEmpty)
+            .toList();
+        if (spokenLetters.length > wordSlotCount) {
+          final template = letters[wordStart];
+          for (var oi = wordSlotCount; oi < spokenLetters.length; oi++) {
+            expandedLetters.add(
+              BlankLetter(
+                char: spokenLetters[oi],
+                isKey: template.isKey,
+                keyWordIndex: template.keyWordIndex,
+                isOverflow: true,
+              ),
+            );
+            expandedStates.add(
+              BlankLetterState.wrong(spokenLetters[oi]),
+            );
+          }
+        }
+      }
+      wordIdx++;
+    }
+
+    return BlankHintLayout(letters: expandedLetters, states: expandedStates);
+  }
+
+  /// 정답 단어 인덱스별 STT 매칭 — 생략(deletion)·치환·부분 인식 포함.
+  static Map<int, _EnglishWordBlankInfo> _englishWordBlankAlignment({
+    required String correct,
+    required String spoken,
+  }) {
+    final correctWords = WordCompare.splitWords(correct);
+    final spokenWords = WordCompare.splitWords(spoken);
+    if (correctWords.isEmpty || spokenWords.isEmpty) return {};
+
+    final alignment = WordTokenAligner.align(
+      targetWords: correctWords,
+      spokenWords: spokenWords,
+      language: 'English',
+    );
+
+    final result = <int, _EnglishWordBlankInfo>{};
+    var targetIdx = 0;
+    for (final op in alignment.ops) {
+      switch (op.kind) {
+        case WordAlignmentKind.match:
+          result[targetIdx] = _EnglishWordBlankInfo(
+            kind: _EnglishWordBlankKind.matched,
+            spokenWord: op.spokenWord,
+          );
+          targetIdx++;
+        case WordAlignmentKind.substitution:
+          final spokenWord = op.spokenWord ?? '';
+          final targetWord = op.targetWord ?? '';
+          final normSpoken = WordCompare.normalize(spokenWord);
+          final normTarget = WordCompare.normalize(targetWord);
+          if (normTarget.startsWith(normSpoken) && normSpoken.isNotEmpty) {
+            result[targetIdx] = _EnglishWordBlankInfo(
+              kind: _EnglishWordBlankKind.partial,
+              spokenWord: spokenWord,
+            );
+          } else {
+            result[targetIdx] = _EnglishWordBlankInfo(
+              kind: _EnglishWordBlankKind.wrong,
+              spokenWord: spokenWord,
+            );
+          }
+          targetIdx++;
+        case WordAlignmentKind.deletion:
+          targetIdx++;
+        case WordAlignmentKind.insertion:
+          break;
+      }
+    }
+
+    // 라이브 STT: 마지막 토큰이 다음 정답 단어의 접두사면 부분 일치.
+    if (targetIdx < correctWords.length) {
+      final lastSpoken = spokenWords.last;
+      final normSpoken = WordCompare.normalize(lastSpoken);
+      final normTarget = WordCompare.normalize(correctWords[targetIdx]);
+      final existing = result[targetIdx];
+      if (normTarget.startsWith(normSpoken) &&
+          normSpoken.isNotEmpty &&
+          normSpoken != normTarget &&
+          (existing == null || existing.kind != _EnglishWordBlankKind.matched)) {
+        result[targetIdx] = _EnglishWordBlankInfo(
+          kind: _EnglishWordBlankKind.partial,
+          spokenWord: lastSpoken,
+        );
+      }
+    }
+
+    return result;
+  }
+
+  /// 영어 STT 오답 유형 — 가이드 멘트 분기용.
+  static EnglishSpeakingWrongKind classifyEnglishSpeakingWrong({
+    required String correct,
+    required String spoken,
+  }) {
+    final correctWords = WordCompare.splitWords(correct);
+    final spokenWords = WordCompare.splitWords(spoken);
+    if (correctWords.isEmpty || spokenWords.isEmpty) {
+      return EnglishSpeakingWrongKind.mispronunciation;
+    }
+
+    final alignment = WordTokenAligner.align(
+      targetWords: correctWords,
+      spokenWords: spokenWords,
+      language: 'English',
+    );
+
+    final matchedCorrect = <int>{};
+    final wrongCorrect = <int>{};
+    final omittedCorrect = <int>{};
+    var targetIdx = 0;
+    for (final op in alignment.ops) {
+      switch (op.kind) {
+        case WordAlignmentKind.match:
+          matchedCorrect.add(targetIdx);
+          targetIdx++;
+        case WordAlignmentKind.substitution:
+          final spokenWord = op.spokenWord ?? '';
+          final targetWord = op.targetWord ?? '';
+          final normSpoken = WordCompare.normalize(spokenWord);
+          final normTarget = WordCompare.normalize(targetWord);
+          if (normTarget.startsWith(normSpoken) && normSpoken.isNotEmpty) {
+            matchedCorrect.add(targetIdx);
+          } else {
+            wrongCorrect.add(targetIdx);
+          }
+          targetIdx++;
+        case WordAlignmentKind.deletion:
+          omittedCorrect.add(targetIdx);
+          targetIdx++;
+        case WordAlignmentKind.insertion:
+          break;
+      }
+    }
+
+    if (wrongCorrect.isNotEmpty) {
+      return EnglishSpeakingWrongKind.mispronunciation;
+    }
+    if (omittedCorrect.isEmpty) {
+      return EnglishSpeakingWrongKind.mispronunciation;
+    }
+
+    final hasMatchAfterOmission = omittedCorrect.any(
+      (o) => matchedCorrect.any((m) => m > o),
+    );
+    if (!hasMatchAfterOmission) {
+      return EnglishSpeakingWrongKind.incompleteEnding;
+    }
+    return EnglishSpeakingWrongKind.omittedWord;
+  }
+
+  /// STT·발음 피드백 — 단어 정렬 후 맞으면 공개·틀리면 빨간색(발화 글자).
+  static void _matchEnglishWordAligned({
+    required List<int> indices,
+    required List<String> matchChars,
+    required List<BlankLetterState> matchStates,
+    required String spoken,
+    required String correct,
+    String blankFrame = '',
+  }) {
+    if (WordCompare.splitWords(spoken).isEmpty) return;
+
+    final alignment = _englishWordBlankAlignment(
+      correct: correct,
+      spoken: spoken,
+    );
+
+    final display = displayLetters(
+      correct,
+      language: 'English',
+      blankFrame: blankFrame,
+    );
+    final indexSet = indices.toSet();
+
+    final wordToMatchIndices = <int, List<int>>{};
+    var matchIdx = 0;
+    var wordIdx = 0;
+    for (final d in display) {
+      if (d.isGap) {
+        wordIdx++;
+        continue;
+      }
+      if (indexSet.contains(matchIdx)) {
+        wordToMatchIndices.putIfAbsent(wordIdx, () => []).add(matchIdx);
+      }
+      matchIdx++;
+    }
+
+    for (final entry in wordToMatchIndices.entries) {
+      final wi = entry.key;
+      final charIndices = entry.value;
+      if (charIndices.isEmpty) continue;
+
+      final info = alignment[wi];
+      if (info == null || info.spokenWord == null) continue;
+
+      switch (info.kind) {
+        case _EnglishWordBlankKind.matched:
+          for (final i in charIndices) {
+            matchStates[i] = BlankLetterState.correct(matchChars[i]);
+          }
+        case _EnglishWordBlankKind.partial:
+          final normSpoken = WordCompare.normalize(info.spokenWord!);
+          for (var ci = 0;
+              ci < normSpoken.length && ci < charIndices.length;
+              ci++) {
+            matchStates[charIndices[ci]] =
+                BlankLetterState.correct(matchChars[charIndices[ci]]);
+          }
+        case _EnglishWordBlankKind.wrong:
+          final spokenLetters = matchLetters(info.spokenWord!, language: 'English')
+              .where((c) => c.trim().isNotEmpty)
+              .toList();
+          for (var ci = 0;
+              ci < charIndices.length && ci < spokenLetters.length;
+              ci++) {
+            matchStates[charIndices[ci]] =
+                BlankLetterState.wrong(spokenLetters[ci]);
+          }
+      }
+    }
+  }
+}
+
+enum _EnglishWordBlankKind { matched, partial, wrong }
+
+enum EnglishSpeakingWrongKind {
+  /// 틀린 단어(치환) — 빨간색 표시.
+  mispronunciation,
+  /// 중간 단어 누락 — 빈칸.
+  omittedWord,
+  /// 문장 끝까지 말하지 못함(타임아웃 등).
+  incompleteEnding,
+}
+
+class _EnglishWordBlankInfo {
+  final _EnglishWordBlankKind kind;
+  final String? spokenWord;
+
+  const _EnglishWordBlankInfo({
+    required this.kind,
+    this.spokenWord,
+  });
+}
+
+class BlankHintLayout {
+  final List<BlankLetter> letters;
+  final List<BlankLetterState> states;
+
+  const BlankHintLayout({
+    required this.letters,
+    required this.states,
+  });
 }
 
 class BlankLetter {
   final String char;
   final bool isGap;
   final bool isKey;
+  final bool isOverflow;
+  final bool isPunctuation;
 
   /// 주요 단어(빈칸) 순번. 구조/간격은 -1.
   final int keyWordIndex;
@@ -502,12 +903,16 @@ class BlankLetter {
     required this.char,
     this.isKey = true,
     this.keyWordIndex = -1,
+    this.isOverflow = false,
+    this.isPunctuation = false,
   }) : isGap = false;
 
   const BlankLetter.gap()
     : char = '',
       isGap = true,
       isKey = false,
+      isOverflow = false,
+      isPunctuation = false,
       keyWordIndex = -1;
 }
 
@@ -603,7 +1008,7 @@ class AnswerBlankHintMetrics {
   }
 }
 
-/// 언더라인 힌트 — 가능하면 한 줄, 빈칸 런은 테두리 펄스로 터치를 유도.
+/// 언더라인 힌트 — [maxWidth] 안에서 단어 그룹 단위로 줄바꿈.
 class AnswerBlankHintView extends StatefulWidget {
   final String correctSentence;
   final String spokenText;
@@ -617,6 +1022,7 @@ class AnswerBlankHintView extends StatefulWidget {
   final List<String> blankInputs;
   final int? selectedBlankIndex;
   final ValueChanged<int>? onBlankTap;
+  final bool showHintRunLabels;
 
   const AnswerBlankHintView({
     super.key,
@@ -632,6 +1038,7 @@ class AnswerBlankHintView extends StatefulWidget {
     this.blankInputs = const [],
     this.selectedBlankIndex,
     this.onBlankTap,
+    this.showHintRunLabels = false,
   });
 
   @override
@@ -643,6 +1050,9 @@ class _AnswerBlankHintViewState extends State<AnswerBlankHintView>
   static const Color _runBorderColor = Color(0xFFFF8F00);
   /// 테두리를 레이아웃 안쪽에 두어 Clip/말풍선에 잘리지 않게 함.
   static const double _borderInset = 4.0;
+
+  /// 줄 사이 간격.
+  static const double _lineGap = 6.0;
 
   late final AnimationController _pulse;
 
@@ -687,9 +1097,6 @@ class _AnswerBlankHintViewState extends State<AnswerBlankHintView>
 
   double get _slotH => widget.fontSize + 10;
 
-  /// 힌트 전에도 같은 여백을 확보해 테두리만 나타나도 크기가 안 변함.
-  double get _lineH => _slotH + _borderInset * 2;
-
   double _charSlotWidth(String char) {
     return AnswerBlankHintMetrics.charSlotWidth(
       char: char,
@@ -698,7 +1105,27 @@ class _AnswerBlankHintViewState extends State<AnswerBlankHintView>
     );
   }
 
-  double _visualGroupWidth(List<BlankLetter> letters, _VisualGroup group) {
+  /// 틀린 글자는 발화 문자 폭, 그 외는 정답 문자 폭.
+  double _slotWidthFor(
+    int letterIdx,
+    List<BlankLetter> letters,
+    List<BlankLetterState> states,
+  ) {
+    if (letterIdx < states.length &&
+        states[letterIdx].kind == BlankRevealKind.wrong) {
+      final shown = states[letterIdx].shown;
+      if (shown != null && shown.isNotEmpty) {
+        return _charSlotWidth(shown);
+      }
+    }
+    return _charSlotWidth(letters[letterIdx].char);
+  }
+
+  double _visualGroupWidth(
+    List<BlankLetter> letters,
+    List<BlankLetterState> states,
+    _VisualGroup group,
+  ) {
     var w = 0.0;
     var inWord = false;
     for (final idx in group.items) {
@@ -708,7 +1135,7 @@ class _AnswerBlankHintViewState extends State<AnswerBlankHintView>
         continue;
       }
       if (inWord) w += _layout.letterGap;
-      w += _charSlotWidth(letters[idx].char);
+      w += _slotWidthFor(idx, letters, states);
       inWord = true;
     }
     // 빈칸 런은 힌트 여부와 무관하게 테두리 폭 예약
@@ -718,74 +1145,156 @@ class _AnswerBlankHintViewState extends State<AnswerBlankHintView>
     return w;
   }
 
-  double measureWidth(List<BlankLetter> letters, List<_VisualGroup> groups) {
+  double measureWidth(
+    List<BlankLetter> letters,
+    List<BlankLetterState> states,
+    List<_VisualGroup> groups,
+  ) {
     var w = 0.0;
     for (var g = 0; g < groups.length; g++) {
       if (g > 0) w += _layout.groupGap;
-      w += _visualGroupWidth(letters, groups[g]);
+      w += _visualGroupWidth(letters, states, groups[g]);
     }
     return w;
   }
 
+  /// 단어(빈칸 런) 경계에서만 줄바꿈 — 글자 크기 유지.
+  List<List<_VisualGroup>> _packGroupsIntoLines(
+    List<BlankLetter> letters,
+    List<BlankLetterState> states,
+    List<_VisualGroup> groups,
+    double maxWidth,
+  ) {
+    if (groups.isEmpty || maxWidth <= 0) return [groups];
+
+    final lines = <List<_VisualGroup>>[];
+    var currentLine = <_VisualGroup>[];
+    var currentW = 0.0;
+
+    for (final group in groups) {
+      final groupW = _visualGroupWidth(letters, states, group);
+      final gap = currentLine.isEmpty ? 0.0 : _layout.groupGap;
+      final needed = gap + groupW;
+
+      if (currentLine.isNotEmpty && currentW + needed > maxWidth) {
+        lines.add(currentLine);
+        currentLine = [group];
+        currentW = groupW;
+      } else {
+        currentW += needed;
+        currentLine.add(group);
+      }
+    }
+    if (currentLine.isNotEmpty) lines.add(currentLine);
+    return lines;
+  }
+
   @override
   Widget build(BuildContext context) {
-    final letters = AnswerBlankHints.displayLetters(
-      widget.correctSentence,
-      language: widget.language,
-      blankFrame: widget.blankFrame,
-    );
     final keyRuns = AnswerBlankHints.contiguousKeyRuns(
       correct: widget.correctSentence,
       blankFrame: widget.blankFrame,
       language: widget.language,
     );
-    final states = AnswerBlankHints.letterStates(
+    final layout = AnswerBlankHints.layout(
       correct: widget.correctSentence,
       spoken: widget.spokenText,
       language: widget.language,
       blankFrame: widget.blankFrame,
       structureRevealed: widget.structureRevealed,
       keyRuns: keyRuns,
-      blankRunInputs: widget.structureRevealed ? widget.blankInputs : null,
+      blankRunInputs: widget.structureRevealed &&
+              widget.selectedBlankIndex != null
+          ? widget.blankInputs
+          : null,
     );
+    final letters = layout.letters;
+    final states = layout.states;
     final muted =
         widget.blankColor ?? widget.accentColor.withValues(alpha: 0.35);
     final groups = _visualGroups(letters, keyRuns);
-    final naturalW = measureWidth(letters, groups);
     final limit = widget.maxWidth ??
         (MediaQuery.sizeOf(context).width * 0.88 - 36);
-    final displayW = naturalW <= 0 ? 0.0 : math.min(naturalW, limit);
-    final scale = naturalW > 0 ? displayW / naturalW : 1.0;
+    final lines = _packGroupsIntoLines(letters, states, groups, limit);
 
     return AnimatedBuilder(
       animation: _pulse,
       builder: (context, _) {
-        // Transform.scale은 제약을 그대로 넘기므로, OverflowBox로
-        // 자연 폭 레이아웃 후 한 줄로 축소해야 overflow/줄바꿈이 없다.
         return SizedBox(
-          width: displayW,
-          height: _lineH * scale,
-          child: ClipRect(
-            child: Transform.scale(
-              scale: scale,
-              alignment: Alignment.centerLeft,
-              child: OverflowBox(
-                alignment: Alignment.centerLeft,
-                minWidth: naturalW,
-                maxWidth: naturalW,
-                minHeight: _lineH,
-                maxHeight: _lineH,
-                child: SizedBox(
-                  width: naturalW,
-                  height: _lineH,
-                  child: _buildLine(letters, states, muted, groups),
+          width: limit,
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              for (var li = 0; li < lines.length; li++)
+                Padding(
+                  padding: EdgeInsets.only(top: li > 0 ? _lineGap : 0),
+                  child: _buildLine(letters, states, muted, lines[li]),
                 ),
-              ),
-            ),
+            ],
           ),
         );
       },
     );
+  }
+
+  List<Widget> _buildGroupWordSpans(
+    List<BlankLetter> letters,
+    List<BlankLetterState> states,
+    Color muted,
+    _VisualGroup group,
+  ) {
+    final children = <Widget>[];
+    var j = 0;
+    while (j < group.items.length) {
+      if (group.items[j] == null) {
+        children.add(SizedBox(width: _layout.groupGap));
+        j++;
+        continue;
+      }
+
+      final spanIndices = <int>[];
+      final firstIdx = group.items[j]!;
+      final keyWordIdx =
+          letters[firstIdx].isKey ? letters[firstIdx].keyWordIndex : -1;
+
+      while (j < group.items.length && group.items[j] != null) {
+        final idx = group.items[j]!;
+        if (letters[idx].isKey &&
+            keyWordIdx >= 0 &&
+            letters[idx].keyWordIndex != keyWordIdx) {
+          break;
+        }
+        spanIndices.add(idx);
+        j++;
+      }
+
+      final wordRow = Row(
+        mainAxisSize: MainAxisSize.min,
+        crossAxisAlignment: CrossAxisAlignment.end,
+        children: [
+          for (var k = 0; k < spanIndices.length; k++) ...[
+            if (k > 0) SizedBox(width: _layout.letterGap),
+            _LetterSlot(
+              state: spanIndices[k] < states.length
+                  ? states[spanIndices[k]]
+                  : const BlankLetterState.blank(),
+              correctChar: letters[spanIndices[k]].char,
+              isPunctuation: letters[spanIndices[k]].isPunctuation,
+              accent: widget.accentColor,
+              muted: muted,
+              slotHeight: _slotH,
+              slotWidth: _slotWidthFor(spanIndices[k], letters, states),
+              letterStyle: _letterStyle,
+              blankPlaceholder: _layout.blankPlaceholder,
+            ),
+          ],
+        ],
+      );
+
+      children.add(wordRow);
+    }
+    return children;
   }
 
   Widget _buildVisualGroup(
@@ -805,27 +1314,7 @@ class _AnswerBlankHintViewState extends State<AnswerBlankHintView>
     final row = Row(
       mainAxisSize: MainAxisSize.min,
       crossAxisAlignment: CrossAxisAlignment.end,
-      children: [
-        for (var j = 0; j < group.items.length; j++)
-          if (group.items[j] == null)
-            SizedBox(width: _layout.groupGap)
-          else ...[
-            if (j > 0 && group.items[j - 1] != null)
-              SizedBox(width: _layout.letterGap),
-            _LetterSlot(
-              state: group.items[j]! < states.length
-                  ? states[group.items[j]!]
-                  : const BlankLetterState.blank(),
-              correctChar: letters[group.items[j]!].char,
-              accent: widget.accentColor,
-              muted: muted,
-              slotHeight: _slotH,
-              slotWidth: _charSlotWidth(letters[group.items[j]!].char),
-              letterStyle: _letterStyle,
-              blankPlaceholder: _layout.blankPlaceholder,
-            ),
-          ],
-      ],
+      children: _buildGroupWordSpans(letters, states, muted, group),
     );
 
     // 모든 그룹에 동일한 세로 여백 → 힌트 on/off 시 높이 불변·정렬 유지
@@ -883,12 +1372,38 @@ class _AnswerBlankHintViewState extends State<AnswerBlankHintView>
       child: padded,
     );
 
-    if (!tappable) return boxed;
+    if (!tappable) {
+      return _wrapHintRunLabel(keyIdx, group, boxed);
+    }
 
-    return GestureDetector(
-      onTap: () => widget.onBlankTap!(keyIdx),
-      behavior: HitTestBehavior.opaque,
-      child: boxed,
+    return _wrapHintRunLabel(
+      keyIdx,
+      group,
+      GestureDetector(
+        onTap: () => widget.onBlankTap!(keyIdx),
+        behavior: HitTestBehavior.opaque,
+        child: boxed,
+      ),
+    );
+  }
+
+  Widget _wrapHintRunLabel(int runIndex, _VisualGroup group, Widget child) {
+    if (!widget.showHintRunLabels || !group.isKeyRun || runIndex < 0) {
+      return child;
+    }
+    return Stack(
+      clipBehavior: Clip.none,
+      children: [
+        child,
+        Positioned(
+          top: -5,
+          left: -4,
+          child: HintRunBadge(
+            number: runIndex + 1,
+            color: widget.accentColor,
+          ),
+        ),
+      ],
     );
   }
 
@@ -900,15 +1415,28 @@ class _AnswerBlankHintViewState extends State<AnswerBlankHintView>
         if (current.isNotEmpty) words.add(current);
         current = [];
       } else {
+        final cur = letters[i];
+        if (cur.isPunctuation) {
+          current.add(i);
+          continue;
+        }
         if (current.isNotEmpty) {
-          final prev = letters[current.last];
-          final cur = letters[i];
-          if (prev.isKey != cur.isKey ||
-              (prev.isKey &&
-                  cur.isKey &&
-                  prev.keyWordIndex != cur.keyWordIndex)) {
-            words.add(current);
-            current = [];
+          int? lastContentIdx;
+          for (final idx in current.reversed) {
+            if (!letters[idx].isPunctuation) {
+              lastContentIdx = idx;
+              break;
+            }
+          }
+          if (lastContentIdx != null) {
+            final prev = letters[lastContentIdx];
+            if (prev.isKey != cur.isKey ||
+                (prev.isKey &&
+                    cur.isKey &&
+                    prev.keyWordIndex != cur.keyWordIndex)) {
+              words.add(current);
+              current = [];
+            }
           }
         }
         current.add(i);
@@ -979,6 +1507,7 @@ class _VisualGroup {
 class _LetterSlot extends StatelessWidget {
   final BlankLetterState state;
   final String correctChar;
+  final bool isPunctuation;
   final Color accent;
   final Color muted;
   final double slotHeight;
@@ -989,6 +1518,7 @@ class _LetterSlot extends StatelessWidget {
   const _LetterSlot({
     required this.state,
     required this.correctChar,
+    this.isPunctuation = false,
     required this.accent,
     required this.muted,
     required this.slotHeight,
@@ -1012,6 +1542,23 @@ class _LetterSlot extends StatelessWidget {
       BlankRevealKind.blank => accent,
     };
 
+    if (isPunctuation) {
+      return SizedBox(
+        width: slotWidth,
+        height: slotHeight,
+        child: Align(
+          alignment: Alignment.bottomCenter,
+          child: Padding(
+            padding: const EdgeInsets.only(bottom: 2),
+            child: Text(
+              correctChar,
+              style: letterStyle.copyWith(color: color),
+            ),
+          ),
+        ),
+      );
+    }
+
     late final Color barColor;
     var barHeight = 2.0;
     if (kind == BlankRevealKind.correct) {
@@ -1032,7 +1579,13 @@ class _LetterSlot extends StatelessWidget {
                 maxLines: 1,
                 softWrap: false,
                 overflow: TextOverflow.clip,
-                style: letterStyle.copyWith(color: color),
+                style: letterStyle.copyWith(
+                  color: color,
+                  decoration: kind == BlankRevealKind.wrong
+                      ? TextDecoration.lineThrough
+                      : null,
+                  decorationColor: wrongColor,
+                ),
               )
             : const SizedBox.shrink();
 

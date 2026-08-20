@@ -4,9 +4,14 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../../app/my_page_report_providers.dart';
+import '../../../app/providers.dart';
+import '../../../app/scenario_providers.dart';
 import '../../../app/title_badge_providers.dart';
+import '../../../data/models/learning_hub_chapter.dart';
+import '../../../data/models/scenario.dart';
 import 'my_page_section_header.dart';
 import 'title_badge_tile.dart';
+import 'vocab_swipe_seal.dart';
 
 // ── Passport palette ─────────────────────────────────────────
 
@@ -23,7 +28,6 @@ abstract final class _PassportPalette {
 
   static const bookletHeight = 410.0;
   static const pagePaddingH = 20.0;
-  static const pagePaddingV = 16.0;
 
   static double rotationForIndex(int index) {
     const rotations = [-0.08, 0.10, -0.06, 0.11, -0.09, 0.07, -0.10, 0.08];
@@ -222,15 +226,27 @@ class _PassportBookletView extends StatelessWidget {
                       child: Stack(
                         clipBehavior: Clip.none,
                         children: [
+                          const _SpineCreaseOverlay(),
                           Positioned.fill(
                             child: CustomPaint(
                               painter: _PassportPaperBorderPainter(),
                               child: Column(
                                 crossAxisAlignment: CrossAxisAlignment.stretch,
                                 children: [
-                                  _PassportOfficialHeader(
-                                    selectedLanguage: selectedLanguage,
-                                    onLanguageSelected: onLanguageSelected,
+                                  DecoratedBox(
+                                    decoration: BoxDecoration(
+                                      color: _PassportPalette.paper,
+                                      border: Border(
+                                        bottom: BorderSide(
+                                          color: _PassportPalette.paperEdge
+                                              .withValues(alpha: 0.85),
+                                        ),
+                                      ),
+                                    ),
+                                    child: _PassportOfficialHeader(
+                                      selectedLanguage: selectedLanguage,
+                                      onLanguageSelected: onLanguageSelected,
+                                    ),
                                   ),
                                   Expanded(
                                     child: PageView(
@@ -238,9 +254,15 @@ class _PassportBookletView extends StatelessWidget {
                                       onPageChanged: onPageChanged,
                                       children: [
                                         const _TitleStampsPage(),
+                                        _WordSwipePassportPage(
+                                          mission: mission,
+                                          language: selectedLanguage,
+                                          isActive: currentPage == 1,
+                                        ),
                                         _SentenceStampsPage(mission: mission),
-                                        _ScenarioPassportPage(mission: mission),
-                                        _WordSwipePassportPage(mission: mission),
+                                        _ScenarioPassportPage(
+                                          language: selectedLanguage,
+                                        ),
                                       ],
                                     ),
                                   ),
@@ -249,7 +271,6 @@ class _PassportBookletView extends StatelessWidget {
                               ),
                             ),
                           ),
-                          const _SpineCreaseOverlay(),
                         ],
                       ),
                     ),
@@ -347,7 +368,12 @@ class _SpineCreasePainter extends CustomPainter {
 // ── Top index tabs ───────────────────────────────────────────
 
 class _TopIndexTabs extends StatelessWidget {
-  static const _labels = ['칭호', '문장', '시나리오', '단어'];
+  static const _labels = [
+    '칭호',
+    '단어 스와이프',
+    '문장 스피킹',
+    '시나리오 롤플레잉',
+  ];
 
   final int currentPage;
   final ValueChanged<int> onPageSelected;
@@ -502,82 +528,51 @@ class _TitleStampsPage extends ConsumerWidget {
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final badges = ref.watch(titleBadgesProvider);
-    final unlockedCount = badges.where((b) => b.isUnlocked).length;
 
     return Padding(
       padding: const EdgeInsets.fromLTRB(
         _PassportPalette.pagePaddingH,
-        _PassportPalette.pagePaddingV,
+        10,
         _PassportPalette.pagePaddingH,
-        _PassportPalette.pagePaddingV,
+        8,
       ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.stretch,
-        children: [
-          Row(
-            children: [
-              Text(
-                'OFFICIAL CREW TITLE STAMPS',
-                style: TextStyle(
-                  fontSize: 9,
-                  fontWeight: FontWeight.w700,
-                  letterSpacing: 1.2,
-                  color: _PassportPalette.slate.withValues(alpha: 0.7),
-                ),
-              ),
-              const Spacer(),
-              Text(
-                '$unlockedCount / ${badges.length}',
-                style: TextStyle(
-                  fontSize: 10,
-                  fontWeight: FontWeight.w700,
-                  color: _PassportPalette.slate.withValues(alpha: 0.85),
-                ),
-              ),
-            ],
-          ),
-          const SizedBox(height: 6),
-          Expanded(
-            child: LayoutBuilder(
-              builder: (context, constraints) {
-                if (constraints.maxWidth <= 0) return const SizedBox.shrink();
+      child: LayoutBuilder(
+        builder: (context, constraints) {
+          if (constraints.maxWidth <= 0) return const SizedBox.shrink();
 
-                const crossSpacing = 10.0;
-                const mainSpacing = 12.0;
-                final cellWidth =
-                    ((constraints.maxWidth - crossSpacing * 2) / 3)
-                        .clamp(40.0, double.infinity);
-                final tileHeight =
-                    (((cellWidth - 6).clamp(56.0, 88.0) * 1.5).clamp(84.0, 132.0)) *
-                    0.8;
+          const crossSpacing = 10.0;
+          const mainSpacing = 12.0;
+          final cellWidth =
+              ((constraints.maxWidth - crossSpacing * 2) / 3)
+                  .clamp(40.0, double.infinity);
+          final tileHeight =
+              (((cellWidth - 6).clamp(56.0, 88.0) * 1.5).clamp(84.0, 132.0)) *
+              0.8;
 
-                return GridView.builder(
-                  physics: const BouncingScrollPhysics(),
-                  clipBehavior: Clip.none,
-                  padding: const EdgeInsets.symmetric(vertical: 4),
-                  gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
-                    crossAxisCount: 3,
-                    mainAxisExtent: tileHeight + 32,
-                    mainAxisSpacing: mainSpacing,
-                    crossAxisSpacing: crossSpacing,
-                  ),
-                  itemCount: badges.length,
-                  itemBuilder: (context, i) {
-                    return Center(
-                      child: TitleBadgeTile(badge: badges[i], height: tileHeight),
-                    );
-                  },
-                );
-              },
+          return GridView.builder(
+            physics: const BouncingScrollPhysics(),
+            clipBehavior: Clip.none,
+            padding: const EdgeInsets.symmetric(vertical: 4),
+            gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
+              crossAxisCount: 3,
+              mainAxisExtent: tileHeight + 32,
+              mainAxisSpacing: mainSpacing,
+              crossAxisSpacing: crossSpacing,
             ),
-          ),
-        ],
+            itemCount: badges.length,
+            itemBuilder: (context, i) {
+              return Center(
+                child: TitleBadgeTile(badge: badges[i], height: tileHeight),
+              );
+            },
+          );
+        },
       ),
     );
   }
 }
 
-// ── PAGE 2: 문장 스탬프 ──────────────────────────────────────
+// ── PAGE 3: 문장 스탬프 ──────────────────────────────────────
 
 class _SentenceStampsPage extends StatelessWidget {
   final MyPageLanguageMissionProgress mission;
@@ -588,36 +583,17 @@ class _SentenceStampsPage extends StatelessWidget {
   Widget build(BuildContext context) {
     final summary = mission.stampSummary;
 
-    return Padding(
-      padding: const EdgeInsets.fromLTRB(
-        _PassportPalette.pagePaddingH,
-        _PassportPalette.pagePaddingV,
-        _PassportPalette.pagePaddingH,
-        12,
-      ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.stretch,
-        children: [
-          Text(
-            'SENTENCE TRAINING STAMPS',
-            style: TextStyle(
-              fontSize: 9,
-              fontWeight: FontWeight.w700,
-              letterSpacing: 1.2,
-              color: _PassportPalette.slate.withValues(alpha: 0.7),
-            ),
+    return LayoutBuilder(
+      builder: (context, constraints) {
+        return Padding(
+          padding: const EdgeInsets.fromLTRB(
+            _PassportPalette.pagePaddingH,
+            10,
+            _PassportPalette.pagePaddingH,
+            12,
           ),
-          const SizedBox(height: 4),
-          Text(
-            '${mission.stampTotalEarned} / ${mission.stampTotalPossible} acquired',
-            style: TextStyle(
-              fontSize: 11,
-              fontWeight: FontWeight.w600,
-              color: _PassportPalette.slate.withValues(alpha: 0.85),
-            ),
-          ),
-          const SizedBox(height: 12),
-          Expanded(
+          child: SizedBox(
+            height: constraints.maxHeight,
             child: Row(
               crossAxisAlignment: CrossAxisAlignment.stretch,
               children: [
@@ -653,8 +629,8 @@ class _SentenceStampsPage extends StatelessWidget {
               ],
             ),
           ),
-        ],
-      ),
+        );
+      },
     );
   }
 }
@@ -687,15 +663,6 @@ class _InkStampBoardColumn extends StatelessWidget {
             fontWeight: FontWeight.w800,
             letterSpacing: 0.8,
             color: ink.withValues(alpha: 0.85),
-          ),
-        ),
-        const SizedBox(height: 2),
-        Text(
-          '$earned/$total',
-          style: TextStyle(
-            fontSize: 10,
-            fontWeight: FontWeight.w700,
-            color: _PassportPalette.slate,
           ),
         ),
         const SizedBox(height: 8),
@@ -741,208 +708,187 @@ class _InkStampBoardColumn extends StatelessWidget {
   }
 }
 
-// ── PAGE 3: 시나리오 ─────────────────────────────────────────
+// ── PAGE 4: 시나리오 (챕터별 행) ──────────────────────────────
 
-class _ScenarioPassportPage extends StatelessWidget {
-  final MyPageLanguageMissionProgress mission;
+class _ScenarioPassportPage extends ConsumerWidget {
+  final String language;
 
-  const _ScenarioPassportPage({required this.mission});
+  const _ScenarioPassportPage({
+    required this.language,
+  });
+
+  static const _maxStampsPerChapter = 8;
+  static const _stampSlotsPerRow = 8;
 
   @override
-  Widget build(BuildContext context) {
-    final total = mission.scenarioTotal;
-    final done = mission.scenarioCompleted;
-    final slots = total.clamp(0, 16);
+  Widget build(BuildContext context, WidgetRef ref) {
+    final content = ref.watch(contentProvider).value?.bundle;
+    final scenarioStats = ref.watch(scenarioProgressProvider).stats;
+    final chapters = content?.learningHubChaptersFor(language) ?? const [];
+
+    final rows = <({LearningHubChapter chapter, List<Scenario> scenarios})>[];
+    if (content != null) {
+      for (final chapter in chapters) {
+        final scenarios = content
+            .scenariosForHubChapter(language, chapter)
+            .take(_maxStampsPerChapter)
+            .toList(growable: false);
+        if (scenarios.isEmpty) continue;
+        rows.add((chapter: chapter, scenarios: scenarios));
+      }
+    }
 
     return Padding(
       padding: const EdgeInsets.fromLTRB(
         _PassportPalette.pagePaddingH,
-        _PassportPalette.pagePaddingV,
+        10,
         _PassportPalette.pagePaddingH,
-        12,
+        8,
       ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.stretch,
-        children: [
-          Text(
-            'SCENARIO ENTRY STAMPS',
-            style: TextStyle(
-              fontSize: 9,
-              fontWeight: FontWeight.w700,
-              letterSpacing: 1.2,
-              color: _PassportPalette.slate.withValues(alpha: 0.7),
-            ),
-          ),
-          const SizedBox(height: 4),
-          Text(
-            'Cleared: $done / $total',
-            style: TextStyle(
-              fontSize: 11,
-              fontWeight: FontWeight.w600,
-              color: _PassportPalette.slate.withValues(alpha: 0.85),
-            ),
-          ),
-          const SizedBox(height: 12),
-          Expanded(
-            child: GridView.builder(
-              physics: const NeverScrollableScrollPhysics(),
-              clipBehavior: Clip.none,
-              padding: const EdgeInsets.all(4),
-              gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
-                crossAxisCount: 4,
-                crossAxisSpacing: 10,
-                mainAxisSpacing: 10,
-                childAspectRatio: 1.05,
+      child: rows.isEmpty
+          ? Center(
+              child: Text(
+                '시나리오가 아직 없어요',
+                style: TextStyle(
+                  fontSize: 12,
+                  color: _PassportPalette.slate.withValues(alpha: 0.7),
+                ),
               ),
-              itemCount: slots,
+            )
+          : ListView.separated(
+              padding: const EdgeInsets.only(bottom: 4),
+              itemCount: rows.length,
+              separatorBuilder: (context, index) => const SizedBox(height: 8),
               itemBuilder: (context, index) {
-                final stamped = index < done;
-                if (stamped) {
-                  return _PassportInkStamp(
-                    index: index,
-                    shape: _InkStampShape.doubleRect,
-                    ink: _PassportPalette.inkNavy,
-                    fillOpacity: 0.09,
-                    strokeWidth: 1.5,
-                    child: Column(
-                      mainAxisAlignment: MainAxisAlignment.center,
-                      children: [
-                        Icon(
-                          Icons.flight_land_rounded,
-                          size: 14,
-                          color: _PassportPalette.inkNavy.withValues(alpha: 0.85),
-                        ),
-                        Text(
-                          '${index + 1}',
-                          style: TextStyle(
-                            fontSize: 8,
-                            fontWeight: FontWeight.w800,
-                            color: _PassportPalette.inkNavy.withValues(alpha: 0.8),
-                          ),
-                        ),
-                      ],
-                    ),
-                  );
-                }
-                return _PassportDashedStamp(
-                  shape: _InkStampShape.doubleRect,
-                  color: _PassportPalette.ghostLine.withValues(alpha: 0.45),
-                  child: Center(
-                    child: Text(
-                      '${index + 1}',
-                      style: TextStyle(
-                        fontSize: 8,
-                        color: _PassportPalette.ghostLine.withValues(alpha: 0.55),
-                      ),
-                    ),
-                  ),
+                final row = rows[index];
+                return _ScenarioChapterStampRow(
+                  chapter: row.chapter,
+                  scenarios: row.scenarios,
+                  stampSlots: _stampSlotsPerRow,
+                  isCompleted: (id) =>
+                      scenarioStats.isCompleted(language, id),
                 );
               },
             ),
-          ),
-        ],
-      ),
     );
   }
 }
 
-// ── PAGE 4: 단어 ─────────────────────────────────────────────
+class _ScenarioChapterStampRow extends StatelessWidget {
+  const _ScenarioChapterStampRow({
+    required this.chapter,
+    required this.scenarios,
+    required this.stampSlots,
+    required this.isCompleted,
+  });
 
-class _WordSwipePassportPage extends StatelessWidget {
-  final MyPageLanguageMissionProgress mission;
-
-  const _WordSwipePassportPage({required this.mission});
+  final LearningHubChapter chapter;
+  final List<Scenario> scenarios;
+  final int stampSlots;
+  final bool Function(String scenarioId) isCompleted;
 
   @override
   Widget build(BuildContext context) {
-    const ink = _PassportPalette.inkRed;
-    final ratio = mission.swipeTotal == 0
-        ? 0.0
-        : mission.swipeKnown / mission.swipeTotal;
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        Text(
+          'CH.${chapter.chapterNo}  ${chapter.name}',
+          maxLines: 1,
+          overflow: TextOverflow.ellipsis,
+          style: const TextStyle(
+            fontSize: 10,
+            fontWeight: FontWeight.w700,
+            letterSpacing: 0.1,
+            color: Color(0xFF334155),
+          ),
+        ),
+        const SizedBox(height: 4),
+        LayoutBuilder(
+          builder: (context, constraints) {
+            final count = scenarios.length;
+            final slotWidth = constraints.maxWidth / stampSlots;
+            final size = slotWidth.clamp(22.0, 36.0);
+            return SizedBox(
+              height: size,
+              child: Align(
+                alignment: Alignment.centerLeft,
+                child: Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    for (var i = 0; i < count; i++)
+                      SizedBox(
+                        width: slotWidth,
+                        height: size,
+                        child: isCompleted(scenarios[i].id)
+                            ? _PassportInkStamp(
+                                index: chapter.chapterNo * 10 + i,
+                                shape: _InkStampShape.doubleRect,
+                                ink: _PassportPalette.inkNavy,
+                                fillOpacity: 0.09,
+                                strokeWidth: 1.3,
+                                child: Center(
+                                  child: Icon(
+                                    Icons.flight_land_rounded,
+                                    size: size * 0.38,
+                                    color: _PassportPalette.inkNavy
+                                        .withValues(alpha: 0.85),
+                                  ),
+                                ),
+                              )
+                            : _PassportDashedStamp(
+                                shape: _InkStampShape.doubleRect,
+                                color: _PassportPalette.ghostLine
+                                    .withValues(alpha: 0.45),
+                              ),
+                      ),
+                  ],
+                ),
+              ),
+            );
+          },
+        ),
+      ],
+    );
+  }
+}
 
+// ── PAGE 2: 단어 ─────────────────────────────────────────────
+
+class _WordSwipePassportPage extends StatefulWidget {
+  final MyPageLanguageMissionProgress mission;
+  final String language;
+  final bool isActive;
+
+  const _WordSwipePassportPage({
+    required this.mission,
+    required this.language,
+    required this.isActive,
+  });
+
+  @override
+  State<_WordSwipePassportPage> createState() => _WordSwipePassportPageState();
+}
+
+class _WordSwipePassportPageState extends State<_WordSwipePassportPage>
+    with AutomaticKeepAliveClientMixin {
+  @override
+  bool get wantKeepAlive => true;
+
+  @override
+  Widget build(BuildContext context) {
+    super.build(context);
     return Padding(
       padding: const EdgeInsets.fromLTRB(
         _PassportPalette.pagePaddingH,
-        _PassportPalette.pagePaddingV,
+        4,
         _PassportPalette.pagePaddingH,
-        12,
+        4,
       ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.stretch,
-        children: [
-          Text(
-            'VOCABULARY MASTER SEAL',
-            style: TextStyle(
-              fontSize: 9,
-              fontWeight: FontWeight.w700,
-              letterSpacing: 1.2,
-              color: _PassportPalette.slate.withValues(alpha: 0.7),
-            ),
-          ),
-          const SizedBox(height: 4),
-          Text(
-            'Memorized: ${mission.swipeKnown} / ${mission.swipeTotal}',
-            style: TextStyle(
-              fontSize: 11,
-              fontWeight: FontWeight.w600,
-              color: _PassportPalette.slate.withValues(alpha: 0.85),
-            ),
-          ),
-          const Spacer(),
-          Center(
-            child: Transform.rotate(
-              angle: -0.05,
-              child: SizedBox(
-                width: 130,
-                height: 130,
-                child: CustomPaint(
-                  painter: _InkStampShapePainter(
-                    shape: _InkStampShape.doubleCircle,
-                    ink: ink,
-                    fillOpacity: ratio.clamp(0.06, 0.14),
-                    strokeWidth: 2.5,
-                  ),
-                  child: Column(
-                    mainAxisAlignment: MainAxisAlignment.center,
-                    children: [
-                      Text('🔤', style: TextStyle(fontSize: 26, color: ink.withValues(alpha: 0.85))),
-                      const SizedBox(height: 4),
-                      Text(
-                        'VOCAB',
-                        style: TextStyle(
-                          fontSize: 11,
-                          fontWeight: FontWeight.w900,
-                          letterSpacing: 2,
-                          color: ink.withValues(alpha: 0.9),
-                        ),
-                      ),
-                      Text(
-                        '${(ratio * 100).round()}%',
-                        style: TextStyle(
-                          fontSize: 13,
-                          fontWeight: FontWeight.w800,
-                          color: ink.withValues(alpha: 0.85),
-                        ),
-                      ),
-                    ],
-                  ),
-                ),
-              ),
-            ),
-          ),
-          const Spacer(),
-          Container(
-            height: 6,
-            decoration: BoxDecoration(
-              border: Border.all(color: _PassportPalette.paperEdge),
-            ),
-            child: FractionallySizedBox(
-              alignment: Alignment.centerLeft,
-              widthFactor: ratio.clamp(0.02, 1.0),
-              child: ColoredBox(color: ink.withValues(alpha: 0.35)),
-            ),
-          ),
-        ],
+      child: VocabSwipeSeal(
+        language: widget.language,
+        percent: widget.mission.swipePercent,
+        isActive: widget.isActive,
       ),
     );
   }

@@ -10,6 +10,7 @@ import '../../app/dashboard_providers.dart';
 import '../../data/datasources/local/learning_tour_local_datasource.dart';
 import '../../app/learning_tour_providers.dart';
 import '../../app/scenario_providers.dart';
+import '../../app/vocabulary_providers.dart';
 import '../../core/config/active5_layout.dart';
 import '../../core/theme/language_palette.dart';
 import '../../core/widgets/device_scaffold.dart';
@@ -17,6 +18,7 @@ import '../../data/models/scenario.dart';
 import '../../features/dashboard/dashboard_palette.dart';
 import '../../shared/widgets/score_celebration_overlay.dart';
 import 'scenario_tour.dart';
+import 'scenario_word_hints.dart';
 import 'widgets/scenario_chat_bubble.dart';
 import 'widgets/scenario_glass_header.dart';
 
@@ -296,6 +298,14 @@ class _ScenarioTrainingScreenState extends ConsumerState<ScenarioTrainingScreen>
                       selectedBlankIndex: msg.id == activeMsgId
                           ? training.selectedBlankIndex
                           : null,
+                      wordHints: msg.showWordHints
+                          ? resolveBlankWordHints(
+                              index: ref.watch(vocabularyProvider),
+                              correct: msg.line.textTarget,
+                              blankFrame: msg.line.blankFrame,
+                              language: msg.line.language,
+                            )
+                          : const [],
                       onBlankTap: msg.id == activeMsgId &&
                               training.isBlankFillMode
                           ? (i) => ref
@@ -589,37 +599,39 @@ class _FloatingControlBar extends StatelessWidget {
                       ),
                     ],
                   ),
-                ] else if (training.isListening)
-                  _ListeningRow(
-                    soundLevel: training.soundLevel,
-                    isInitializing: training.isInitializingStt,
-                    primaryColor: primaryColor,
-                    secondaryColor: secondaryColor,
-                    onMic: onMic,
-                  )
-                else
+                ] else
                   Row(
                     children: [
                       Expanded(
                         child: _SideAction(
-                          icon: Icons.touch_app_rounded,
-                          label: '빈칸 터치',
+                          icon: training.canRevealMoreHints
+                              ? Icons.lightbulb_outline_rounded
+                              : Icons.touch_app_rounded,
+                          label: training.canRevealMoreHints
+                              ? '두 번째 힌트'
+                              : '빈칸 터치',
                           color: primaryColor,
-                          enabled: false,
-                          onTap: () {},
+                          enabled: training.canRevealMoreHints &&
+                              !training.isListening &&
+                              !training.isInitializingStt,
+                          onTap: onHint,
                         ),
                       ),
                       _CompactIconButton(
                         icon: Icons.keyboard_rounded,
                         color: primaryColor,
+                        enabled: !training.isListening &&
+                            !training.isInitializingStt,
                         onTap: onToggleTyping,
                         tooltip: '첫 빈칸 선택',
                       ),
                       const SizedBox(width: 8),
                       _MicButton(
-                        enabled: !training.isInitializingStt,
-                        isInitializing: training.isInitializingStt,
-                        isListening: false,
+                        enabled: training.isListening ||
+                            !training.isInitializingStt,
+                        isInitializing: training.isInitializingStt &&
+                            !training.isListening,
+                        isListening: training.isListening,
                         primaryColor: primaryColor,
                         secondaryColor: secondaryColor,
                         onPressed: onMic,
@@ -630,7 +642,8 @@ class _FloatingControlBar extends StatelessWidget {
                           icon: Icons.visibility_outlined,
                           label: '정답',
                           color: primaryColor,
-                          enabled: !training.isInitializingStt,
+                          enabled: !training.isListening &&
+                              !training.isInitializingStt,
                           onTap: onRevealAnswer,
                         ),
                       ),
@@ -715,15 +728,7 @@ class _FloatingControlBar extends StatelessWidget {
                     ),
                   ],
                 ),
-              ] else if (training.isListening)
-                _ListeningRow(
-                  soundLevel: training.soundLevel,
-                  isInitializing: training.isInitializingStt,
-                  primaryColor: primaryColor,
-                  secondaryColor: secondaryColor,
-                  onMic: onMic,
-                )
-              else
+              ] else
                 KeyedSubtree(
                   key: tourKeys?.toolbarKey,
                   child: Row(
@@ -733,23 +738,28 @@ class _FloatingControlBar extends StatelessWidget {
                           icon: Icons.lightbulb_outline_rounded,
                           label: '힌트',
                           color: primaryColor,
-                          enabled: training.canRevealMoreHints &&
-                              !training.isInitializingStt,
+                          enabled: !training.isListening &&
+                              !training.isInitializingStt &&
+                              training.canRevealMoreHints,
                           onTap: onHint,
                         ),
                       ),
                       _CompactIconButton(
                         icon: Icons.keyboard_rounded,
                         color: primaryColor,
+                        enabled: !training.isListening &&
+                            !training.isInitializingStt,
                         onTap: onToggleTyping,
                         tooltip: '타이핑 입력',
                       ),
                       const SizedBox(width: 8),
                       _MicButton(
                         tourKey: tourKeys?.micKey,
-                        enabled: !training.isInitializingStt,
-                        isInitializing: training.isInitializingStt,
-                        isListening: false,
+                        enabled: training.isListening ||
+                            !training.isInitializingStt,
+                        isInitializing: training.isInitializingStt &&
+                            !training.isListening,
+                        isListening: training.isListening,
                         primaryColor: primaryColor,
                         secondaryColor: secondaryColor,
                         onPressed: onMic,
@@ -760,7 +770,8 @@ class _FloatingControlBar extends StatelessWidget {
                           icon: Icons.visibility_outlined,
                           label: '정답',
                           color: primaryColor,
-                          enabled: !training.isInitializingStt,
+                          enabled: !training.isListening &&
+                              !training.isInitializingStt,
                           onTap: onRevealAnswer,
                         ),
                       ),
@@ -780,28 +791,34 @@ class _CompactIconButton extends StatelessWidget {
   final Color color;
   final VoidCallback onTap;
   final String tooltip;
+  final bool enabled;
 
   const _CompactIconButton({
     required this.icon,
     required this.color,
     required this.onTap,
     required this.tooltip,
+    this.enabled = true,
   });
 
   @override
   Widget build(BuildContext context) {
+    final iconColor =
+        enabled ? color : color.withValues(alpha: 0.35);
     return Tooltip(
       message: tooltip,
       child: Material(
-        color: color.withValues(alpha: 0.1),
+        color: enabled
+            ? color.withValues(alpha: 0.1)
+            : DashboardPalette.borderLight.withValues(alpha: 0.65),
         borderRadius: BorderRadius.circular(14),
         child: InkWell(
-          onTap: onTap,
+          onTap: enabled ? onTap : null,
           borderRadius: BorderRadius.circular(14),
           child: SizedBox(
             width: 44,
             height: 44,
-            child: Icon(icon, color: color, size: 22),
+            child: Icon(icon, color: iconColor, size: 22),
           ),
         ),
       ),
@@ -897,102 +914,6 @@ class _GuidanceBanner extends StatelessWidget {
   }
 }
 
-class _ListeningRow extends StatelessWidget {
-  final double soundLevel;
-  final bool isInitializing;
-  final Color primaryColor;
-  final Color secondaryColor;
-  final VoidCallback onMic;
-
-  const _ListeningRow({
-    required this.soundLevel,
-    required this.isInitializing,
-    required this.primaryColor,
-    required this.secondaryColor,
-    required this.onMic,
-  });
-
-  @override
-  Widget build(BuildContext context) {
-    return Row(
-      mainAxisAlignment: MainAxisAlignment.center,
-      children: [
-        Expanded(
-          child: _WaveformBars(
-            soundLevel: soundLevel,
-            color: primaryColor,
-            mirror: true,
-          ),
-        ),
-        const SizedBox(width: 10),
-        _MicButton(
-          enabled: true,
-          isInitializing: isInitializing,
-          isListening: true,
-          primaryColor: primaryColor,
-          secondaryColor: secondaryColor,
-          onPressed: onMic,
-        ),
-        const SizedBox(width: 10),
-        Expanded(
-          child: _WaveformBars(
-            soundLevel: soundLevel,
-            color: primaryColor,
-            mirror: false,
-          ),
-        ),
-      ],
-    );
-  }
-}
-
-class _WaveformBars extends StatelessWidget {
-  final double soundLevel;
-  final Color color;
-  final bool mirror;
-
-  const _WaveformBars({
-    required this.soundLevel,
-    required this.color,
-    required this.mirror,
-  });
-
-  @override
-  Widget build(BuildContext context) {
-    // speech_to_text soundLevel ≈ -2 ~ 10
-    final normalized = ((soundLevel + 2) / 12).clamp(0.05, 1.0);
-    const barCount = 7;
-    final heights = List.generate(barCount, (i) {
-      final wave = math.sin((i + 1) * 0.9 + normalized * 8);
-      final h = 8 + (normalized * 28) * (0.45 + 0.55 * wave.abs());
-      return h.clamp(6.0, 36.0);
-    });
-    final bars = mirror ? heights.reversed.toList() : heights;
-
-    return SizedBox(
-      height: 40,
-      child: Row(
-        mainAxisAlignment: MainAxisAlignment.center,
-        crossAxisAlignment: CrossAxisAlignment.center,
-        children: [
-          for (var i = 0; i < bars.length; i++) ...[
-            if (i > 0) const SizedBox(width: 3),
-            AnimatedContainer(
-              duration: const Duration(milliseconds: 80),
-              width: 3.5,
-              height: bars[i],
-              decoration: BoxDecoration(
-                color: color.withValues(alpha: 0.55 + normalized * 0.35),
-                borderRadius: BorderRadius.circular(2),
-              ),
-            ),
-          ],
-        ],
-      ),
-    );
-  }
-}
-
 class _SideAction extends StatelessWidget {
   final IconData icon;
   final String label;
@@ -1036,7 +957,7 @@ class _SideAction extends StatelessWidget {
   }
 }
 
-class _MicButton extends StatelessWidget {
+class _MicButton extends StatefulWidget {
   final bool enabled;
   final bool isInitializing;
   final bool isListening;
@@ -1056,60 +977,145 @@ class _MicButton extends StatelessWidget {
   });
 
   @override
+  State<_MicButton> createState() => _MicButtonState();
+}
+
+class _MicButtonState extends State<_MicButton>
+    with SingleTickerProviderStateMixin {
+  late final AnimationController _pulse;
+
+  @override
+  void initState() {
+    super.initState();
+    _pulse = AnimationController(
+      vsync: this,
+      duration: const Duration(milliseconds: 1400),
+    );
+    if (widget.isListening) _pulse.repeat();
+  }
+
+  @override
+  void didUpdateWidget(covariant _MicButton oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (widget.isListening && !_pulse.isAnimating) {
+      _pulse.repeat();
+    } else if (!widget.isListening && _pulse.isAnimating) {
+      _pulse
+        ..stop()
+        ..reset();
+    }
+  }
+
+  @override
+  void dispose() {
+    _pulse.dispose();
+    super.dispose();
+  }
+
+  @override
   Widget build(BuildContext context) {
+    const micSize = 64.0;
     final button = Material(
       color: Colors.transparent,
       child: InkWell(
-        onTap: enabled && !isInitializing ? onPressed : null,
+        onTap: widget.enabled && !widget.isInitializing ? widget.onPressed : null,
         customBorder: const CircleBorder(),
-        child: AnimatedContainer(
-          duration: const Duration(milliseconds: 200),
-          width: 64,
-          height: 64,
-          decoration: BoxDecoration(
-            shape: BoxShape.circle,
-            gradient: enabled
-                ? (isListening
-                    ? const LinearGradient(
-                        colors: [Colors.redAccent, Colors.red],
-                      )
-                    : LinearGradient(
-                        colors: [primaryColor, secondaryColor],
-                        begin: Alignment.topLeft,
-                        end: Alignment.bottomRight,
-                      ))
-                : null,
-            color: enabled ? null : DashboardPalette.borderLight,
-            boxShadow: enabled
-                ? [
-                    BoxShadow(
-                      color: (isListening ? Colors.red : primaryColor)
-                          .withValues(alpha: 0.35),
-                      blurRadius: 14,
-                      offset: const Offset(0, 4),
-                    ),
-                  ]
-                : null,
-          ),
-          child: isInitializing
-              ? const Padding(
-                  padding: EdgeInsets.all(18),
-                  child: CircularProgressIndicator(
-                    strokeWidth: 2.5,
-                    color: Colors.white,
-                  ),
-                )
-              : Icon(
-                  isListening ? Icons.stop_rounded : Icons.mic_rounded,
-                  color: Colors.white,
-                  size: 28,
+        child: SizedBox(
+          width: micSize,
+          height: micSize,
+          child: Stack(
+            alignment: Alignment.center,
+            clipBehavior: Clip.none,
+            children: [
+              if (widget.isListening)
+                AnimatedBuilder(
+                  animation: _pulse,
+                  builder: (context, _) {
+                    return Stack(
+                      alignment: Alignment.center,
+                      clipBehavior: Clip.none,
+                      children: [
+                        for (final phase in [0.0, 0.45])
+                          Transform.scale(
+                            scale: 1.0 + (_pulse.value + phase) % 1.0 * 0.55,
+                            child: Container(
+                              width: micSize,
+                              height: micSize,
+                              decoration: BoxDecoration(
+                                shape: BoxShape.circle,
+                                border: Border.all(
+                                  color: Colors.red.withValues(
+                                    alpha: 0.42 *
+                                        (1 - ((_pulse.value + phase) % 1.0)),
+                                  ),
+                                  width: 2.2,
+                                ),
+                              ),
+                            ),
+                          ),
+                      ],
+                    );
+                  },
                 ),
+              AnimatedContainer(
+                duration: const Duration(milliseconds: 200),
+                width: micSize,
+                height: micSize,
+                decoration: BoxDecoration(
+                  shape: BoxShape.circle,
+                  gradient: widget.enabled
+                      ? (widget.isListening
+                          ? const LinearGradient(
+                              colors: [Color(0xFFFF5252), Color(0xFFD32F2F)],
+                              begin: Alignment.topLeft,
+                              end: Alignment.bottomRight,
+                            )
+                          : LinearGradient(
+                              colors: [
+                                widget.primaryColor,
+                                widget.secondaryColor,
+                              ],
+                              begin: Alignment.topLeft,
+                              end: Alignment.bottomRight,
+                            ))
+                      : null,
+                  color: widget.enabled ? null : DashboardPalette.borderLight,
+                  boxShadow: widget.enabled
+                      ? [
+                          BoxShadow(
+                            color: (widget.isListening
+                                    ? Colors.red
+                                    : widget.primaryColor)
+                                .withValues(alpha: widget.isListening ? 0.42 : 0.35),
+                            blurRadius: widget.isListening ? 18 : 14,
+                            spreadRadius: widget.isListening ? 1 : 0,
+                            offset: const Offset(0, 4),
+                          ),
+                        ]
+                      : null,
+                ),
+                child: widget.isInitializing
+                    ? const Padding(
+                        padding: EdgeInsets.all(18),
+                        child: CircularProgressIndicator(
+                          strokeWidth: 2.5,
+                          color: Colors.white,
+                        ),
+                      )
+                    : Icon(
+                        Icons.mic_rounded,
+                        color: Colors.white,
+                        size: widget.isListening ? 30 : 28,
+                      ),
+              ),
+            ],
+          ),
         ),
       ),
     );
 
-    if (tourKey != null) {
-      return KeyedSubtree(key: tourKey, child: button);
+    if (widget.tourKey != null) {
+      return KeyedSubtree(key: widget.tourKey, child: button);
     }
     return button;
   }

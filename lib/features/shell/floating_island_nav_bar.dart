@@ -1,5 +1,3 @@
-import 'dart:ui' show ImageFilter;
-
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 
@@ -128,7 +126,7 @@ class _FloatingIslandNavBarState extends State<FloatingIslandNavBar> {
                 _visualIndex = widget.selectedIndex;
               });
             },
-            child: _FloatingIslandGlassBar(
+            child: FloatingIslandGlass(
               radius: FloatingIslandNavBar.radius,
               child: SizedBox(
                 height: FloatingIslandNavBar.height,
@@ -162,64 +160,6 @@ class _FloatingIslandNavBarState extends State<FloatingIslandNavBar> {
             ),
           );
         },
-      ),
-    );
-  }
-}
-
-/// 학습 모드 칩과 동일한 Frosted Glass — BackdropFilter + 얇은 유리 채움.
-class _FloatingIslandGlassBar extends StatelessWidget {
-  final double radius;
-  final Widget child;
-
-  const _FloatingIslandGlassBar({
-    required this.radius,
-    required this.child,
-  });
-
-  @override
-  Widget build(BuildContext context) {
-    return Container(
-      decoration: BoxDecoration(
-        borderRadius: BorderRadius.circular(radius),
-        boxShadow: [
-          BoxShadow(
-            color: Colors.black.withValues(alpha: 0.08),
-            blurRadius: 20,
-            offset: const Offset(0, -4),
-          ),
-        ],
-      ),
-      child: ClipRRect(
-        borderRadius: BorderRadius.circular(radius),
-        child: Stack(
-          fit: StackFit.passthrough,
-          children: [
-            Positioned.fill(
-              child: BackdropFilter(
-                filter: ImageFilter.blur(
-                  sigmaX: GlassSurfaceStyle.floatingIslandBlur,
-                  sigmaY: GlassSurfaceStyle.floatingIslandBlur,
-                ),
-                child: DecoratedBox(
-                  decoration: BoxDecoration(
-                    color: Colors.white.withValues(
-                      alpha: GlassSurfaceStyle.floatingIslandFillAlpha,
-                    ),
-                    borderRadius: BorderRadius.circular(radius),
-                    border: Border.all(
-                      color: Colors.white.withValues(
-                        alpha: GlassSurfaceStyle.floatingIslandBorderAlpha,
-                      ),
-                      width: 1.2,
-                    ),
-                  ),
-                ),
-              ),
-            ),
-            child,
-          ],
-        ),
       ),
     );
   }

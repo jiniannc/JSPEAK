@@ -134,19 +134,23 @@ final titleBadgeDebugUnlockAllProvider =
 class TitleBadgeUnlockState {
   final Map<String, DateTime> unlockedAt;
   final List<String> pendingCelebrations;
+  final List<String> pendingBanners;
 
   const TitleBadgeUnlockState({
     this.unlockedAt = const {},
     this.pendingCelebrations = const [],
+    this.pendingBanners = const [],
   });
 
   TitleBadgeUnlockState copyWith({
     Map<String, DateTime>? unlockedAt,
     List<String>? pendingCelebrations,
+    List<String>? pendingBanners,
   }) {
     return TitleBadgeUnlockState(
       unlockedAt: unlockedAt ?? this.unlockedAt,
       pendingCelebrations: pendingCelebrations ?? this.pendingCelebrations,
+      pendingBanners: pendingBanners ?? this.pendingBanners,
     );
   }
 }
@@ -155,6 +159,8 @@ class TitleBadgeUnlockState {
 class TitleBadgeUnlockController extends Notifier<TitleBadgeUnlockState> {
   bool _bootstrapped = false;
   Map<String, DateTime> _baseline = {};
+  List<String> _pendingCelebrations = [];
+  List<String> _pendingBanners = [];
 
   @override
   TitleBadgeUnlockState build() {
@@ -169,6 +175,7 @@ class TitleBadgeUnlockController extends Notifier<TitleBadgeUnlockState> {
   Future<void> _bootstrap() async {
     final repo = ref.read(titleBadgeRepositoryProvider);
     _baseline = await repo.loadUnlockDates();
+    _pendingCelebrations = await repo.loadPendingCelebrations();
     _bootstrapped = true;
     state = _reconcile(ref.read(titleBadgeSignalsProvider));
   }
@@ -184,22 +191,49 @@ class TitleBadgeUnlockController extends Notifier<TitleBadgeUnlockState> {
     }
     if (newlyUnlocked.isNotEmpty) {
       _baseline = merged;
-      unawaited(ref.read(titleBadgeRepositoryProvider).saveUnlockDates(merged));
+      _pendingCelebrations = [
+        ..._pendingCelebrations,
+        ...newlyUnlocked.where((id) => !_pendingCelebrations.contains(id)),
+      ];
+      _pendingBanners = [
+        ..._pendingBanners,
+        ...newlyUnlocked.where((id) => !_pendingBanners.contains(id)),
+      ];
+      final repo = ref.read(titleBadgeRepositoryProvider);
+      unawaited(repo.saveUnlockDates(merged));
+      unawaited(repo.savePendingCelebrations(_pendingCelebrations));
     }
     return TitleBadgeUnlockState(
       unlockedAt: merged,
-      pendingCelebrations: [
-        ...state.pendingCelebrations,
-        ...newlyUnlocked,
-      ],
+      pendingCelebrations: List.unmodifiable(_pendingCelebrations),
+      pendingBanners: List.unmodifiable(_pendingBanners),
     );
+  }
+
+  /// 상단 배너를 이미 보여준 뱃지를 대기열에서 제거.
+  void acknowledgeBanner(String badgeId) {
+    _pendingBanners = _pendingBanners.where((id) => id != badgeId).toList();
+    state = state.copyWith(pendingBanners: List.unmodifiable(_pendingBanners));
+  }
+
+  /// 마이페이지 축하 다이얼로그가 담당하므로 배너는 내린다.
+  void dismissBanners() {
+    if (_pendingBanners.isEmpty) return;
+    _pendingBanners = [];
+    state = state.copyWith(pendingBanners: const []);
   }
 
   /// 축하 다이얼로그를 이미 보여준 뱃지를 대기열에서 제거.
   void acknowledgeCelebration(String badgeId) {
+    _pendingCelebrations =
+        _pendingCelebrations.where((id) => id != badgeId).toList();
+    unawaited(
+      ref.read(titleBadgeRepositoryProvider).savePendingCelebrations(
+            _pendingCelebrations,
+          ),
+    );
     state = state.copyWith(
-      pendingCelebrations:
-          state.pendingCelebrations.where((id) => id != badgeId).toList(),
+      pendingCelebrations: List.unmodifiable(_pendingCelebrations),
     );
   }
 }

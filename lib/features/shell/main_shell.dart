@@ -6,6 +6,7 @@ import '../../app/dictionary_providers.dart';
 import '../../app/shell_providers.dart';
 import 'floating_island_nav_bar.dart';
 import 'main_shell_tab_header.dart';
+import 'title_badge_unlock_banner.dart';
 
 /// 하단 탭 [홈, 학습, 기내 사전, 마이페이지]를 제공하는 메인 뼈대.
 class MainShell extends ConsumerWidget {
@@ -68,6 +69,7 @@ class MainShell extends ConsumerWidget {
             right: 0,
             child: MainShellHeaderOverlay(tabIndex: tabIndex),
           ),
+          const TitleBadgeUnlockBannerHost(),
           Positioned(
             left: 0,
             right: 0,

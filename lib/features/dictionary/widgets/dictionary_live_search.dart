@@ -58,6 +58,8 @@ class _DictionaryLiveSearchViewState extends ConsumerState<DictionaryLiveSearchV
   late final FocusNode _focusNode;
   late final AnimationController _entryController;
   late final AnimationController _diceController;
+  late final AnimationController _expandController;
+  late final Animation<double> _expandAnimation;
   late final Animation<double> _searchFade;
   late final Animation<double> _searchScale;
   late final List<Animation<double>> _chipAnimations;
@@ -97,6 +99,14 @@ class _DictionaryLiveSearchViewState extends ConsumerState<DictionaryLiveSearchV
     _diceController = AnimationController(
       vsync: this,
       duration: _diceRollDuration,
+    );
+    _expandController = AnimationController(
+      vsync: this,
+      duration: _transitionDuration,
+    );
+    _expandAnimation = CurvedAnimation(
+      parent: _expandController,
+      curve: Curves.easeInOutCubic,
     );
     _diceSpin = CurvedAnimation(
       parent: _diceController,
@@ -195,6 +205,7 @@ class _DictionaryLiveSearchViewState extends ConsumerState<DictionaryLiveSearchV
     _loaderRevealTimer?.cancel();
     _entryController.dispose();
     _diceController.dispose();
+    _expandController.dispose();
     _controller.removeListener(_onTextChanged);
     _controller.dispose();
     _focusNode.dispose();
@@ -237,6 +248,9 @@ class _DictionaryLiveSearchViewState extends ConsumerState<DictionaryLiveSearchV
   void _enterSearch() {
     if (!_searchEngaged) {
       setState(() => _searchEngaged = true);
+      _expandController.forward();
+    } else if (_expandController.value < 1) {
+      _expandController.forward();
     }
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (!mounted) return;
@@ -272,6 +286,9 @@ class _DictionaryLiveSearchViewState extends ConsumerState<DictionaryLiveSearchV
     }
     _prefetchSearchAudio(value);
     setState(() => _searchEngaged = true);
+    if (_expandController.value < 1) {
+      _expandController.forward();
+    }
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (mounted) _focusNode.requestFocus();
     });
@@ -286,6 +303,9 @@ class _DictionaryLiveSearchViewState extends ConsumerState<DictionaryLiveSearchV
     ref.read(searchProvider.notifier).setQuery('');
     _focusNode.unfocus();
     setState(() => _searchEngaged = false);
+    if (_expandController.value > 0) {
+      _expandController.reverse();
+    }
   }
 
   List<Sentence> _sentenceResults() {
@@ -347,18 +367,6 @@ class _DictionaryLiveSearchViewState extends ConsumerState<DictionaryLiveSearchV
     final contentInset = active ? 12.0 : widget.inset;
     final fullW = screenW - contentInset * 2;
 
-    final searchBar = _LiveSearchPillBar(
-      key: const ValueKey('dictionary-live-search-bar'),
-      palette: widget.palette,
-      controller: _controller,
-      focusNode: _focusNode,
-      expanded: active,
-      compactWidth: compactW,
-      fullWidth: fullW,
-      onClear: _clearSearch,
-      onExpandTap: _enterSearch,
-    );
-
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
@@ -367,7 +375,6 @@ class _DictionaryLiveSearchViewState extends ConsumerState<DictionaryLiveSearchV
             builder: (context, constraints) {
               const compactBarHeight = 46.0;
               const expandedBarHeight = 52.0;
-              final barHeight = active ? expandedBarHeight : compactBarHeight;
 
               const titleBlockHeight = 52.0;
               const heroGap = 32.0;
@@ -377,24 +384,28 @@ class _DictionaryLiveSearchViewState extends ConsumerState<DictionaryLiveSearchV
               final navBottom =
                   FloatingIslandNavBar.scrollBottomPadding(context) + 8;
 
+              final idleHeroMaxHeight = math.max(
+                0.0,
+                constraints.maxHeight - favoritesReserve - navBottom,
+              );
               final heroMaxHeight = active
                   ? constraints.maxHeight
-                  : math.max(
-                      0.0,
-                      constraints.maxHeight - favoritesReserve - navBottom,
-                    );
+                  : idleHeroMaxHeight;
               final heroContentHeight = titleBlockHeight +
                   heroGap +
                   compactBarHeight +
                   chipsGap +
                   chipsBlockHeight;
-              final heroTopPadding = active
-                  ? 0.0
-                  : math.max(16.0, (heroMaxHeight - heroContentHeight) / 2);
-              final searchTop = active
-                  ? 4.0
-                  : heroTopPadding + titleBlockHeight + heroGap;
-              final searchInset = active ? contentInset : widget.inset;
+              final idleHeroTopPadding = math.max(
+                16.0,
+                (idleHeroMaxHeight - heroContentHeight) / 2,
+              );
+              final heroTopPadding = active ? 0.0 : idleHeroTopPadding;
+              final compactTop =
+                  idleHeroTopPadding + titleBlockHeight + heroGap;
+              const expandedTop = 4.0;
+              final compactLeft = (screenW - compactW) / 2;
+              final expandedLeft = contentInset;
 
               return Stack(
                 clipBehavior: Clip.none,
@@ -481,33 +492,53 @@ class _DictionaryLiveSearchViewState extends ConsumerState<DictionaryLiveSearchV
                             ],
                           ),
                   ),
-                  AnimatedPositioned(
-                    duration: _transitionDuration,
-                    curve: Curves.easeInOutCubic,
-                    top: searchTop,
-                    left: searchInset,
-                    right: searchInset,
-                    height: barHeight,
-                    child: active
-                        ? searchBar
-                        : AnimatedBuilder(
-                            animation: _entryController,
-                            builder: (context, child) {
-                              return Opacity(
-                                opacity: _searchFade.value,
-                                child: Transform(
-                                  alignment: Alignment.center,
-                                  transform: Matrix4.diagonal3Values(
-                                    _searchScale.value,
-                                    1.0,
-                                    1.0,
-                                  ),
-                                  child: child,
-                                ),
-                              );
-                            },
-                            child: searchBar,
+                  AnimatedBuilder(
+                    animation: Listenable.merge([
+                      _expandAnimation,
+                      _entryController,
+                    ]),
+                    builder: (context, child) {
+                      final t = _expandAnimation.value;
+                      final width = lerpDouble(compactW, fullW, t)!;
+                      final height =
+                          lerpDouble(compactBarHeight, expandedBarHeight, t)!;
+                      final top = lerpDouble(compactTop, expandedTop, t)!;
+                      final left = lerpDouble(compactLeft, expandedLeft, t)!;
+
+                      Widget bar = _LiveSearchPillBar(
+                        key: const ValueKey('dictionary-live-search-bar'),
+                        palette: widget.palette,
+                        controller: _controller,
+                        focusNode: _focusNode,
+                        expandProgress: t,
+                        engaged: active,
+                        onClear: _clearSearch,
+                        onExpandTap: _enterSearch,
+                      );
+
+                      if (t == 0 && !active) {
+                        bar = Opacity(
+                          opacity: _searchFade.value,
+                          child: Transform(
+                            alignment: Alignment.center,
+                            transform: Matrix4.diagonal3Values(
+                              _searchScale.value,
+                              1.0,
+                              1.0,
+                            ),
+                            child: bar,
                           ),
+                        );
+                      }
+
+                      return Positioned(
+                        top: top,
+                        left: left,
+                        width: width,
+                        height: height,
+                        child: bar,
+                      );
+                    },
                   ),
                 ],
               );
@@ -1003,9 +1034,8 @@ class _LiveSearchPillBar extends ConsumerStatefulWidget {
   final LanguagePalette palette;
   final TextEditingController controller;
   final FocusNode focusNode;
-  final bool expanded;
-  final double compactWidth;
-  final double fullWidth;
+  final double expandProgress;
+  final bool engaged;
   final VoidCallback onClear;
   final VoidCallback onExpandTap;
 
@@ -1014,9 +1044,8 @@ class _LiveSearchPillBar extends ConsumerStatefulWidget {
     required this.palette,
     required this.controller,
     required this.focusNode,
-    required this.expanded,
-    required this.compactWidth,
-    required this.fullWidth,
+    required this.expandProgress,
+    required this.engaged,
     required this.onClear,
     required this.onExpandTap,
   });
@@ -1042,127 +1071,125 @@ class _LiveSearchPillBarState extends ConsumerState<_LiveSearchPillBar> {
 
   @override
   Widget build(BuildContext context) {
-    final expanded = widget.expanded;
+    final t = widget.expandProgress.clamp(0.0, 1.0);
+    final expanded = widget.engaged;
     final searchAccent = widget.palette.searchAccent;
     final searchBorder = widget.palette.searchFieldBorder;
+    final radius = lerpDouble(28, 22, t)!;
+    final horizontalPadding = lerpDouble(16, 14, t)!;
+    final iconSize = lerpDouble(20, 22, t)!;
+    final fontSize = lerpDouble(13.5, 15, t)!;
+    final hintFontSize = lerpDouble(13.5, 14, t)!;
+    final textAlpha = lerpDouble(0.72, 1.0, t)!;
+    final hintAlpha = lerpDouble(0.65, 0.85, t)!;
 
-    return Center(
-      child: AnimatedContainer(
-        duration: const Duration(milliseconds: 420),
-        curve: Curves.easeInOutCubic,
-        width: expanded ? widget.fullWidth : widget.compactWidth,
-        height: expanded ? 52 : 46,
-        child: Material(
-          color: Colors.transparent,
-          child: InkWell(
-            borderRadius: BorderRadius.circular(expanded ? 22 : 28),
-            onTap: expanded ? null : widget.onExpandTap,
-            child: AnimatedContainer(
-              duration: const Duration(milliseconds: 420),
-              curve: Curves.easeInOutCubic,
-              decoration: BoxDecoration(
-                color: Colors.white,
-                borderRadius: BorderRadius.circular(expanded ? 22 : 28),
-                border: Border.all(
-                  color: searchBorder,
-                  width: 0.5,
+    return Material(
+      color: Colors.transparent,
+      child: InkWell(
+        borderRadius: BorderRadius.circular(radius),
+        onTap: expanded ? null : widget.onExpandTap,
+        child: DecoratedBox(
+          decoration: BoxDecoration(
+            color: Colors.white,
+            borderRadius: BorderRadius.circular(radius),
+            border: Border.all(
+              color: searchBorder,
+              width: 0.5,
+            ),
+            boxShadow: [
+              BoxShadow(
+                color: Colors.black.withValues(alpha: 0.04),
+                blurRadius: 12,
+                offset: const Offset(0, 4),
+              ),
+            ],
+          ),
+          child: Padding(
+            padding: EdgeInsets.symmetric(horizontal: horizontalPadding),
+            child: Row(
+              children: [
+                Icon(
+                  Icons.search_rounded,
+                  size: iconSize,
+                  color: searchAccent,
                 ),
-                boxShadow: [
-                  BoxShadow(
-                    color: Colors.black.withValues(alpha: 0.04),
-                    blurRadius: 12,
-                    offset: const Offset(0, 4),
+                const SizedBox(width: 8),
+                Expanded(
+                  child: TextField(
+                    controller: widget.controller,
+                    focusNode: widget.focusNode,
+                    readOnly: !expanded,
+                    showCursor: expanded,
+                    enableInteractiveSelection: expanded,
+                    textInputAction: TextInputAction.search,
+                    style: TextStyle(
+                      fontSize: fontSize,
+                      fontWeight: FontWeight.w600,
+                      color: DashboardPalette.navy.withValues(
+                        alpha: textAlpha,
+                      ),
+                    ),
+                    cursorColor: searchAccent,
+                    decoration: InputDecoration(
+                      isDense: true,
+                      border: InputBorder.none,
+                      hintText: t > 0.5
+                          ? '비상구, 담요, 보조배터리 등 검색...'
+                          : '무엇을 찾아볼까요?',
+                      hintStyle: TextStyle(
+                        fontSize: hintFontSize,
+                        fontWeight: FontWeight.w600,
+                        color: const Color(0xFF64748B).withValues(
+                          alpha: hintAlpha,
+                        ),
+                      ),
+                    ),
+                    onTap: expanded ? null : widget.onExpandTap,
+                    onSubmitted: (_) {
+                      final q = widget.controller.text.trim();
+                      if (q.isNotEmpty) {
+                        ref
+                            .read(searchProvider.notifier)
+                            .submitSearch(q);
+                      }
+                    },
                   ),
-                ],
-              ),
-              child: Padding(
-                padding: EdgeInsets.symmetric(horizontal: expanded ? 14 : 16),
-                child: Row(
-                  children: [
-                    Icon(
-                      Icons.search_rounded,
-                      size: expanded ? 22 : 20,
-                      color: searchAccent,
-                    ),
-                    const SizedBox(width: 8),
-                    Expanded(
-                      child: TextField(
-                        controller: widget.controller,
-                        focusNode: widget.focusNode,
-                        readOnly: !expanded,
-                        showCursor: expanded,
-                        enableInteractiveSelection: expanded,
-                        textInputAction: TextInputAction.search,
-                        style: TextStyle(
-                          fontSize: expanded ? 15 : 13.5,
-                          fontWeight: FontWeight.w600,
-                          color: DashboardPalette.navy.withValues(
-                            alpha: expanded ? 1 : 0.72,
-                          ),
-                        ),
-                        cursorColor: searchAccent,
-                        decoration: InputDecoration(
-                          isDense: true,
-                          border: InputBorder.none,
-                          hintText: expanded
-                              ? '비상구, 담요, 보조배터리 등 검색...'
-                              : '무엇을 찾아볼까요?',
-                          hintStyle: TextStyle(
-                            fontSize: expanded ? 14 : 13.5,
-                            fontWeight: FontWeight.w600,
-                            color: const Color(0xFF64748B).withValues(
-                              alpha: expanded ? 0.85 : 0.65,
-                            ),
-                          ),
-                        ),
-                        onTap: expanded ? null : widget.onExpandTap,
-                        onSubmitted: (_) {
-                          final q = widget.controller.text.trim();
-                          if (q.isNotEmpty) {
-                            ref
-                                .read(searchProvider.notifier)
-                                .submitSearch(q);
-                          }
-                        },
-                      ),
-                    ),
-                    if (expanded && widget.controller.text.isNotEmpty)
-                      IconButton(
-                        visualDensity: VisualDensity.compact,
-                        padding: EdgeInsets.zero,
-                        constraints: const BoxConstraints(
-                          minWidth: 32,
-                          minHeight: 32,
-                        ),
-                        icon: const Icon(
-                          Icons.close_rounded,
-                          size: 18,
-                          color: Color(0xFF64748B),
-                        ),
-                        onPressed: () {
-                          widget.controller.clear();
-                          ref.read(searchProvider.notifier).setQuery('');
-                          setState(() {});
-                        },
-                      )
-                    else if (expanded)
-                      IconButton(
-                        visualDensity: VisualDensity.compact,
-                        padding: EdgeInsets.zero,
-                        constraints: const BoxConstraints(
-                          minWidth: 32,
-                          minHeight: 32,
-                        ),
-                        icon: const Icon(
-                          Icons.keyboard_arrow_down_rounded,
-                          size: 22,
-                          color: Color(0xFF64748B),
-                        ),
-                        onPressed: widget.onClear,
-                      ),
-                  ],
                 ),
-              ),
+                if (expanded && widget.controller.text.isNotEmpty)
+                  IconButton(
+                    visualDensity: VisualDensity.compact,
+                    padding: EdgeInsets.zero,
+                    constraints: const BoxConstraints(
+                      minWidth: 32,
+                      minHeight: 32,
+                    ),
+                    icon: const Icon(
+                      Icons.close_rounded,
+                      size: 18,
+                      color: Color(0xFF64748B),
+                    ),
+                    onPressed: () {
+                      widget.controller.clear();
+                      ref.read(searchProvider.notifier).setQuery('');
+                      setState(() {});
+                    },
+                  )
+                else if (expanded)
+                  IconButton(
+                    visualDensity: VisualDensity.compact,
+                    padding: EdgeInsets.zero,
+                    constraints: const BoxConstraints(
+                      minWidth: 32,
+                      minHeight: 32,
+                    ),
+                    icon: const Icon(
+                      Icons.keyboard_arrow_down_rounded,
+                      size: 22,
+                      color: Color(0xFF64748B),
+                    ),
+                    onPressed: widget.onClear,
+                  ),
+              ],
             ),
           ),
         ),

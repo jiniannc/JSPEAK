@@ -15,6 +15,9 @@ class AppTheme {
   /// 제목·타이틀 등 강조 텍스트
   static const String fontDisplay = 'SUITE';
 
+  /// SUIT/SUITE에 없는 일본어·중국어 글리프용 fallback
+  static const List<String> fontFallback = ['NotoSansJP', 'NotoSansSC'];
+
   static ThemeData light() {
     final scheme = ColorScheme.fromSeed(seedColor: seed);
     const base = TextTheme(
@@ -54,10 +57,11 @@ class AppTheme {
     return ThemeData(
       useMaterial3: true,
       fontFamily: fontBody,
+      fontFamilyFallback: fontFallback,
       colorScheme: scheme,
       scaffoldBackgroundColor: const Color(0xFFF7F9FB),
-      textTheme: base,
-      primaryTextTheme: base,
+      textTheme: base.apply(fontFamilyFallback: fontFallback),
+      primaryTextTheme: base.apply(fontFamilyFallback: fontFallback),
       appBarTheme: AppBarTheme(
         backgroundColor: scheme.surface,
         centerTitle: true,

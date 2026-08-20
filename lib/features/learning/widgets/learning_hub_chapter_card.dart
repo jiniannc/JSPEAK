@@ -91,6 +91,29 @@ class LearningHubChapterCard extends StatefulWidget {
   /// 짧은 스와이프 스냅 시 증가 — 카드에 바운스 피드백을 트리거한다.
   final int snapToken;
 
+  /// 아코디언 펼침 — 스크롤 애니메이션과 동기화.
+  static const expandAnimationDuration = Duration(milliseconds: 680);
+  static const expandAnimationCurve = Cubic(0.16, 1.0, 0.3, 1.0);
+  static const expandVerticalPadding = 16.0;
+  static const fallbackAspectRatio = 4 / 3;
+  static const compactOverlap = 16.0;
+
+  static double compactBlockHeight({required bool isLast}) =>
+      _compactHeight - (isLast ? 0.0 : compactOverlap);
+
+  static double estimateExpandedBlockHeight(
+    double cardWidth, {
+    double aspectRatio = fallbackAspectRatio,
+  }) {
+    return cardWidth / aspectRatio + expandVerticalPadding;
+  }
+
+  /// 히어로 이미지의 실제 가로/세로 비율 캐시 — 각 카드가 이미지를 실측하는
+  /// 즉시 채워진다. 화면 레벨(스크롤 목표 계산)에서 4:3 fallback 대신 이
+  /// 실측값을 쓰면, "추정 후 나중에 실측값으로 보정"할 때 생기는 큰 오차
+  /// (및 그로 인한 튕김)를 애초에 없앨 수 있다.
+  static final Map<String, double> aspectRatioCache = {};
+
   const LearningHubChapterCard({
     super.key,
     required this.chapter,
@@ -238,19 +261,18 @@ class _LearningHubChapterCardState extends State<LearningHubChapterCard>
   int _lastSnapToken = 0;
 
   static const _fallbackAspectRatio = 4 / 3;
-  static const _compactOverlap = 16.0;
 
   @override
   void initState() {
     super.initState();
     _fold = AnimationController(
       vsync: this,
-      duration: const Duration(milliseconds: 680),
+      duration: LearningHubChapterCard.expandAnimationDuration,
       reverseDuration: const Duration(milliseconds: 420),
     );
     _foldT = CurvedAnimation(
       parent: _fold,
-      curve: const Cubic(0.16, 1.0, 0.3, 1.0),
+      curve: LearningHubChapterCard.expandAnimationCurve,
       reverseCurve: const Cubic(0.55, 0.0, 0.45, 1.0),
     );
     _expandShimmer = AnimationController(
@@ -306,7 +328,7 @@ class _LearningHubChapterCardState extends State<LearningHubChapterCard>
     }
     if (oldWidget.isExpanded != widget.isExpanded) {
       if (widget.isExpanded) {
-        _fold.forward();
+        _fold.forward(from: _fold.value);
       } else {
         _fold.reverse();
       }
@@ -343,6 +365,12 @@ class _LearningHubChapterCardState extends State<LearningHubChapterCard>
       return;
     }
 
+    // 다른 카드가 이미 같은 이미지를 실측했다면 캐시로 즉시 반영.
+    final cached = LearningHubChapterCard.aspectRatioCache[assetPath];
+    if (cached != null && _imageAspectRatio != cached) {
+      _imageAspectRatio = cached;
+    }
+
     if (_resolvedAspectAsset == assetPath && _imageAspectRatio != null) {
       return;
     }
@@ -353,11 +381,12 @@ class _LearningHubChapterCardState extends State<LearningHubChapterCard>
     _imageAspectStream = imageStream;
     _imageAspectListener = ImageStreamListener(
       (ImageInfo info, _) {
-        if (!mounted) return;
         final height = info.image.height.toDouble();
         final ratio = height <= 0
             ? _fallbackAspectRatio
             : info.image.width / height;
+        LearningHubChapterCard.aspectRatioCache[assetPath] = ratio;
+        if (!mounted) return;
         setState(() => _imageAspectRatio = ratio);
       },
       onError: (_, __) {
@@ -417,13 +446,10 @@ class _LearningHubChapterCardState extends State<LearningHubChapterCard>
           animation: Listenable.merge([_foldT, _expandShimmer, _snapPulse]),
           builder: (context, _) {
             final t = _foldT.value.clamp(0.0, 1.0);
-            final letterboxT = Curves.easeOutCubic.transform(
-              ((t - 0.03) / 0.72).clamp(0.0, 1.0),
-            );
             final visualHeight = compactHeight +
                 (expandedHeight - compactHeight) * t;
             final overlap =
-                widget.isLast ? 0.0 : _compactOverlap * (1 - t);
+                widget.isLast ? 0.0 : LearningHubChapterCard.compactOverlap * (1 - t);
             final layoutHeight = visualHeight - overlap;
             final peel = Curves.easeIn.transform(
               (t / 0.58).clamp(0.0, 1.0),
@@ -449,9 +475,11 @@ class _LearningHubChapterCardState extends State<LearningHubChapterCard>
                     : LearningHubChapterCard._cardShadow;
             final cardColor = Color.lerp(
               Colors.white,
-              Colors.black,
+              Colors.transparent,
               Curves.easeIn.transform(t),
             )!;
+            const rimWidth = 3.2;
+            const rimStroke = 2.2;
 
             return Transform.scale(
               scale: widget.isExpanded ? _snapScale.value : 1.0,
@@ -467,11 +495,45 @@ class _LearningHubChapterCardState extends State<LearningHubChapterCard>
                   maxHeight: visualHeight,
                   child: DecoratedBox(
                     decoration: BoxDecoration(
+                      color: Color.lerp(
+                        Colors.transparent,
+                        Colors.white.withValues(alpha: 0.94),
+                        t,
+                      ),
                       borderRadius: radius,
-                      boxShadow: cardShadow,
+                      boxShadow: [
+                        ...cardShadow,
+                        if (t > 0.2)
+                          BoxShadow(
+                            color: Colors.white.withValues(
+                              alpha: 0.95 * t,
+                            ),
+                            blurRadius: 0.8,
+                            spreadRadius: 2.4 * t,
+                          ),
+                        if (t > 0.2)
+                          BoxShadow(
+                            color: Colors.white.withValues(
+                              alpha: 0.35 * t,
+                            ),
+                            blurRadius: 10,
+                            spreadRadius: 0.6,
+                          ),
+                      ],
+                      border: Border.all(
+                        color: Colors.white.withValues(
+                          alpha: 0.20 + 0.78 * t,
+                        ),
+                        width: rimStroke * t.clamp(0.0, 1.0) + 0.01,
+                      ),
                     ),
-                    child: ClipRRect(
-                      borderRadius: radius,
+                    child: Padding(
+                      padding: EdgeInsets.all(rimWidth * t),
+                      child: ClipRRect(
+                      borderRadius: BorderRadius.circular(
+                        (LearningHubChapterCard._outerRadius - rimWidth * t)
+                            .clamp(10.0, 20.0),
+                      ),
                       child: ColoredBox(
                         color: cardColor,
                         child: SizedBox(
@@ -507,7 +569,6 @@ class _LearningHubChapterCardState extends State<LearningHubChapterCard>
                                       cardHeight: expandedHeight,
                                       allModesCleared: allModesCleared,
                                       chapterStatus: chapterStatus,
-                                      cinemaRevealT: letterboxT,
                                     ),
                                   ),
                                 ),
@@ -553,76 +614,13 @@ class _LearningHubChapterCardState extends State<LearningHubChapterCard>
                         ),
                       ),
                     ),
+                    ),
                   ),
                 ),
               ),
             ),
             );
           },
-        );
-      },
-    );
-  }
-}
-
-/// 영화관 레터박스 — 이미지 중앙 슬릿에서 위·아래로 펼쳐지며 reveal.
-class _CinemaLetterboxReveal extends StatelessWidget {
-  const _CinemaLetterboxReveal({
-    required this.revealT,
-    required this.child,
-  });
-
-  final double revealT;
-  final Widget child;
-
-  @override
-  Widget build(BuildContext context) {
-    final open = revealT.clamp(0.0, 1.0);
-    final visibleFactor = (0.035 + open * 0.965).clamp(0.02, 1.0);
-    final barFraction = (1 - open) * 0.5;
-
-    return LayoutBuilder(
-      builder: (context, constraints) {
-        final h = constraints.maxHeight;
-        return Stack(
-          fit: StackFit.expand,
-          clipBehavior: Clip.hardEdge,
-          children: [
-            ClipRect(
-              child: Align(
-                alignment: Alignment.center,
-                heightFactor: visibleFactor,
-                child: child,
-              ),
-            ),
-            if (barFraction > 0.002) ...[
-              Positioned(
-                top: 0,
-                left: 0,
-                right: 0,
-                height: h * barFraction,
-                child: DecoratedBox(
-                  decoration: BoxDecoration(
-                    color: Colors.black,
-                    boxShadow: [
-                      BoxShadow(
-                        color: Colors.black.withValues(alpha: 0.55),
-                        blurRadius: 6,
-                        offset: const Offset(0, 1),
-                      ),
-                    ],
-                  ),
-                ),
-              ),
-              Positioned(
-                bottom: 0,
-                left: 0,
-                right: 0,
-                height: h * barFraction,
-                child: const ColoredBox(color: Colors.black),
-              ),
-            ],
-          ],
         );
       },
     );
@@ -910,7 +908,6 @@ class _ExpandedChapterVisual extends StatefulWidget {
     required this.cardHeight,
     required this.allModesCleared,
     required this.chapterStatus,
-    required this.cinemaRevealT,
   });
 
   final LearningHubChapter chapter;
@@ -928,7 +925,6 @@ class _ExpandedChapterVisual extends StatefulWidget {
   final double cardHeight;
   final bool allModesCleared;
   final _ChapterLearningStatus chapterStatus;
-  final double cinemaRevealT;
 
   @override
   State<_ExpandedChapterVisual> createState() =>
@@ -961,7 +957,7 @@ class _ExpandedChapterVisualState extends State<_ExpandedChapterVisual>
     _expand.addListener(_handleExpandForShimmer);
     _cameraMotionController = AnimationController(
       vsync: this,
-      duration: const Duration(milliseconds: 5500),
+      duration: const Duration(milliseconds: 7860),
     )..repeat(reverse: true);
     // 기본 세팅: 챕터 no·제목·hook만 보이는 '접힌' 상태로 시작한다.
   }
@@ -1168,48 +1164,36 @@ class _ExpandedChapterVisualState extends State<_ExpandedChapterVisual>
           child: Stack(
             clipBehavior: Clip.hardEdge,
             children: [
-              const Positioned.fill(
-                child: ColoredBox(color: Colors.black),
-              ),
               Positioned(
                 left: 0,
                 right: 0,
                 top: 0,
                 height: innerHeight + LearningHubChapterCard._imageSlideMax,
-                child: _CinemaLetterboxReveal(
-                  revealT: widget.cinemaRevealT,
-                  child: Transform.translate(
-                    offset: Offset(0, -imageSlide),
-                    child: Transform.scale(
-                      scale: 1.0 +
-                          (1 - widget.cinemaRevealT.clamp(0.0, 1.0)) * 0.06,
-                      alignment: Alignment.center,
-                      child: Stack(
-                        fit: StackFit.expand,
-                        children: [
-                          _ChapterHeroImageLayer(
-                            assetPath: widget.iconAsset,
-                            width: innerWidth,
-                            height: innerHeight +
-                                LearningHubChapterCard._imageSlideMax,
-                            motionDx: motion.dx,
-                            motionDy: motion.dy,
-                            motionAngle: motion.angle,
-                          ),
-                          if (widget.allModesCleared && t > 0.45)
-                            Positioned(
-                              top: 14,
-                              left: 0,
-                              right: 0,
-                              child: Opacity(
-                                opacity:
-                                    ((t - 0.45) / 0.35).clamp(0.0, 1.0),
-                                child: const _ChapterAllClearRibbon(),
-                              ),
-                            ),
-                        ],
+                child: Transform.translate(
+                  offset: Offset(0, -imageSlide),
+                  child: Stack(
+                    fit: StackFit.expand,
+                    children: [
+                      _ChapterHeroImageLayer(
+                        assetPath: widget.iconAsset,
+                        width: innerWidth,
+                        height: innerHeight +
+                            LearningHubChapterCard._imageSlideMax,
+                        motionDx: motion.dx,
+                        motionDy: motion.dy,
+                        motionAngle: motion.angle,
                       ),
-                    ),
+                      if (widget.allModesCleared && t > 0.45)
+                        Positioned(
+                          top: 14,
+                          left: 0,
+                          right: 0,
+                          child: Opacity(
+                            opacity: ((t - 0.45) / 0.35).clamp(0.0, 1.0),
+                            child: const _ChapterAllClearRibbon(),
+                          ),
+                        ),
+                    ],
                   ),
                 ),
               ),
@@ -1589,7 +1573,6 @@ class _ChapterUnifiedBottomScrim extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final bottomAlpha = 0.82 + 0.1 * expansion.clamp(0.0, 1.0);
-    final fadeStop = 0.55 + 0.08 * expansion.clamp(0.0, 1.0);
 
     return DecoratedBox(
       decoration: BoxDecoration(
@@ -1598,10 +1581,8 @@ class _ChapterUnifiedBottomScrim extends StatelessWidget {
           end: Alignment.topCenter,
           colors: [
             Colors.black.withValues(alpha: bottomAlpha),
-            Colors.black.withValues(alpha: bottomAlpha * 0.45),
             Colors.transparent,
           ],
-          stops: [0.0, fadeStop * 0.55, fadeStop],
         ),
       ),
     );
@@ -1995,12 +1976,8 @@ class _ModeShimmerSweepPainter extends CustomPainter {
         end: Alignment.centerRight,
         colors: [
           Colors.white.withValues(alpha: 0),
-          Colors.white.withValues(alpha: 0.12),
           Colors.white.withValues(alpha: 0.48),
-          Colors.white.withValues(alpha: 0.12),
-          Colors.white.withValues(alpha: 0),
         ],
-        stops: const [0.0, 0.3, 0.5, 0.7, 1.0],
       ).createShader(rect);
 
     canvas.drawRect(rect, paint);
@@ -2352,14 +2329,8 @@ class _CompletedGoldIcon extends StatelessWidget {
               end: Alignment(shift + 0.7, 0.28),
               colors: const [
                 _HubChapterGoldTheme.iconGold,
-                _HubChapterGoldTheme.iconGold,
-                _HubChapterGoldTheme.amberDeep,
                 _HubChapterGoldTheme.hairline,
-                _HubChapterGoldTheme.amberDeep,
-                _HubChapterGoldTheme.iconGold,
-                _HubChapterGoldTheme.iconGold,
               ],
-              stops: const [0.0, 0.28, 0.42, 0.50, 0.58, 0.72, 1.0],
             ).createShader(bounds);
           },
           child: Icon(

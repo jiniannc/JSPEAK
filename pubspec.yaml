@@ -75,3 +75,11 @@ flutter:
           weight: 800
         - asset: assets/fonts/SUITE-Heavy.ttf
           weight: 900
+    - family: NotoSansJP
+      fonts:
+        - asset: assets/fonts/NotoSansJP-Regular.otf
+          weight: 400
+    - family: NotoSansSC
+      fonts:
+        - asset: assets/fonts/NotoSansSC-Regular.otf
+          weight: 400

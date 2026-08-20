@@ -6,6 +6,7 @@ import 'package:hive_flutter/hive_flutter.dart';
 class TitleBadgeLocalDataSource {
   static const _boxName = 'jspeak_title_badges';
   static const _unlocksKey = 'title_badge_unlocks';
+  static const _pendingKey = 'title_badge_pending_celebrations';
 
   Box<String>? _box;
 
@@ -36,5 +37,23 @@ class TitleBadgeLocalDataSource {
       dates.map((key, value) => MapEntry(key, value.toIso8601String())),
     );
     await box.put(_unlocksKey, encoded);
+  }
+
+  Future<List<String>> loadPendingCelebrations() async {
+    final box = await _openBox();
+    final raw = box.get(_pendingKey);
+    if (raw == null) return const [];
+    try {
+      final decoded = jsonDecode(raw);
+      if (decoded is! List) return const [];
+      return decoded.map((e) => e.toString()).where((id) => id.isNotEmpty).toList();
+    } catch (_) {
+      return const [];
+    }
+  }
+
+  Future<void> savePendingCelebrations(List<String> ids) async {
+    final box = await _openBox();
+    await box.put(_pendingKey, jsonEncode(ids));
   }
 }

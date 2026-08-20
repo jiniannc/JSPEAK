@@ -9,6 +9,8 @@ import '../../../core/utils/scenario_answer_compare.dart';
 import '../../../core/utils/word_compare.dart';
 import '../../../data/models/scenario_line.dart';
 import '../../../features/dashboard/dashboard_palette.dart';
+import '../scenario_word_hints.dart';
+import 'scenario_word_hint_bubbles.dart';
 
 /// STT 인식 문장의 틀린 단어만 빨간색·취소선으로 표시.
 List<TextSpan> buildSpokenFeedbackSpans({
@@ -93,6 +95,7 @@ class ScenarioChatBubble extends StatefulWidget {
   final List<String> blankInputs;
   final int? selectedBlankIndex;
   final ValueChanged<int>? onBlankTap;
+  final List<ScenarioWordHint> wordHints;
   final GlobalKey? tourHighlightKey;
 
   const ScenarioChatBubble({
@@ -104,6 +107,7 @@ class ScenarioChatBubble extends StatefulWidget {
     this.blankInputs = const [],
     this.selectedBlankIndex,
     this.onBlankTap,
+    this.wordHints = const [],
     this.tourHighlightKey,
   });
 
@@ -221,6 +225,7 @@ class _ScenarioChatBubbleState extends State<ScenarioChatBubble>
                             blankInputs: widget.blankInputs,
                             selectedBlankIndex: widget.selectedBlankIndex,
                             onBlankTap: widget.onBlankTap,
+                            wordHints: widget.wordHints,
                           ),
                   ),
                 ),
@@ -347,6 +352,7 @@ class _CrewTurnBody extends StatelessWidget {
   final List<String> blankInputs;
   final int? selectedBlankIndex;
   final ValueChanged<int>? onBlankTap;
+  final List<ScenarioWordHint> wordHints;
 
   const _CrewTurnBody({
     required this.message,
@@ -356,6 +362,7 @@ class _CrewTurnBody extends StatelessWidget {
     this.blankInputs = const [],
     this.selectedBlankIndex,
     this.onBlankTap,
+    this.wordHints = const [],
   });
 
   @override
@@ -377,12 +384,14 @@ class _CrewTurnBody extends StatelessWidget {
         mainAxisSize: MainAxisSize.min,
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          _RoleChip(
-            icon: Icons.badge_rounded, // 💡 라운드 아이콘으로 변경
-            label: resolved ? '정답' : '승무원',
-            color: accent,
-          ),
-          const SizedBox(height: 10), // 💡 간격 확대
+          if (!resolved) ...[
+            _RoleChip(
+              icon: Icons.badge_rounded, // 💡 라운드 아이콘으로 변경
+              label: '승무원',
+              color: accent,
+            ),
+            const SizedBox(height: 10), // 💡 간격 확대
+          ],
           AnimatedSwitcher(
             duration: const Duration(milliseconds: 280),
             switchInCurve: Curves.easeOutCubic,
@@ -406,11 +415,12 @@ class _CrewTurnBody extends StatelessWidget {
                       accent: accent,
                       showBlankFrame: message.showBlankFrame,
                       spokenForBlanks: spokenForBlanks,
-                      wrongSpoken: message.spokenText,
                       blankInputs: blankInputs,
                       selectedBlankIndex: selectedBlankIndex,
                       onBlankTap: onBlankTap,
                       showPronunciation: showPronunciation,
+                      showWordHints: message.showWordHints,
+                      wordHints: wordHints,
                     ),
                   ),
           ),
@@ -420,32 +430,54 @@ class _CrewTurnBody extends StatelessWidget {
   }
 }
 
-class _SpeakingContent extends StatelessWidget {
+class _SpeakingContent extends StatefulWidget {
   final ScenarioLine line;
   final Color accent;
   final bool showBlankFrame;
   final String spokenForBlanks;
-  final String? wrongSpoken;
   final List<String> blankInputs;
   final int? selectedBlankIndex;
   final ValueChanged<int>? onBlankTap;
   final bool showPronunciation;
+  final bool showWordHints;
+  final List<ScenarioWordHint> wordHints;
 
   const _SpeakingContent({
     required this.line,
     required this.accent,
     required this.showBlankFrame,
     required this.spokenForBlanks,
-    this.wrongSpoken,
     this.blankInputs = const [],
     this.selectedBlankIndex,
     this.onBlankTap,
     this.showPronunciation = false,
+    this.showWordHints = false,
+    this.wordHints = const [],
   });
 
   @override
+  State<_SpeakingContent> createState() => _SpeakingContentState();
+}
+
+class _SpeakingContentState extends State<_SpeakingContent> {
+  final Set<int> _dismissedHintRuns = {};
+
+  @override
+  void didUpdateWidget(covariant _SpeakingContent oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (!widget.showWordHints) {
+      _dismissedHintRuns.clear();
+    }
+  }
+
+  @override
   Widget build(BuildContext context) {
-    final structureOn = showBlankFrame && line.blankFrame.trim().isNotEmpty;
+    final line = widget.line;
+    final accent = widget.accent;
+    final showWordHints = widget.showWordHints;
+    final wordHints = widget.wordHints;
+    final structureOn =
+        widget.showBlankFrame && line.blankFrame.trim().isNotEmpty;
 
     // ConstrainedBox(maxWidth: screen*0.88) − 말풍선 좌우 패딩 18*2
     final blankMaxW = MediaQuery.sizeOf(context).width * 0.88 - 36;
@@ -466,19 +498,33 @@ class _SpeakingContent extends StatelessWidget {
         const SizedBox(height: 14),
         AnswerBlankHintView(
           correctSentence: line.textTarget,
-          spokenText: spokenForBlanks,
+          spokenText: widget.spokenForBlanks,
           language: line.language,
           accentColor: accent,
           fontSize: 16.5,
           maxWidth: blankMaxW,
           blankFrame: line.blankFrame,
           structureRevealed: structureOn,
-          blankInputs: blankInputs,
-          selectedBlankIndex: selectedBlankIndex,
-          onBlankTap: structureOn ? onBlankTap : null,
+          blankInputs: widget.blankInputs,
+          selectedBlankIndex: widget.selectedBlankIndex,
+          onBlankTap: structureOn ? widget.onBlankTap : null,
+          showHintRunLabels: showWordHints && wordHints.length >= 2,
         ),
+        if (showWordHints && wordHints.isNotEmpty)
+          ScenarioWordHintLane(
+            hints: wordHints,
+            dismissedRunIndices: _dismissedHintRuns,
+            gradient: context.languagePalette?.speechBubbleGradient ??
+                [
+                  Color.lerp(accent, Colors.white, 0.28)!,
+                  accent,
+                ],
+            shadowColor: context.languagePalette?.primary ?? accent,
+            onDismiss: (runIndex) =>
+                setState(() => _dismissedHintRuns.add(runIndex)),
+          ),
         if (structureOn &&
-            showPronunciation &&
+            widget.showPronunciation &&
             line.pronunciation.isNotEmpty) ...[
           const SizedBox(height: 8),
           Text(
@@ -490,34 +536,6 @@ class _SpeakingContent extends StatelessWidget {
               color: DashboardPalette.textMuted,
               height: 1.45,
               letterSpacing: 0.2,
-            ),
-          ),
-        ],
-        if (wrongSpoken != null && wrongSpoken!.isNotEmpty && !structureOn) ...[
-          const SizedBox(height: 12),
-          Text(
-            '내 발음',
-            style: TextStyle(
-              fontSize: 11.5,
-              fontWeight: FontWeight.w700, // 💡 더 선명하게 700
-              color: accent.withValues(alpha: 0.7),
-              letterSpacing: 0.2,
-            ),
-          ),
-          const SizedBox(height: 6),
-          RichText(
-            text: TextSpan(
-              children: buildSpokenFeedbackSpans(
-                correctSentence: line.textTarget,
-                spokenText: wrongSpoken!,
-                language: line.language,
-                baseStyle: TextStyle(
-                  fontSize: 13.5,
-                  fontWeight: FontWeight.w600,
-                  height: 1.4,
-                  color: accent.withValues(alpha: 0.9),
-                ),
-              ),
             ),
           ),
         ],
@@ -609,7 +627,7 @@ class _ResolvedContentState extends State<_ResolvedContent>
     super.dispose();
   }
 
-  Widget _answerText(Color accent) {
+  Widget _answerText(Color accent, double maxWidth) {
     const style = TextStyle(
       fontSize: 16.5,
       fontWeight: FontWeight.w800,
@@ -619,9 +637,6 @@ class _ResolvedContentState extends State<_ResolvedContent>
     final text = _shineDone
         ? Text(
             widget.line.textTarget,
-            maxLines: 1,
-            softWrap: false,
-            overflow: TextOverflow.visible,
             style: style.copyWith(
               color: Color.lerp(accent, DashboardPalette.navy, 0.15),
             ),
@@ -649,16 +664,12 @@ class _ResolvedContentState extends State<_ResolvedContent>
             },
             child: Text(
               widget.line.textTarget,
-              maxLines: 1,
-              softWrap: false,
-              overflow: TextOverflow.visible,
               style: style,
             ),
           );
 
-    return FittedBox(
-      fit: BoxFit.scaleDown,
-      alignment: Alignment.centerLeft,
+    return ConstrainedBox(
+      constraints: BoxConstraints(maxWidth: maxWidth),
       child: text,
     );
   }
@@ -667,6 +678,7 @@ class _ResolvedContentState extends State<_ResolvedContent>
   Widget build(BuildContext context) {
     final line = widget.line;
     final accent = widget.accent;
+    final textMaxW = MediaQuery.sizeOf(context).width * 0.88 - 36;
     const success = Color(0xFF0C9E6E); // 💡 살짝 청량한 초록으로 변경
 
     return FadeTransition(
@@ -678,54 +690,69 @@ class _ResolvedContentState extends State<_ResolvedContent>
           mainAxisSize: MainAxisSize.min,
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            FadeTransition(
-              opacity: _badgeFade,
-              child: ScaleTransition(
-                scale: _badgeScale,
-                alignment: Alignment.centerLeft,
-                child: Container(
-                  padding: const EdgeInsets.symmetric(
-                    horizontal: 12, // 💡 배지 여백 확대
-                    vertical: 6,
-                  ),
-                  decoration: BoxDecoration(
-                    gradient: LinearGradient(
-                      colors: [success, Color.lerp(success, accent, 0.25)!],
-                    ),
-                    borderRadius: BorderRadius.circular(99), // 💡 알약 형태로 동글동글하게 무제한 확장
-                    boxShadow: [
-                      BoxShadow(
-                        color: success.withValues(alpha: 0.25),
-                        blurRadius: 12,
-                        offset: const Offset(0, 4),
+            Row(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.center,
+              children: [
+                _RoleChip(
+                  icon: Icons.badge_rounded,
+                  label: '정답',
+                  color: accent,
+                ),
+                const SizedBox(width: 8),
+                FadeTransition(
+                  opacity: _badgeFade,
+                  child: ScaleTransition(
+                    scale: _badgeScale,
+                    alignment: Alignment.centerLeft,
+                    child: Container(
+                      padding: const EdgeInsets.symmetric(
+                        horizontal: 12,
+                        vertical: 6,
                       ),
-                    ],
-                  ),
-                  child: const Row(
-                    mainAxisSize: MainAxisSize.min,
-                    children: [
-                      Icon(
-                        Icons.check_circle_rounded,
-                        size: 14,
-                        color: Colors.white,
-                      ),
-                      SizedBox(width: 5),
-                      Text(
-                        'Correct',
-                        style: TextStyle(
-                          fontSize: 12,
-                          fontWeight: FontWeight.w800,
-                          color: Colors.white,
-                          letterSpacing: 0.3,
+                      decoration: BoxDecoration(
+                        gradient: LinearGradient(
+                          colors: [
+                            success,
+                            Color.lerp(success, accent, 0.25)!,
+                          ],
                         ),
+                        borderRadius: BorderRadius.circular(99),
+                        boxShadow: [
+                          BoxShadow(
+                            color: success.withValues(alpha: 0.25),
+                            blurRadius: 12,
+                            offset: const Offset(0, 4),
+                          ),
+                        ],
                       ),
-                    ],
+                      child: const Row(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          Icon(
+                            Icons.check_circle_rounded,
+                            size: 14,
+                            color: Colors.white,
+                          ),
+                          SizedBox(width: 5),
+                          Text(
+                            'Correct',
+                            style: TextStyle(
+                              fontSize: 12,
+                              fontWeight: FontWeight.w800,
+                              color: Colors.white,
+                              letterSpacing: 0.3,
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
                   ),
                 ),
-              ),
+              ],
             ),
             const SizedBox(height: 12),
-            _answerText(accent),
+            _answerText(accent, textMaxW),
             if (widget.showPronunciation && line.pronunciation.isNotEmpty) ...[
               const SizedBox(height: 8),
               Text(

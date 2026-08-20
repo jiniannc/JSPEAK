@@ -104,8 +104,8 @@ class AppHeader extends StatelessWidget {
   static const switchInCurve = Curves.easeOutQuart;
   static const switchOutCurve = Curves.easeOutCubic;
 
-  /// 헤더 아래 본문 시작 간격.
-  static const bodyGap = 16.0;
+  /// 헤더 아래 본문 시작 간격 — 콘텐츠 하단에 붙도록 최소화.
+  static const bodyGap = 0.0;
 
   static const _titleColor = Color(0xFF0F172A);
   static const _subtitleColor = Color(0xFF64748B);
@@ -311,12 +311,8 @@ class AppHeaderShimmerOverlay extends StatelessWidget {
                       end: Alignment.centerRight,
                       colors: [
                         Colors.white.withValues(alpha: 0.0),
-                        Colors.white.withValues(alpha: 0.18),
                         Colors.white.withValues(alpha: 0.78),
-                        Colors.white.withValues(alpha: 0.18),
-                        Colors.white.withValues(alpha: 0.0),
                       ],
-                      stops: const [0.0, 0.36, 0.5, 0.64, 1.0],
                     ),
                   ),
                 ),

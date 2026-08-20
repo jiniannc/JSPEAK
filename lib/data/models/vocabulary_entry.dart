@@ -1,6 +1,7 @@
+import '../../core/utils/chapter_asset_path.dart';
+import '../../core/utils/vocabulary_span_builder.dart';
 import '../../core/utils/word_compare.dart';
 import '../../core/utils/word_match.dart';
-import '../../core/utils/chapter_asset_path.dart';
 
 /// Words 시트 행과 1:1 매핑되는 단어 사전 항목.
 class VocabularyEntry {
@@ -130,4 +131,29 @@ class VocabularyIndex {
   List<VocabularyEntry> get entries => _entries;
 
   bool get isEmpty => _byTerm.isEmpty;
+
+  /// 정규화 term 또는 유연 매칭으로 Words 시트 항목 조회.
+  VocabularyEntry? lookupTerm(String term, {String language = 'English'}) {
+    final normalized = normalizeTerm(term);
+    if (normalized.isEmpty) return null;
+
+    final direct = _byTerm[normalized];
+    if (direct != null &&
+        (direct.language.isEmpty || direct.language == language)) {
+      return direct;
+    }
+
+    for (final entry in _entries) {
+      if (entry.language.isNotEmpty && entry.language != language) continue;
+      if (normalizeTerm(entry.term) == normalized) return entry;
+      if (WordMatch.flexibleMatch(term, entry.term)) return entry;
+    }
+
+    final matches = VocabularySpanBuilder.findPhraseMatches(
+      term,
+      _entries,
+      language: language,
+    );
+    return matches.isEmpty ? null : matches.first.entry;
+  }
 }

@@ -8,6 +8,7 @@ import '../../app/learning_providers.dart';
 import '../../app/my_page_report_providers.dart';
 import '../../app/my_page_stats_providers.dart';
 import '../../app/providers.dart';
+import '../../app/shell_providers.dart';
 import '../../app/title_badge_providers.dart';
 import '../../core/config/active5_layout.dart';
 import '../../core/config/app_config.dart';
@@ -32,11 +33,26 @@ class MyPageScreen extends ConsumerStatefulWidget {
 class _MyPageScreenState extends ConsumerState<MyPageScreen> {
   bool _celebrationShowing = false;
 
+  @override
+  void initState() {
+    super.initState();
+    WidgetsBinding.instance.addPostFrameCallback((_) => _tryShowCelebration());
+  }
+
+  bool get _isMyPageTabVisible =>
+      ref.read(shellTabIndexProvider) == MainShellTabHeader.kMyPageTabIndex;
+
+  void _tryShowCelebration() {
+    if (!mounted) return;
+    _handleBadgeUnlockState(null, ref.read(titleBadgeUnlockProvider));
+  }
+
   void _handleBadgeUnlockState(
     TitleBadgeUnlockState? previous,
     TitleBadgeUnlockState next,
   ) {
     if (_celebrationShowing) return;
+    if (!_isMyPageTabVisible) return;
     if (next.pendingCelebrations.isEmpty) return;
 
     final badgeId = next.pendingCelebrations.first;
@@ -107,6 +123,11 @@ class _MyPageScreenState extends ConsumerState<MyPageScreen> {
       titleBadgeUnlockProvider,
       _handleBadgeUnlockState,
     );
+    ref.listen<int>(shellTabIndexProvider, (previous, next) {
+      if (next == MainShellTabHeader.kMyPageTabIndex) {
+        _tryShowCelebration();
+      }
+    });
 
     final metrics = Active5Layout.of(context);
     final language = ref.watch(learningHubLanguageProvider);

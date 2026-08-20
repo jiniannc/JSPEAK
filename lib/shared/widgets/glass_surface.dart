@@ -104,6 +104,74 @@ abstract final class GlassSurfaceStyle {
       surfaceDecoration(radius: radius, opacity: opacity);
 }
 
+/// 하단 플로팅 네비와 동일한 Frosted Glass — BackdropFilter + 얇은 유리 채움.
+class FloatingIslandGlass extends StatelessWidget {
+  final double radius;
+  final Widget child;
+  final bool showBorder;
+  final double borderWidth;
+  final List<BoxShadow>? shadows;
+
+  const FloatingIslandGlass({
+    super.key,
+    required this.radius,
+    required this.child,
+    this.showBorder = true,
+    this.borderWidth = 1.2,
+    this.shadows,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      decoration: BoxDecoration(
+        borderRadius: BorderRadius.circular(radius),
+        boxShadow: shadows ??
+            [
+              BoxShadow(
+                color: Colors.black.withValues(alpha: 0.08),
+                blurRadius: 20,
+                offset: const Offset(0, 6),
+              ),
+            ],
+      ),
+      child: ClipRRect(
+        borderRadius: BorderRadius.circular(radius),
+        child: Stack(
+          fit: StackFit.passthrough,
+          children: [
+            Positioned.fill(
+              child: BackdropFilter(
+                filter: ImageFilter.blur(
+                  sigmaX: GlassSurfaceStyle.floatingIslandBlur,
+                  sigmaY: GlassSurfaceStyle.floatingIslandBlur,
+                ),
+                child: DecoratedBox(
+                  decoration: BoxDecoration(
+                    color: Colors.white.withValues(
+                      alpha: GlassSurfaceStyle.floatingIslandFillAlpha,
+                    ),
+                    borderRadius: BorderRadius.circular(radius),
+                    border: showBorder
+                        ? Border.all(
+                            color: Colors.white.withValues(
+                              alpha: GlassSurfaceStyle.floatingIslandBorderAlpha,
+                            ),
+                            width: borderWidth,
+                          )
+                        : null,
+                  ),
+                ),
+              ),
+            ),
+            child,
+          ],
+        ),
+      ),
+    );
+  }
+}
+
 class GlassSurface extends StatelessWidget {
   final Widget child;
   final double radius;

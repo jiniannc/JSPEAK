@@ -10,4 +10,10 @@ class TitleBadgeRepository {
 
   Future<void> saveUnlockDates(Map<String, DateTime> dates) =>
       _local.saveUnlockDates(dates);
+
+  Future<List<String>> loadPendingCelebrations() =>
+      _local.loadPendingCelebrations();
+
+  Future<void> savePendingCelebrations(List<String> ids) =>
+      _local.savePendingCelebrations(ids);
 }

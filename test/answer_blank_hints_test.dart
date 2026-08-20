@@ -112,6 +112,168 @@ void main() {
       expect(correctCount, 8);
     });
 
+    test('wrong first word still reveals later correct words', () {
+      const correct =
+          'Could you please fold your stroller before you get on the plane?';
+      const spoken =
+          'would you please fold your stroller before you get on the plane';
+      final states = AnswerBlankHints.letterStates(
+        correct: correct,
+        spoken: spoken,
+        language: 'English',
+      );
+      final letters = AnswerBlankHints.displayLetters(
+        correct,
+        language: 'English',
+      );
+
+      var wordIdx = 0;
+      var wrongFirstWord = false;
+      var laterCorrect = false;
+      for (var i = 0; i < letters.length; i++) {
+        if (letters[i].isGap) {
+          wordIdx++;
+          continue;
+        }
+        if (wordIdx == 0 && states[i].kind == BlankRevealKind.wrong) {
+          wrongFirstWord = true;
+        }
+        if (wordIdx >= 2 && states[i].kind == BlankRevealKind.correct) {
+          laterCorrect = true;
+        }
+      }
+      expect(wrongFirstWord, isTrue);
+      expect(laterCorrect, isTrue);
+    });
+
+    test('skipped middle word still matches later words', () {
+      const correct =
+          'Could you please fold your stroller before you get on the plane?';
+      const spoken =
+          'Could you fold your stroller before you get on the plane';
+      final layout = AnswerBlankHints.layout(
+        correct: correct,
+        spoken: spoken,
+        language: 'English',
+      );
+
+      bool wordFullyCorrect(int targetWordIdx) {
+        var wordIdx = 0;
+        for (var i = 0; i < layout.letters.length; i++) {
+          if (layout.letters[i].isGap) {
+            wordIdx++;
+            continue;
+          }
+          if (wordIdx != targetWordIdx) continue;
+          if (layout.states[i].kind != BlankRevealKind.correct) return false;
+        }
+        return true;
+      }
+
+      bool wordBlank(int targetWordIdx) {
+        var wordIdx = 0;
+        for (var i = 0; i < layout.letters.length; i++) {
+          if (layout.letters[i].isGap) {
+            wordIdx++;
+            continue;
+          }
+          if (wordIdx != targetWordIdx) continue;
+          if (layout.states[i].kind != BlankRevealKind.blank) return false;
+        }
+        return true;
+      }
+
+      expect(wordFullyCorrect(0), isTrue); // Could
+      expect(wordFullyCorrect(1), isTrue); // you
+      expect(wordBlank(2), isTrue); // please omitted
+      expect(wordFullyCorrect(3), isTrue); // fold
+      expect(wordFullyCorrect(4), isTrue); // your
+    });
+
+    test('wrong longer word adds overflow slots', () {
+      const correct = 'Could you fold the plane?';
+      const spoken = 'couldnt you fold the plane';
+      final layout = AnswerBlankHints.layout(
+        correct: correct,
+        spoken: spoken,
+        language: 'English',
+      );
+      final baseLetters = AnswerBlankHints.displayLetters(
+        correct,
+        language: 'English',
+      );
+      expect(layout.letters.length, greaterThan(baseLetters.length));
+
+      var wordIdx = 0;
+      var overflowCount = 0;
+      for (var i = 0; i < layout.letters.length; i++) {
+        if (layout.letters[i].isGap) {
+          wordIdx++;
+          continue;
+        }
+        if (wordIdx == 0 && layout.letters[i].isOverflow) {
+          overflowCount++;
+          expect(layout.states[i].kind, BlankRevealKind.wrong);
+        }
+      }
+      expect(overflowCount, 2); // "couldnt" vs "Could" → nt
+    });
+
+    test('empty spoken restores base slot count', () {
+      const correct = 'Could you fold the plane?';
+      final baseLetters = AnswerBlankHints.displayLetters(
+        correct,
+        language: 'English',
+      );
+      final layout = AnswerBlankHints.layout(
+        correct: correct,
+        spoken: '',
+        language: 'English',
+      );
+      expect(layout.letters.length, baseLetters.length);
+    });
+
+    test('classify omitted middle word', () {
+      const correct =
+          'Could you please fold your stroller before you get on the plane?';
+      const spoken =
+          'Could you fold your stroller before you get on the plane';
+      expect(
+        AnswerBlankHints.classifyEnglishSpeakingWrong(
+          correct: correct,
+          spoken: spoken,
+        ),
+        EnglishSpeakingWrongKind.omittedWord,
+      );
+    });
+
+    test('classify incomplete ending', () {
+      const correct =
+          'Could you please fold your stroller before you get on the plane?';
+      const spoken = 'Could you please fold your stroller';
+      expect(
+        AnswerBlankHints.classifyEnglishSpeakingWrong(
+          correct: correct,
+          spoken: spoken,
+        ),
+        EnglishSpeakingWrongKind.incompleteEnding,
+      );
+    });
+
+    test('classify mispronunciation', () {
+      const correct =
+          'Could you please fold your stroller before you get on the plane?';
+      const spoken =
+          'would you please fold your stroller before you get on the plane';
+      expect(
+        AnswerBlankHints.classifyEnglishSpeakingWrong(
+          correct: correct,
+          spoken: spoken,
+        ),
+        EnglishSpeakingWrongKind.mispronunciation,
+      );
+    });
+
     test('CJK layout spec uses fullwidth placeholder and wider slots', () {
       const fontSize = 16.5;
       final cjkSpec = BlankLayoutSpec.forLanguage('Japanese', fontSize);
@@ -121,6 +283,37 @@ void main() {
       expect(cjkSpec.minSlotWidth, greaterThan(enSpec.minSlotWidth));
       expect(cjkSpec.letterGap, greaterThan(enSpec.letterGap));
       expect(cjkSpec.maxSlotWidth, greaterThan(enSpec.maxSlotWidth));
+    });
+
+    test('displayLetters keeps trailing sentence punctuation', () {
+      const correct = 'Thank you. May I check your boarding pass?';
+      final letters = AnswerBlankHints.displayLetters(
+        correct,
+        language: 'English',
+      );
+      final chars = [
+        for (final l in letters)
+          if (!l.isGap) l.char,
+      ].join();
+      expect(chars, contains('.'));
+      expect(chars, endsWith('?'));
+
+      final states = AnswerBlankHints.letterStates(
+        correct: correct,
+        spoken: '',
+        language: 'English',
+        blankFrame: '____ ____. ____ I check your boarding pass?',
+        structureRevealed: true,
+      );
+      final punctStates = [
+        for (var i = 0; i < letters.length; i++)
+          if (letters[i].isPunctuation) states[i],
+      ];
+      expect(punctStates, isNotEmpty);
+      expect(
+        punctStates.every((s) => s.kind == BlankRevealKind.structure),
+        isTrue,
+      );
     });
   });
 }
