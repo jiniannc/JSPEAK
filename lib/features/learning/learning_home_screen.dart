@@ -1,7 +1,6 @@
 import 'dart:math' as math;
 
 import 'package:flutter/material.dart';
-import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../app/learning_hub_language_provider.dart';
@@ -14,7 +13,9 @@ import '../../core/theme/language_palette.dart';
 import '../../core/utils/learning_hub_icon.dart';
 import '../../data/models/content_bundle.dart';
 import '../../data/models/learning_hub_chapter.dart';
+import '../../data/repositories/scenario_progress_repository.dart';
 import '../../data/repositories/sentence_progress_repository.dart';
+import '../../data/repositories/swipe_progress_repository.dart';
 import '../../features/dashboard/dashboard_palette.dart';
 import '../shell/floating_island_nav_bar.dart';
 import '../shell/main_shell_tab_header.dart';
@@ -48,12 +49,8 @@ class _LearningHomeScreenState extends ConsumerState<LearningHomeScreen> {
   bool _compactScrollMode = false;
   double _scrollDragStartOffset = 0;
   bool _isUserDragScroll = false;
-  double _scrollPeakVelocity = 0;
-  double _scrollSampleOffset = 0;
-  DateTime? _scrollSampleTime;
   List<int> _orderedChapterNos = const [];
   Map<int, LearningHubChapter> _chaptersByNo = const {};
-  int _chapterSnapToken = 0;
   int? _outgoingExpandedChapterNo;
   int? _activeCenterScrollChapter;
   int _scrollGeneration = 0;
@@ -78,20 +75,14 @@ class _LearningHomeScreenState extends ConsumerState<LearningHomeScreen> {
   /// 하단 N개 챕터는 포커스 정렬 대신 스크롤 가능한 최상단(max)에 고정.
   static const _nearBottomChapterCount = 3;
 
-  /// 플로팅 프로그레스 헤더 높이 — 트랙·카운트 텍스트 고정 레이아웃.
+  /// 플로팅 프로그레스 헤더 높이 — 트랙·카운트·범례 고정 레이아웃.
   double get _floatingHeaderHeight =>
-      HubGrooveProgressTrack.totalBlockHeight + 4;
+      HubTripleModeProgressTrack.totalBlockHeight + 4;
 
   /// 스크롤 다운 시 플로팅 프로그레스 헤더가 완전히 사라지기까지의 거리.
   static const _floatingHeaderFadeDistance = 44.0;
 
   static const _longDragThresholdPx = 96.0;
-  static const _shortSwipeVelocityPx = 220.0;
-  /// 실제로 손가락/마우스가 이 정도는 움직여야 flick으로 인정한다.
-  /// 속도 계산이 잡음으로 튀는 극단적인 경우에도, 거의 움직이지 않은
-  /// "누르고만 있던" 제스처가 챕터 스냅으로 오판되지 않도록 하는
-  /// 마지막 안전장치.
-  static const _minFlickDistancePx = 12.0;
   /// 헤더·하단 네비를 고려한 포커스 위치 (가용 영역 상단 기준).
   static const _focusBandFraction = 0.40;
 
@@ -704,30 +695,12 @@ class _LearningHomeScreenState extends ConsumerState<LearningHomeScreen> {
     });
   }
 
-  /// 스크롤 종료 시 판정 — flick(속도 우선) vs 느린 긴 드래그(컴팩트).
+  /// 스크롤 종료 시 판정 — 느린 긴 드래그면 컴팩트 리스트로 전환.
   void _onUserScrollEnd(ScrollEndNotification notification) {
     if (_suppressScrollExpand || _initialFocusPending) return;
 
-    final dragDetails = notification.dragDetails;
-    final pointerVelocity =
-        dragDetails?.velocity.pixelsPerSecond.dy ?? 0;
     final dragDelta = _safeScrollOffset() - _scrollDragStartOffset;
 
-    final flickSpeed =
-        math.max(pointerVelocity.abs(), _scrollPeakVelocity.abs());
-
-    // 빠른 flick → (최소 이동 거리를 넘긴 경우에 한해) 챕터 스냅
-    if (flickSpeed >= _shortSwipeVelocityPx &&
-        dragDelta.abs() >= _minFlickDistancePx) {
-      // offset 증가(손가락 위) = 다음 챕터
-      final direction = _scrollPeakVelocity.abs() >= pointerVelocity.abs()
-          ? (_scrollPeakVelocity > 0 ? 1 : -1)
-          : (pointerVelocity > 0 ? -1 : 1);
-      _jumpToAdjacentChapter(direction);
-      return;
-    }
-
-    // 느린 긴 드래그 → 컴팩트 리스트
     if (dragDelta.abs() >= _longDragThresholdPx && !_compactScrollMode) {
       _scrollGeneration++;
       _scrollFinalizeToken = null;
@@ -757,76 +730,16 @@ class _LearningHomeScreenState extends ConsumerState<LearningHomeScreen> {
         notification.dragDetails != null) {
       _scrollDragStartOffset = _safeScrollOffset();
       _isUserDragScroll = true;
-      _scrollPeakVelocity = 0;
-      _scrollSampleOffset = _safeScrollOffset();
-      _scrollSampleTime = null;
-    } else if (notification is ScrollUpdateNotification &&
-        notification.dragDetails != null) {
-      final now = DateTime.now();
-      final offset = notification.metrics.pixels;
-      final sampleTime = _scrollSampleTime;
-      if (sampleTime == null) {
-        _scrollSampleTime = now;
-        _scrollSampleOffset = offset;
-      } else {
-        final dtMs = now.difference(sampleTime).inMilliseconds;
-        // 표본 간 시간이 한 프레임(≈16ms)보다 짧으면, 같은 프레임에
-        // 배치 처리된 포인터 이벤트 등 타이밍 잡음 때문에 실제보다
-        // 훨씬 큰 속도로 계산될 수 있다 — "길게 누르고 천천히 드래그"
-        // 해도 그 순간의 잡음 하나 때문에 flick(챕터 스냅)으로 오판되는
-        // 버그의 원인이었다. 충분히 신뢰할 수 있는 간격이 쌓일 때까지
-        // 기준점을 유지하고 기다린다.
-        if (dtMs >= 16) {
-          final v = (offset - _scrollSampleOffset) / dtMs * 1000;
-          if (v.abs() > _scrollPeakVelocity.abs()) {
-            _scrollPeakVelocity = v;
-          }
-          _scrollSampleTime = now;
-          _scrollSampleOffset = offset;
-        }
-      }
     } else if (notification is ScrollEndNotification && _isUserDragScroll) {
       _isUserDragScroll = false;
-      _scrollSampleTime = null;
       _onUserScrollEnd(notification);
     }
     return false;
   }
 
-  int? _nearestChapterToViewport() {
-    final position = _scrollPositionOrNull;
-    final viewportBox =
-        _viewportKey.currentContext?.findRenderObject() as RenderBox?;
-    if (position == null || viewportBox == null || !viewportBox.attached) {
-      return null;
-    }
-
-    final focusY = _viewportFocusY(context);
-    final listTop = viewportBox.localToGlobal(Offset.zero).dy;
-    final scroll = position.pixels;
-
-    int? nearestChapterNo;
-    var nearestDistance = double.infinity;
-    var offset = _listPaddingTop;
-    for (var i = 0; i < _orderedChapterNos.length; i++) {
-      final chapterNo = _orderedChapterNos[i];
-      final height = _heightForChapter(chapterNo);
-      final top = listTop + offset - scroll;
-      final center = top + height / 2;
-      final distance = (center - focusY).abs();
-      if (distance < nearestDistance) {
-        nearestDistance = distance;
-        nearestChapterNo = chapterNo;
-      }
-      offset += height;
-    }
-    return nearestChapterNo;
-  }
-
   void _focusChapter(
     int chapterNo, {
     bool animateScroll = true,
-    bool swipeSnap = false,
   }) {
     _scrollGeneration++;
     _scrollFinalizeToken = null;
@@ -841,33 +754,9 @@ class _LearningHomeScreenState extends ConsumerState<LearningHomeScreen> {
           (previous != null && previous != chapterNo) ? previous : null;
       _expandedChapterNo = chapterNo;
       _transientBottomSlack = math.max(_transientBottomSlack, slack);
-      if (swipeSnap) _chapterSnapToken++;
     });
-    if (swipeSnap) {
-      HapticFeedback.lightImpact();
-    }
     if (!animateScroll) return;
     _startParallelCenterScroll(chapterNo);
-  }
-
-  void _jumpToAdjacentChapter(int direction) {
-    if (_orderedChapterNos.isEmpty) return;
-
-    final anchor = _compactScrollMode
-        ? (_nearestChapterToViewport() ?? _orderedChapterNos.first)
-        : (_expandedChapterNo ?? _nearestChapterToViewport() ?? _orderedChapterNos.first);
-    final index = _orderedChapterNos.indexOf(anchor);
-    if (index < 0) return;
-
-    final nextIndex = index + direction;
-    if (nextIndex < 0 || nextIndex >= _orderedChapterNos.length) return;
-
-    final position = _scrollPositionOrNull;
-    if (position != null) {
-      position.jumpTo(position.pixels);
-    }
-
-    _focusChapter(_orderedChapterNos[nextIndex], swipeSnap: true);
   }
 
   @override
@@ -880,6 +769,8 @@ class _LearningHomeScreenState extends ConsumerState<LearningHomeScreen> {
     final swipeProgress = ref.watch(swipeProgressProvider);
     final scenarioProgress = ref.watch(scenarioProgressProvider);
     final sentenceRepo = ref.watch(sentenceProgressRepositoryProvider);
+    final swipeRepo = ref.watch(swipeProgressRepositoryProvider);
+    final scenarioRepo = ref.watch(scenarioProgressRepositoryProvider);
 
     return contentAsync.when(
           loading: () => const Center(child: CircularProgressIndicator()),
@@ -888,6 +779,16 @@ class _LearningHomeScreenState extends ConsumerState<LearningHomeScreen> {
         final bundle = content.bundle;
         final chapters = bundle.learningHubChaptersFor(language);
         _precacheChapterHeroImages(context, language, chapters);
+        final modeProgress = _hubTripleModeProgress(
+          language: language,
+          bundle: bundle,
+          sentenceProgress: sentenceProgress,
+          swipeProgress: swipeProgress,
+          scenarioProgress: scenarioProgress,
+          sentenceRepo: sentenceRepo,
+          swipeRepo: swipeRepo,
+          scenarioRepo: scenarioRepo,
+        );
         final resume = _hubCurriculumResume(
           chapters: chapters,
           language: language,
@@ -905,7 +806,6 @@ class _LearningHomeScreenState extends ConsumerState<LearningHomeScreen> {
         final expandedChapterNo = _compactScrollMode
             ? null
             : (_expandedChapterNo ?? resume.firstIncompleteNo);
-        final completedChapters = resume.completedCount;
         _orderedChapterNos =
             chapters.map((chapter) => chapter.chapterNo).toList(growable: false);
         _chaptersByNo = {
@@ -972,11 +872,6 @@ class _LearningHomeScreenState extends ConsumerState<LearningHomeScreen> {
                                 isExpanded: expandedChapterNo != null &&
                                     chapters[i].chapterNo == expandedChapterNo,
                                 isLast: i == chapters.length - 1,
-                                snapToken: expandedChapterNo != null &&
-                                        chapters[i].chapterNo ==
-                                            expandedChapterNo
-                                    ? _chapterSnapToken
-                                    : 0,
                                 onHeightChanged: _onChapterHeightChanged,
                                 onExpandRequested: () => _focusChapter(
                                   chapters[i].chapterNo,
@@ -1032,8 +927,9 @@ class _LearningHomeScreenState extends ConsumerState<LearningHomeScreen> {
                       ),
                       child: CascadeEntrance(
                         child: _LearningHubSectionHeader(
-                          totalChapters: chapters.length,
-                          completedChapters: completedChapters,
+                          wordProgress: modeProgress.wordRatio,
+                          sentenceProgress: modeProgress.sentenceRatio,
+                          scenarioProgress: modeProgress.scenarioRatio,
                         ),
                       ),
                     ),
@@ -1044,6 +940,45 @@ class _LearningHomeScreenState extends ConsumerState<LearningHomeScreen> {
           },
         );
   }
+}
+
+typedef _HubTripleModeProgress = ({
+  double wordRatio,
+  double sentenceRatio,
+  double scenarioRatio,
+});
+
+_HubTripleModeProgress _hubTripleModeProgress({
+  required String language,
+  required ContentBundle bundle,
+  required SentenceProgressState sentenceProgress,
+  required SwipeProgressState swipeProgress,
+  required ScenarioProgressState scenarioProgress,
+  required SentenceProgressRepository sentenceRepo,
+  required SwipeProgressRepository swipeRepo,
+  required ScenarioProgressRepository scenarioRepo,
+}) {
+  final wordPercent = swipeRepo.languageProgressPercent(
+    language: language,
+    bundle: bundle,
+    stats: swipeProgress.stats,
+  );
+  final sentencePercent = sentenceRepo.languageSentenceStampPercent(
+    language: language,
+    bundle: bundle,
+    stats: sentenceProgress.stats,
+  );
+  final scenarioPercent = scenarioRepo.progressPercent(
+    language: language,
+    scenarios: bundle.scenarios,
+    stats: scenarioProgress.stats,
+  );
+
+  return (
+    wordRatio: (wordPercent / 100).clamp(0.0, 1.0),
+    sentenceRatio: (sentencePercent / 100).clamp(0.0, 1.0),
+    scenarioRatio: (scenarioPercent / 100).clamp(0.0, 1.0),
+  );
 }
 
 ({int completedCount, int? firstIncompleteNo}) _hubCurriculumResume({
@@ -1118,42 +1053,24 @@ bool _isHubChapterComplete({
 }
 
 class _LearningHubSectionHeader extends StatelessWidget {
-  final int totalChapters;
-  final int completedChapters;
+  final double wordProgress;
+  final double sentenceProgress;
+  final double scenarioProgress;
 
   const _LearningHubSectionHeader({
-    required this.totalChapters,
-    required this.completedChapters,
+    required this.wordProgress,
+    required this.sentenceProgress,
+    required this.scenarioProgress,
   });
 
   @override
   Widget build(BuildContext context) {
     return Padding(
       padding: const EdgeInsets.symmetric(horizontal: 6),
-      child: Column(
-        mainAxisSize: MainAxisSize.min,
-        crossAxisAlignment: CrossAxisAlignment.stretch,
-        children: [
-          HubGrooveProgressTrack(
-            current: completedChapters,
-            total: totalChapters,
-          ),
-          const SizedBox(height: 7),
-          Text(
-            '$completedChapters/$totalChapters',
-            textAlign: TextAlign.center,
-            style: TextStyle(
-              fontSize: 11.5,
-              fontWeight: FontWeight.w600,
-              letterSpacing: 0.2,
-              color: Color.lerp(
-                context.requireLanguagePalette.canvas,
-                const Color(0xFF1E293B),
-                0.72,
-              )!,
-            ),
-          ),
-        ],
+      child: HubTripleModeProgressTrack(
+        wordProgress: wordProgress,
+        sentenceProgress: sentenceProgress,
+        scenarioProgress: scenarioProgress,
       ),
     );
   }

@@ -9,6 +9,7 @@ import '../../app/speech_providers.dart';
 import '../../core/config/active5_layout.dart';
 import '../../core/constants/labels.dart';
 import '../../core/theme/language_palette.dart';
+import '../../core/utils/karaoke_word_index.dart';
 import '../../data/models/sentence.dart';
 import '../../features/dashboard/dashboard_palette.dart';
 import 'spoken_sentence_rich_text.dart';
@@ -102,6 +103,13 @@ class SentenceCard extends ConsumerWidget {
                             TappableSentenceRichText(
                               sentence: sentence.sentence,
                               language: sentence.language,
+                              karaokeWordIndex: KaraokeWordIndex.resolve(
+                                isActive: isPlaying,
+                                position: audioState.position,
+                                duration: audioState.duration,
+                                sentence: sentence.sentence,
+                                language: sentence.language,
+                              ),
                               style: TextStyle(
                                 fontSize: _isList
                                     ? metrics.sentenceFontSize - 1

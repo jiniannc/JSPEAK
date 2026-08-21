@@ -13,5 +13,18 @@ class ShellTabIndexNotifier extends Notifier<int> {
   }
 }
 
+/// 홈 탭 진입(재선택 포함)마다 증가 — 홈 카드 등장 애니메이션 재생 토큰.
+final homeEntranceEpochProvider =
+    NotifierProvider<HomeEntranceEpochNotifier, int>(
+      HomeEntranceEpochNotifier.new,
+    );
+
+class HomeEntranceEpochNotifier extends Notifier<int> {
+  @override
+  int build() => 0;
+
+  void bump() => state++;
+}
+
 /// 기내사전 탭 branch index.
 const kDictionaryShellTabIndex = 2;

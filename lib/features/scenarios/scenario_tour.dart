@@ -22,8 +22,8 @@ class ScenarioTour {
         title: '💬 대화 내용 확인',
         body: '제시되는 대화를 읽고 상황을 파악하세요.',
         emphasisWords: const ['제시되는', '대화', '상황'],
-        borderRadius: 18,
-        padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 6),
+        borderRadius: 24,
+        padding: const EdgeInsets.fromLTRB(8, 4, 8, 8),
         preferTooltipBelow: true,
       ),
       CoachmarkTourStep(

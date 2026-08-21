@@ -120,6 +120,7 @@ class _BasicSentenceTrainingScreenState
                           '${widget.initialSentenceId ?? ''}',
                         ),
                         tourOverlayContext: context,
+                        topChromeHeight: headerReserve,
                         sentences: sentences,
                         initialIndex: startIndex,
                         onIndexChanged: (i) {

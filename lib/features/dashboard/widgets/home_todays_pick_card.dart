@@ -244,6 +244,178 @@ class _HomeTodaysPickCardState extends ConsumerState<HomeTodaysPickCard> {
     );
   }
 }
+
+/// Today's Pick 플립 리빌용 탑승권 뒷면 — 밝은 펄 광택.
+class TodaysPickTicketBack extends StatefulWidget {
+  const TodaysPickTicketBack({super.key});
+
+  @override
+  State<TodaysPickTicketBack> createState() => _TodaysPickTicketBackState();
+}
+
+class _TodaysPickTicketBackState extends State<TodaysPickTicketBack>
+    with SingleTickerProviderStateMixin {
+  late final AnimationController _shine;
+
+  @override
+  void initState() {
+    super.initState();
+    _shine = AnimationController(
+      vsync: this,
+      duration: const Duration(milliseconds: 720),
+    )..repeat();
+  }
+
+  @override
+  void dispose() {
+    _shine.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return ClipRRect(
+      borderRadius: BorderRadius.circular(18),
+      child: DecoratedBox(
+        decoration: BoxDecoration(
+          gradient: LinearGradient(
+            begin: Alignment.topLeft,
+            end: Alignment.bottomRight,
+            colors: [
+              const Color(0xFFFBFCEE),
+              DashboardPalette.jinLimeAlt.withValues(alpha: 0.55),
+              const Color(0xFFF7EEF3),
+              const Color(0xFFEEF6B8),
+            ],
+            stops: const [0.0, 0.38, 0.68, 1.0],
+          ),
+          border: Border.all(
+            color: Colors.white.withValues(alpha: 0.85),
+            width: 1.2,
+          ),
+        ),
+        child: Stack(
+          fit: StackFit.expand,
+          children: [
+            const DecoratedBox(
+              decoration: BoxDecoration(
+                gradient: LinearGradient(
+                  begin: Alignment.topCenter,
+                  end: Alignment.bottomCenter,
+                  colors: [
+                    Color(0x73FFFFFF),
+                    Color(0x00FFFFFF),
+                    Color(0x28FFFFFF),
+                  ],
+                  stops: [0.0, 0.45, 1.0],
+                ),
+              ),
+            ),
+            Positioned.fill(
+              child: IgnorePointer(
+                child: _TicketBackShineOverlay(animation: _shine),
+              ),
+            ),
+            Center(
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  const _JinAirLogo(
+                    asset: _JinAirLogoAssets.headerWordmark,
+                    height: 22,
+                    color: DashboardPalette.jinPurple,
+                  ),
+                  const SizedBox(height: 10),
+                  Text(
+                    'BOARDING PASS',
+                    style: TextStyle(
+                      fontSize: 10,
+                      fontWeight: FontWeight.w800,
+                      letterSpacing: 1.8,
+                      height: 1,
+                      color: DashboardPalette.jinPurple.withValues(alpha: 0.72),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+class _TicketBackShineOverlay extends StatelessWidget {
+  final Animation<double> animation;
+
+  const _TicketBackShineOverlay({required this.animation});
+
+  @override
+  Widget build(BuildContext context) {
+    return AnimatedBuilder(
+      animation: animation,
+      builder: (context, _) {
+        final t = animation.value;
+        return Stack(
+          fit: StackFit.expand,
+          children: [
+            Align(
+              alignment: Alignment(-1.7 + 3.4 * t, -0.2),
+              child: Transform.rotate(
+                angle: -math.pi / 5.5,
+                child: FractionallySizedBox(
+                  widthFactor: 0.42,
+                  heightFactor: 2.8,
+                  child: DecoratedBox(
+                    decoration: BoxDecoration(
+                      gradient: LinearGradient(
+                        begin: Alignment.centerLeft,
+                        end: Alignment.centerRight,
+                        colors: [
+                          Colors.white.withValues(alpha: 0.0),
+                          Colors.white.withValues(alpha: 0.55),
+                          Colors.white.withValues(alpha: 0.92),
+                          Colors.white.withValues(alpha: 0.5),
+                          Colors.white.withValues(alpha: 0.0),
+                        ],
+                        stops: const [0.0, 0.32, 0.5, 0.68, 1.0],
+                      ),
+                    ),
+                  ),
+                ),
+              ),
+            ),
+            Align(
+              alignment: Alignment(-2.1 + 3.6 * ((t + 0.45) % 1.0), 0.35),
+              child: Transform.rotate(
+                angle: -math.pi / 5.5,
+                child: FractionallySizedBox(
+                  widthFactor: 0.18,
+                  heightFactor: 2.4,
+                  child: DecoratedBox(
+                    decoration: BoxDecoration(
+                      gradient: LinearGradient(
+                        begin: Alignment.centerLeft,
+                        end: Alignment.centerRight,
+                        colors: [
+                          Colors.white.withValues(alpha: 0.0),
+                          Colors.white.withValues(alpha: 0.45),
+                          Colors.white.withValues(alpha: 0.0),
+                        ],
+                      ),
+                    ),
+                  ),
+                ),
+              ),
+            ),
+          ],
+        );
+      },
+    );
+  }
+}
+
 class _JinAirHeaderBand extends StatefulWidget {
   const _JinAirHeaderBand();
 

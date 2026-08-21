@@ -1295,6 +1295,9 @@ class _DeckEndPlaceholderState extends State<_DeckEndPlaceholder>
                                       DashboardPalette.softGray
                                           .withValues(alpha: 0.28),
                                     ],
+                              stops: widget.wrappingUp
+                                  ? const [0.0, 0.55, 1.0]
+                                  : null,
                             ),
                             border: Border.all(
                               color: Colors.white.withValues(

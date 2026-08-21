@@ -6,9 +6,13 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../../app/my_page_report_providers.dart';
 import '../../../app/providers.dart';
 import '../../../app/scenario_providers.dart';
+import '../../../app/sentence_progress_providers.dart';
 import '../../../app/title_badge_providers.dart';
+import '../../../data/datasources/local/sentence_progress_local_datasource.dart';
+import '../../../data/models/content_chapter.dart';
 import '../../../data/models/learning_hub_chapter.dart';
 import '../../../data/models/scenario.dart';
+import '../../../data/models/sentence.dart';
 import 'my_page_section_header.dart';
 import 'title_badge_tile.dart';
 import 'vocab_swipe_seal.dart';
@@ -244,6 +248,7 @@ class _PassportBookletView extends StatelessWidget {
                                       ),
                                     ),
                                     child: _PassportOfficialHeader(
+                                      currentPage: currentPage,
                                       selectedLanguage: selectedLanguage,
                                       onLanguageSelected: onLanguageSelected,
                                     ),
@@ -259,7 +264,9 @@ class _PassportBookletView extends StatelessWidget {
                                           language: selectedLanguage,
                                           isActive: currentPage == 1,
                                         ),
-                                        _SentenceStampsPage(mission: mission),
+                                        _SentenceStampsPage(
+                                          language: selectedLanguage,
+                                        ),
                                         _ScenarioPassportPage(
                                           language: selectedLanguage,
                                         ),
@@ -357,6 +364,7 @@ class _SpineCreasePainter extends CustomPainter {
           Colors.black.withValues(alpha: 0.08),
           Colors.transparent,
         ],
+        stops: const [0.0, 0.5, 1.0],
       ).createShader(rect);
     canvas.drawRect(rect, paint);
   }
@@ -483,16 +491,20 @@ class _PassportPageDots extends StatelessWidget {
 }
 
 class _PassportOfficialHeader extends StatelessWidget {
+  final int currentPage;
   final String selectedLanguage;
   final ValueChanged<String> onLanguageSelected;
 
   const _PassportOfficialHeader({
+    required this.currentPage,
     required this.selectedLanguage,
     required this.onLanguageSelected,
   });
 
   @override
   Widget build(BuildContext context) {
+    final showLanguageToggle = currentPage != 0;
+
     return Padding(
       padding: const EdgeInsets.fromLTRB(18, 14, 14, 10),
       child: Row(
@@ -509,11 +521,13 @@ class _PassportOfficialHeader extends StatelessWidget {
               ),
             ),
           ),
-          const SizedBox(width: 8),
-          _LanguageToggle(
-            selectedLanguage: selectedLanguage,
-            onSelected: onLanguageSelected,
-          ),
+          if (showLanguageToggle) ...[
+            const SizedBox(width: 8),
+            _LanguageToggle(
+              selectedLanguage: selectedLanguage,
+              onSelected: onLanguageSelected,
+            ),
+          ],
         ],
       ),
     );
@@ -572,138 +586,587 @@ class _TitleStampsPage extends ConsumerWidget {
   }
 }
 
-// ── PAGE 3: 문장 스탬프 ──────────────────────────────────────
+// ── PAGE 3: 문장 스탬프 (챕터 히트맵 + 문장 3점) ───────────────
 
-class _SentenceStampsPage extends StatelessWidget {
-  final MyPageLanguageMissionProgress mission;
+class _SentenceStampMarks {
+  final bool listened;
+  final bool spoken;
+  final bool mastered;
 
-  const _SentenceStampsPage({required this.mission});
+  const _SentenceStampMarks({
+    required this.listened,
+    required this.spoken,
+    required this.mastered,
+  });
+
+  factory _SentenceStampMarks.of(SentenceStageProgress progress) {
+    return _SentenceStampMarks(
+      listened: progress.hasListened || progress.isRead,
+      spoken: progress.isAttempted,
+      mastered: progress.isMastered,
+    );
+  }
+
+  int get heatmapLevel => mastered ? 3 : spoken ? 2 : listened ? 1 : 0;
+
+  int get stampCount =>
+      (listened ? 1 : 0) + (spoken ? 1 : 0) + (mastered ? 1 : 0);
+}
+
+class _SentenceChapterSnapshot {
+  final ContentChapter chapter;
+  final List<Sentence> sentences;
+  final List<_SentenceStampMarks> marks;
+  final int listenedCount;
+  final int spokenCount;
+  final int masteredCount;
+  final int stampCount;
+
+  const _SentenceChapterSnapshot({
+    required this.chapter,
+    required this.sentences,
+    required this.marks,
+    required this.listenedCount,
+    required this.spokenCount,
+    required this.masteredCount,
+    required this.stampCount,
+  });
+
+  int get total => sentences.length;
+  bool get allMastered => total > 0 && masteredCount >= total;
+
+  static _SentenceChapterSnapshot from({
+    required ContentChapter chapter,
+    required List<Sentence> sentences,
+    required SentenceProgressStats stats,
+  }) {
+    final marks = [
+      for (final sentence in sentences)
+        _SentenceStampMarks.of(stats.forSentence(sentence.id)),
+    ];
+    var listened = 0;
+    var spoken = 0;
+    var mastered = 0;
+    var stamps = 0;
+    for (final mark in marks) {
+      if (mark.listened) listened++;
+      if (mark.spoken) spoken++;
+      if (mark.mastered) mastered++;
+      stamps += mark.stampCount;
+    }
+    return _SentenceChapterSnapshot(
+      chapter: chapter,
+      sentences: sentences,
+      marks: marks,
+      listenedCount: listened,
+      spokenCount: spoken,
+      masteredCount: mastered,
+      stampCount: stamps,
+    );
+  }
+}
+
+class _SentenceStampsPage extends ConsumerStatefulWidget {
+  final String language;
+
+  const _SentenceStampsPage({required this.language});
+
+  @override
+  ConsumerState<_SentenceStampsPage> createState() =>
+      _SentenceStampsPageState();
+}
+
+class _SentenceStampsPageState extends ConsumerState<_SentenceStampsPage> {
+  int? _expandedChapterNo;
+
+  @override
+  void didUpdateWidget(covariant _SentenceStampsPage oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (oldWidget.language != widget.language) {
+      _expandedChapterNo = null;
+    }
+  }
 
   @override
   Widget build(BuildContext context) {
-    final summary = mission.stampSummary;
+    final content = ref.watch(contentProvider).value?.bundle;
+    final stats = ref.watch(sentenceProgressProvider).stats;
+    final chapters = content?.sentenceChaptersFor(widget.language) ?? const [];
 
-    return LayoutBuilder(
-      builder: (context, constraints) {
-        return Padding(
-          padding: const EdgeInsets.fromLTRB(
-            _PassportPalette.pagePaddingH,
-            10,
-            _PassportPalette.pagePaddingH,
-            12,
+    final rows = <_SentenceChapterSnapshot>[];
+    if (content != null) {
+      for (final chapter in chapters) {
+        final sentences = content.sentencesFor(widget.language, chapter.name);
+        if (sentences.isEmpty) continue;
+        rows.add(
+          _SentenceChapterSnapshot.from(
+            chapter: chapter,
+            sentences: sentences,
+            stats: stats,
           ),
-          child: SizedBox(
-            height: constraints.maxHeight,
-            child: Row(
+        );
+      }
+    }
+
+    var chapterCleared = 0;
+    var sentenceTotal = 0;
+    var sentenceMastered = 0;
+    var stampEarned = 0;
+    for (final row in rows) {
+      if (row.allMastered) chapterCleared++;
+      sentenceTotal += row.total;
+      sentenceMastered += row.masteredCount;
+      stampEarned += row.stampCount;
+    }
+
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(
+        _PassportPalette.pagePaddingH,
+        8,
+        _PassportPalette.pagePaddingH,
+        8,
+      ),
+      child: rows.isEmpty
+          ? Center(
+              child: Text(
+                '문장이 아직 없어요',
+                style: TextStyle(
+                  fontSize: 12,
+                  color: _PassportPalette.slate.withValues(alpha: 0.7),
+                ),
+              ),
+            )
+          : Column(
               crossAxisAlignment: CrossAxisAlignment.stretch,
               children: [
-                Expanded(
-                  child: _InkStampBoardColumn(
-                    emoji: '📖',
-                    label: 'LISTEN',
-                    earned: summary.readCount,
-                    total: summary.total,
-                    ink: _PassportPalette.inkNavy,
-                  ),
+                _SentencePassportSummary(
+                  chapterCleared: chapterCleared,
+                  chapterTotal: rows.length,
+                  sentenceMastered: sentenceMastered,
+                  sentenceTotal: sentenceTotal,
+                  stampEarned: stampEarned,
+                  stampPossible: sentenceTotal * 3,
                 ),
-                const SizedBox(width: 10),
+                const SizedBox(height: 8),
                 Expanded(
-                  child: _InkStampBoardColumn(
-                    emoji: '🎙️',
-                    label: 'SPEAK',
-                    earned: summary.attemptedCount,
-                    total: summary.total,
-                    ink: _PassportPalette.inkRed,
-                  ),
-                ),
-                const SizedBox(width: 10),
-                Expanded(
-                  child: _InkStampBoardColumn(
-                    emoji: '🔥',
-                    label: 'MASTER',
-                    earned: summary.masteredCount,
-                    total: summary.total,
-                    ink: _PassportPalette.inkOrange,
+                  child: ListView.separated(
+                    padding: const EdgeInsets.only(bottom: 4),
+                    itemCount: rows.length,
+                    separatorBuilder: (context, index) =>
+                        const SizedBox(height: 10),
+                    itemBuilder: (context, index) {
+                      final row = rows[index];
+                      return _SentenceChapterProgressRow(
+                        snapshot: row,
+                        expanded: _expandedChapterNo == row.chapter.chapterNo,
+                        onToggle: () {
+                          setState(() {
+                            _expandedChapterNo =
+                                _expandedChapterNo == row.chapter.chapterNo
+                                    ? null
+                                    : row.chapter.chapterNo;
+                          });
+                        },
+                      );
+                    },
                   ),
                 ),
               ],
             ),
+    );
+  }
+}
+
+class _SentencePassportSummary extends StatelessWidget {
+  final int chapterCleared;
+  final int chapterTotal;
+  final int sentenceMastered;
+  final int sentenceTotal;
+  final int stampEarned;
+  final int stampPossible;
+
+  const _SentencePassportSummary({
+    required this.chapterCleared,
+    required this.chapterTotal,
+    required this.sentenceMastered,
+    required this.sentenceTotal,
+    required this.stampEarned,
+    required this.stampPossible,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return Row(
+      children: [
+        Expanded(
+          child: _SummaryChip(
+            label: '챕터',
+            value: '$chapterCleared/$chapterTotal',
           ),
+        ),
+        const SizedBox(width: 6),
+        Expanded(
+          child: _SummaryChip(
+            label: '문장',
+            value: '$sentenceMastered/$sentenceTotal',
+          ),
+        ),
+        const SizedBox(width: 6),
+        Expanded(
+          child: _SummaryChip(
+            label: '스탬프',
+            value: '$stampEarned/$stampPossible',
+          ),
+        ),
+      ],
+    );
+  }
+}
+
+class _SummaryChip extends StatelessWidget {
+  final String label;
+  final String value;
+
+  const _SummaryChip({
+    required this.label,
+    required this.value,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return DecoratedBox(
+      decoration: BoxDecoration(
+        color: Colors.white.withValues(alpha: 0.35),
+        borderRadius: BorderRadius.circular(6),
+        border: Border.all(
+          color: _PassportPalette.paperEdge.withValues(alpha: 0.9),
+        ),
+      ),
+      child: Padding(
+        padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 5),
+        child: Column(
+          children: [
+            Text(
+              label,
+              style: TextStyle(
+                fontSize: 8,
+                fontWeight: FontWeight.w700,
+                letterSpacing: 0.6,
+                color: _PassportPalette.slate.withValues(alpha: 0.85),
+              ),
+            ),
+            const SizedBox(height: 1),
+            Text(
+              value,
+              style: const TextStyle(
+                fontSize: 11,
+                fontWeight: FontWeight.w800,
+                letterSpacing: 0.2,
+                color: Color(0xFF1E293B),
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+class _SentenceChapterProgressRow extends StatelessWidget {
+  final _SentenceChapterSnapshot snapshot;
+  final bool expanded;
+  final VoidCallback onToggle;
+
+  const _SentenceChapterProgressRow({
+    required this.snapshot,
+    required this.expanded,
+    required this.onToggle,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final chapter = snapshot.chapter;
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        GestureDetector(
+          behavior: HitTestBehavior.opaque,
+          onTap: onToggle,
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              Row(
+                children: [
+                  Expanded(
+                    child: Text(
+                      'CH.${chapter.chapterNo}  ${chapter.name}',
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: const TextStyle(
+                        fontSize: 10,
+                        fontWeight: FontWeight.w700,
+                        letterSpacing: 0.1,
+                        color: Color(0xFF334155),
+                      ),
+                    ),
+                  ),
+                  const SizedBox(width: 6),
+                  _SentenceStampCountLabel(
+                    label: 'L',
+                    count: snapshot.listenedCount,
+                    ink: _PassportPalette.inkNavy,
+                  ),
+                  const SizedBox(width: 5),
+                  _SentenceStampCountLabel(
+                    label: 'S',
+                    count: snapshot.spokenCount,
+                    ink: _PassportPalette.inkRed,
+                  ),
+                  const SizedBox(width: 5),
+                  _SentenceStampCountLabel(
+                    label: 'M',
+                    count: snapshot.masteredCount,
+                    ink: _PassportPalette.inkOrange,
+                  ),
+                  const SizedBox(width: 6),
+                  Text(
+                    '${snapshot.masteredCount}/${snapshot.total}',
+                    style: TextStyle(
+                      fontSize: 9,
+                      fontWeight: FontWeight.w700,
+                      color: _PassportPalette.slate.withValues(alpha: 0.85),
+                    ),
+                  ),
+                  if (snapshot.allMastered) ...[
+                    const SizedBox(width: 4),
+                    SizedBox(
+                      width: 16,
+                      height: 16,
+                      child: _PassportInkStamp(
+                        index: chapter.chapterNo,
+                        shape: _InkStampShape.circleSeal,
+                        ink: _PassportPalette.inkOrange,
+                        fillOpacity: 0.12,
+                        strokeWidth: 1.2,
+                        child: Center(
+                          child: Icon(
+                            Icons.check_rounded,
+                            size: 8,
+                            color: _PassportPalette.inkOrange
+                                .withValues(alpha: 0.95),
+                          ),
+                        ),
+                      ),
+                    ),
+                  ],
+                  Icon(
+                    expanded
+                        ? Icons.expand_less_rounded
+                        : Icons.expand_more_rounded,
+                    size: 14,
+                    color: _PassportPalette.slate.withValues(alpha: 0.7),
+                  ),
+                ],
+              ),
+              const SizedBox(height: 5),
+              _SentenceHeatmapBar(levels: [
+                for (final mark in snapshot.marks) mark.heatmapLevel,
+              ]),
+            ],
+          ),
+        ),
+        AnimatedSize(
+          duration: const Duration(milliseconds: 220),
+          curve: Curves.easeOutCubic,
+          alignment: Alignment.topCenter,
+          child: expanded
+              ? Padding(
+                  padding: const EdgeInsets.only(top: 8),
+                  child: _SentenceTriadGrid(marks: snapshot.marks),
+                )
+              : const SizedBox(width: double.infinity),
+        ),
+      ],
+    );
+  }
+}
+
+class _SentenceStampCountLabel extends StatelessWidget {
+  final String label;
+  final int count;
+  final Color ink;
+
+  const _SentenceStampCountLabel({
+    required this.label,
+    required this.count,
+    required this.ink,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return Text(
+      '$label $count',
+      style: TextStyle(
+        fontSize: 8,
+        fontWeight: FontWeight.w800,
+        letterSpacing: 0.2,
+        color: ink.withValues(alpha: count == 0 ? 0.4 : 0.9),
+      ),
+    );
+  }
+}
+
+class _SentenceHeatmapBar extends StatelessWidget {
+  final List<int> levels;
+
+  const _SentenceHeatmapBar({required this.levels});
+
+  @override
+  Widget build(BuildContext context) {
+    return SizedBox(
+      height: 8,
+      child: CustomPaint(
+        painter: _SentenceHeatmapPainter(levels: levels),
+        child: const SizedBox.expand(),
+      ),
+    );
+  }
+}
+
+class _SentenceHeatmapPainter extends CustomPainter {
+  final List<int> levels;
+
+  _SentenceHeatmapPainter({required this.levels});
+
+  static Color _colorFor(int level) {
+    return switch (level) {
+      3 => _PassportPalette.inkOrange,
+      2 => _PassportPalette.inkRed,
+      1 => _PassportPalette.inkNavy,
+      _ => _PassportPalette.ghostLine.withValues(alpha: 0.45),
+    };
+  }
+
+  @override
+  void paint(Canvas canvas, Size size) {
+    if (levels.isEmpty || size.width <= 0) return;
+    final n = levels.length;
+    final gap = n >= 40 ? 0.4 : (n >= 24 ? 0.7 : 1.0);
+    final tickW = math.max(1.0, (size.width - gap * (n - 1)) / n);
+    var x = 0.0;
+    final radius = Radius.circular(math.min(1.6, tickW / 2));
+    for (var i = 0; i < n; i++) {
+      final rect = RRect.fromRectAndRadius(
+        Rect.fromLTWH(x, 0, tickW, size.height),
+        radius,
+      );
+      final level = levels[i];
+      final paint = Paint()
+        ..color = _colorFor(level)
+        ..style = level == 0 ? PaintingStyle.stroke : PaintingStyle.fill
+        ..strokeWidth = 0.8;
+      canvas.drawRRect(rect, paint);
+      x += tickW + gap;
+    }
+  }
+
+  @override
+  bool shouldRepaint(covariant _SentenceHeatmapPainter oldDelegate) {
+    if (oldDelegate.levels.length != levels.length) return true;
+    for (var i = 0; i < levels.length; i++) {
+      if (oldDelegate.levels[i] != levels[i]) return true;
+    }
+    return false;
+  }
+}
+
+class _SentenceTriadGrid extends StatelessWidget {
+  final List<_SentenceStampMarks> marks;
+
+  const _SentenceTriadGrid({required this.marks});
+
+  @override
+  Widget build(BuildContext context) {
+    return LayoutBuilder(
+      builder: (context, constraints) {
+        const minCell = 22.0;
+        const spacing = 5.0;
+        final columns = math.max(
+          1,
+          math.min(10, ((constraints.maxWidth + spacing) / (minCell + spacing))
+              .floor()),
+        );
+        final cellWidth =
+            (constraints.maxWidth - spacing * (columns - 1)) / columns;
+
+        return Wrap(
+          spacing: spacing,
+          runSpacing: spacing,
+          children: [
+            for (var i = 0; i < marks.length; i++)
+              SizedBox(
+                width: cellWidth,
+                child: _SentenceTriadDots(marks: marks[i]),
+              ),
+          ],
         );
       },
     );
   }
 }
 
-class _InkStampBoardColumn extends StatelessWidget {
-  final String emoji;
-  final String label;
-  final int earned;
-  final int total;
+class _SentenceTriadDots extends StatelessWidget {
+  final _SentenceStampMarks marks;
+
+  const _SentenceTriadDots({required this.marks});
+
+  @override
+  Widget build(BuildContext context) {
+    return Row(
+      mainAxisAlignment: MainAxisAlignment.center,
+      children: [
+        _StampDot(
+          active: marks.listened,
+          ink: _PassportPalette.inkNavy,
+        ),
+        const SizedBox(width: 2),
+        _StampDot(
+          active: marks.spoken,
+          ink: _PassportPalette.inkRed,
+        ),
+        const SizedBox(width: 2),
+        _StampDot(
+          active: marks.mastered,
+          ink: _PassportPalette.inkOrange,
+        ),
+      ],
+    );
+  }
+}
+
+class _StampDot extends StatelessWidget {
+  final bool active;
   final Color ink;
 
-  const _InkStampBoardColumn({
-    required this.emoji,
-    required this.label,
-    required this.earned,
-    required this.total,
+  const _StampDot({
+    required this.active,
     required this.ink,
   });
 
   @override
   Widget build(BuildContext context) {
-    final slots = total.clamp(0, 9);
-
-    return Column(
-      children: [
-        Text(
-          '$emoji $label',
-          style: TextStyle(
-            fontSize: 9,
-            fontWeight: FontWeight.w800,
-            letterSpacing: 0.8,
-            color: ink.withValues(alpha: 0.85),
-          ),
+    return Container(
+      width: 5.5,
+      height: 5.5,
+      decoration: BoxDecoration(
+        shape: BoxShape.circle,
+        color: active ? ink.withValues(alpha: 0.92) : Colors.transparent,
+        border: Border.all(
+          color: ink.withValues(alpha: active ? 0.95 : 0.28),
+          width: 0.8,
         ),
-        const SizedBox(height: 8),
-        Expanded(
-          child: slots == 0
-              ? const SizedBox.shrink()
-              : GridView.builder(
-                  physics: const NeverScrollableScrollPhysics(),
-                  clipBehavior: Clip.none,
-                  padding: const EdgeInsets.all(4),
-                  gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
-                    crossAxisCount: 3,
-                    crossAxisSpacing: 6,
-                    mainAxisSpacing: 6,
-                  ),
-                  itemCount: slots,
-                  itemBuilder: (context, index) {
-                    if (index < earned) {
-                      return _PassportInkStamp(
-                        index: index,
-                        shape: _InkStampShape.circleSeal,
-                        ink: ink,
-                        fillOpacity: 0.1,
-                        strokeWidth: 1.5,
-                        child: Center(
-                          child: Icon(
-                            Icons.check_rounded,
-                            size: 10,
-                            color: ink.withValues(alpha: 0.9),
-                          ),
-                        ),
-                      );
-                    }
-                    return _PassportDashedStamp(
-                      shape: _InkStampShape.circleSeal,
-                      color: _PassportPalette.ghostLine.withValues(alpha: 0.5),
-                    );
-                  },
-                ),
-        ),
-      ],
+      ),
     );
   }
 }

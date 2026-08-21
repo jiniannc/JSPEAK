@@ -14,6 +14,7 @@ import '../../../core/constants/labels.dart';
 import '../../../core/theme/language_palette.dart';
 import '../../../data/models/sentence.dart';
 import '../../../data/models/vocabulary_entry.dart';
+import '../../../shared/widgets/compact_language_switcher.dart';
 import '../../../shared/widgets/glass_surface.dart';
 import '../../dashboard/dashboard_palette.dart';
 import '../../shell/floating_island_nav_bar.dart';
@@ -267,10 +268,11 @@ class _BookmarkVaultStickyHeader extends StatelessWidget {
                     ],
                   ),
                 ),
-                _MiniLanguageSwitch(
-                  selected: language,
+                CompactLanguageSwitcher(
+                  selectedLanguage: language,
                   accent: accent,
                   onSelected: onLanguageSelected,
+                  seamless: true,
                 ),
                 IconButton(
                   onPressed: onClose,
@@ -316,85 +318,6 @@ BoxDecoration _vaultLiquidGlassPill({
     borderRadius: BorderRadius.circular(radius),
     boxShadow: GlassSurfaceStyle.cleanElevationShadow(blur: selected ? 10 : 6),
   );
-}
-
-class _MiniLanguageSwitch extends StatelessWidget {
-  final String selected;
-  final Color accent;
-  final ValueChanged<String> onSelected;
-
-  const _MiniLanguageSwitch({
-    required this.selected,
-    required this.accent,
-    required this.onSelected,
-  });
-
-  static const _codes = {'English': 'EN', 'Japanese': 'JP', 'Chinese': 'CN'};
-
-  @override
-  Widget build(BuildContext context) {
-    return Row(
-      mainAxisSize: MainAxisSize.min,
-      children: [
-        for (final lang in kDictionaryLanguages) ...[
-          _LangPill(
-            emoji: languageEmoji[lang] ?? '🌐',
-            code: _codes[lang] ?? lang.substring(0, 2).toUpperCase(),
-            selected: selected == lang,
-            accent: accent,
-            onTap: () => onSelected(lang),
-          ),
-          if (lang != kDictionaryLanguages.last) const SizedBox(width: 4),
-        ],
-      ],
-    );
-  }
-}
-
-class _LangPill extends StatelessWidget {
-  final String emoji;
-  final String code;
-  final bool selected;
-  final Color accent;
-  final VoidCallback onTap;
-
-  const _LangPill({
-    required this.emoji,
-    required this.code,
-    required this.selected,
-    required this.accent,
-    required this.onTap,
-  });
-
-  @override
-  Widget build(BuildContext context) {
-    return Material(
-      color: Colors.transparent,
-      child: InkWell(
-        onTap: onTap,
-        borderRadius: BorderRadius.circular(10),
-        child: Ink(
-          padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 5),
-          decoration: _vaultLiquidGlassPill(
-            selected: selected,
-            accent: accent,
-            radius: 10,
-          ),
-          child: Text(
-            '$emoji $code',
-            style: TextStyle(
-              fontSize: 10,
-              fontWeight: selected ? FontWeight.w800 : FontWeight.w600,
-              color: selected
-                  ? accent
-                  : DashboardPalette.navy.withValues(alpha: 0.55),
-              letterSpacing: -0.1,
-            ),
-          ),
-        ),
-      ),
-    );
-  }
 }
 
 class _SegmentedFilterBar extends StatelessWidget {

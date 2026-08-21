@@ -18,7 +18,76 @@ TextStyle _linkStyle(TextStyle base) => base.copyWith(
       decorationThickness: 1.3,
     );
 
-/// 시트에 등록된 단어/구문만 연속 밑줄 + 탭 팝업 [TextSpan] 목록.
+TextStyle _karaokeWordStyle(
+  TextStyle base,
+  int wordIndex,
+  int? activeIndex,
+) {
+  if (activeIndex == null) return base;
+
+  final baseColor = base.color ?? DashboardPalette.navy;
+  if (wordIndex > activeIndex) {
+    return base.copyWith(color: baseColor.withValues(alpha: 0.34));
+  }
+  if (wordIndex == activeIndex) {
+    return base.copyWith(
+      color: DashboardPalette.tealDeep,
+      fontWeight: FontWeight.w800,
+      backgroundColor: DashboardPalette.teal.withValues(alpha: 0.16),
+      decoration: TextDecoration.none,
+    );
+  }
+  return base.copyWith(color: baseColor.withValues(alpha: 0.9));
+}
+
+TextStyle _styleForWord({
+  required TextStyle baseStyle,
+  required int wordIndex,
+  required int? karaokeWordIndex,
+  required bool isVocabularyLink,
+}) {
+  if (karaokeWordIndex == null) {
+    return isVocabularyLink ? _linkStyle(baseStyle) : baseStyle;
+  }
+
+  final karaoke = _karaokeWordStyle(baseStyle, wordIndex, karaokeWordIndex);
+  if (!isVocabularyLink) return karaoke;
+
+  if (wordIndex > karaokeWordIndex) {
+    return _linkStyle(baseStyle).copyWith(
+      color: (baseStyle.color ?? DashboardPalette.navy).withValues(alpha: 0.34),
+      decorationColor: DashboardPalette.teal.withValues(alpha: 0.18),
+    );
+  }
+  if (wordIndex == karaokeWordIndex) return karaoke;
+  return _linkStyle(karaoke);
+}
+
+TextStyle _styleForPhrase({
+  required TextStyle baseStyle,
+  required int phraseStart,
+  required int phraseEnd,
+  required int? karaokeWordIndex,
+  required bool isVocabularyLink,
+}) {
+  if (karaokeWordIndex == null) {
+    return isVocabularyLink ? _linkStyle(baseStyle) : baseStyle;
+  }
+
+  if (karaokeWordIndex >= phraseStart && karaokeWordIndex <= phraseEnd) {
+    return _karaokeWordStyle(baseStyle, karaokeWordIndex, karaokeWordIndex);
+  }
+
+  final anchor = phraseStart;
+  return _styleForWord(
+    baseStyle: baseStyle,
+    wordIndex: anchor,
+    karaokeWordIndex: karaokeWordIndex,
+    isVocabularyLink: isVocabularyLink,
+  );
+}
+
+/// 시트 등록 단어 탭 + 재생 가라오케 하이라이트 [TextSpan] 목록.
 List<TextSpan> buildTappableWordSpans({
   required String sentence,
   required TextStyle baseStyle,
@@ -27,6 +96,7 @@ List<TextSpan> buildTappableWordSpans({
   GlobalKey? anchorKey,
   BuildContext? context,
   String language = 'English',
+  int? karaokeWordIndex,
 }) {
   final words = WordCompare.splitTokens(sentence, language: language);
   if (words.isEmpty) {
@@ -47,7 +117,12 @@ List<TextSpan> buildTappableWordSpans({
   var i = 0;
   while (i < words.length) {
     if (i > 0 && separator.isNotEmpty) {
-      spans.add(TextSpan(text: separator, style: baseStyle));
+      spans.add(
+        TextSpan(
+          text: separator,
+          style: _karaokeWordStyle(baseStyle, i - 1, karaokeWordIndex),
+        ),
+      );
     }
 
     final match = indexMap[i];
@@ -80,7 +155,13 @@ List<TextSpan> buildTappableWordSpans({
       spans.add(
         TextSpan(
           text: phraseText,
-          style: _linkStyle(baseStyle),
+          style: _styleForPhrase(
+            baseStyle: baseStyle,
+            phraseStart: match.startIndex,
+            phraseEnd: match.endIndex,
+            karaokeWordIndex: karaokeWordIndex,
+            isVocabularyLink: true,
+          ),
           recognizer: recognizer,
         ),
       );
@@ -88,7 +169,17 @@ List<TextSpan> buildTappableWordSpans({
       continue;
     }
 
-    spans.add(TextSpan(text: words[i], style: baseStyle));
+    spans.add(
+      TextSpan(
+        text: words[i],
+        style: _styleForWord(
+          baseStyle: baseStyle,
+          wordIndex: i,
+          karaokeWordIndex: karaokeWordIndex,
+          isVocabularyLink: false,
+        ),
+      ),
+    );
     i++;
   }
 
@@ -104,6 +195,9 @@ class TappableSentenceRichText extends ConsumerStatefulWidget {
   final int? maxLines;
   final TextOverflow overflow;
 
+  /// 재생 중 하이라이트할 단어 인덱스. null이면 가라오케 비활성.
+  final int? karaokeWordIndex;
+
   const TappableSentenceRichText({
     super.key,
     required this.sentence,
@@ -112,6 +206,7 @@ class TappableSentenceRichText extends ConsumerStatefulWidget {
     this.textAlign = TextAlign.start,
     this.maxLines,
     this.overflow = TextOverflow.clip,
+    this.karaokeWordIndex,
   });
 
   @override
@@ -157,6 +252,7 @@ class _TappableSentenceRichTextState
       anchorKey: _richTextKey,
       context: context,
       language: widget.language,
+      karaokeWordIndex: widget.karaokeWordIndex,
     );
 
     return RichText(

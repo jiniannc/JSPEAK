@@ -15,6 +15,9 @@ class DeviceScaffold extends StatelessWidget {
   /// false면 상단 SafeArea 생략 — MainShell 공통 헤더와 함께 쓸 때.
   final bool safeAreaTop;
 
+  /// 키보드 등 하단 inset에 맞춰 body 높이를 줄일지 (Scaffold 기본값 true).
+  final bool resizeToAvoidBottomInset;
+
   const DeviceScaffold({
     super.key,
     this.appBar,
@@ -23,6 +26,7 @@ class DeviceScaffold extends StatelessWidget {
     this.backgroundColor,
     this.safeAreaBottom = true,
     this.safeAreaTop = true,
+    this.resizeToAvoidBottomInset = true,
   });
 
   @override
@@ -30,6 +34,7 @@ class DeviceScaffold extends StatelessWidget {
     final metrics = Active5Layout.of(context);
 
     return Scaffold(
+      resizeToAvoidBottomInset: resizeToAvoidBottomInset,
       // 탭 루트에서 글래스 네비 아래로 비치게 할 때 transparent 권장.
       backgroundColor: backgroundColor ??
           (safeAreaBottom ? null : Colors.transparent),

@@ -35,6 +35,7 @@ flutter:
   assets:
     - assets/sample_content.json
     - assets/images/
+    - assets/images/plane.svg
     - assets/lottie/touch1.json
     - assets/lottie/touch2.json
     - assets/lottie/touch3.json

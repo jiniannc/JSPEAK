@@ -34,6 +34,7 @@ abstract final class DashboardPalette {
 
   static const LinearGradient routeGradient = LinearGradient(
     colors: [limeBright, lime, teal],
+    stops: [0.0, 0.5, 1.0],
     begin: Alignment.centerLeft,
     end: Alignment.centerRight,
   );

@@ -351,6 +351,7 @@ class StampEarnGuideCard extends StatelessWidget {
               const Color(0xFFF7FAFF),
               const Color(0xFFFFF8F0).withValues(alpha: 0.9),
             ],
+            stops: const [0.0, 0.5, 1.0],
           ),
           border: Border.all(color: Colors.white.withValues(alpha: 0.85)),
           boxShadow: [

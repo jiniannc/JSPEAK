@@ -32,6 +32,7 @@ class MyPageScreen extends ConsumerStatefulWidget {
 
 class _MyPageScreenState extends ConsumerState<MyPageScreen> {
   bool _celebrationShowing = false;
+  bool _celebrationQueued = false;
 
   @override
   void initState() {
@@ -52,9 +53,17 @@ class _MyPageScreenState extends ConsumerState<MyPageScreen> {
     TitleBadgeUnlockState next,
   ) {
     if (_celebrationShowing) return;
-    if (!_isMyPageTabVisible) return;
-    if (next.pendingCelebrations.isEmpty) return;
+    if (next.pendingCelebrations.isEmpty) {
+      _celebrationQueued = false;
+      return;
+    }
 
+    if (!_isMyPageTabVisible) {
+      _celebrationQueued = true;
+      return;
+    }
+
+    _celebrationQueued = false;
     final badgeId = next.pendingCelebrations.first;
     final badges = ref.read(titleBadgesProvider);
     TitleBadge? badge;
@@ -124,8 +133,12 @@ class _MyPageScreenState extends ConsumerState<MyPageScreen> {
       _handleBadgeUnlockState,
     );
     ref.listen<int>(shellTabIndexProvider, (previous, next) {
-      if (next == MainShellTabHeader.kMyPageTabIndex) {
-        _tryShowCelebration();
+      if (next == MainShellTabHeader.kMyPageTabIndex &&
+          (_celebrationQueued ||
+              ref.read(titleBadgeUnlockProvider).pendingCelebrations.isNotEmpty)) {
+        WidgetsBinding.instance.addPostFrameCallback((_) {
+          if (mounted) _tryShowCelebration();
+        });
       }
     });
 

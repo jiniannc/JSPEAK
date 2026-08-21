@@ -274,6 +274,105 @@ void main() {
       );
     });
 
+    test('keyboard typing: correct word does not leak next word prefix', () {
+      const correct =
+          'Yes, this is security work. Please enter one by one for safety.';
+      final layout = AnswerBlankHints.layout(
+        correct: correct,
+        spoken: 'yes',
+        language: 'English',
+        keyboardTyping: true,
+      );
+
+      bool wordHasCorrect(int targetWordIdx) {
+        var wordIdx = 0;
+        for (var i = 0; i < layout.letters.length; i++) {
+          if (layout.letters[i].isGap) {
+            wordIdx++;
+            continue;
+          }
+          if (wordIdx != targetWordIdx) continue;
+          if (layout.states[i].kind == BlankRevealKind.correct) return true;
+        }
+        return false;
+      }
+
+      expect(wordHasCorrect(0), isTrue);
+      expect(wordHasCorrect(1), isFalse);
+    });
+
+    test('keyboard typing: wrong chars show red within word', () {
+      const correct = 'Yes, this is security work.';
+      final layout = AnswerBlankHints.layout(
+        correct: correct,
+        spoken: 'yex',
+        language: 'English',
+        keyboardTyping: true,
+      );
+
+      final wrongChars = <String>[];
+      var wordIdx = 0;
+      for (var i = 0; i < layout.letters.length; i++) {
+        if (layout.letters[i].isGap) {
+          wordIdx++;
+          continue;
+        }
+        if (wordIdx == 0 && layout.states[i].kind == BlankRevealKind.wrong) {
+          wrongChars.add(layout.states[i].shown!);
+        }
+      }
+      expect(wrongChars, contains('x'));
+    });
+
+    test('keyboard typing: wrong word then correct next word after space', () {
+      const correct = 'Yes, this is security work.';
+      final layout = AnswerBlankHints.layout(
+        correct: correct,
+        spoken: 'yex this',
+        language: 'English',
+        keyboardTyping: true,
+      );
+
+      bool wordFullyCorrect(int targetWordIdx) {
+        var wordIdx = 0;
+        for (var i = 0; i < layout.letters.length; i++) {
+          if (layout.letters[i].isGap) {
+            wordIdx++;
+            continue;
+          }
+          if (wordIdx != targetWordIdx) continue;
+          if (layout.letters[i].isPunctuation) continue;
+          if (layout.states[i].kind != BlankRevealKind.correct) return false;
+        }
+        return true;
+      }
+
+      expect(wordFullyCorrect(1), isTrue);
+    });
+
+    test('keyboard typing: char by char prefix fill', () {
+      const correct = 'Yes, this is security work.';
+      final layout = AnswerBlankHints.layout(
+        correct: correct,
+        spoken: 'ye',
+        language: 'English',
+        keyboardTyping: true,
+      );
+
+      var correctCount = 0;
+      var wordIdx = 0;
+      for (var i = 0; i < layout.letters.length; i++) {
+        if (layout.letters[i].isGap) {
+          wordIdx++;
+          continue;
+        }
+        if (wordIdx == 0 && layout.states[i].kind == BlankRevealKind.correct) {
+          correctCount++;
+        }
+      }
+      expect(correctCount, 2);
+    });
+
     test('CJK layout spec uses fullwidth placeholder and wider slots', () {
       const fontSize = 16.5;
       final cjkSpec = BlankLayoutSpec.forLanguage('Japanese', fontSize);

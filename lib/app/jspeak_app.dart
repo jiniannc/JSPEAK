@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 
 import '../core/config/app_config.dart';
 import '../core/theme/app_theme.dart';
+import '../features/shell/title_badge_unlock_banner.dart';
 import 'router.dart';
 
 class JspeakApp extends StatelessWidget {
@@ -24,7 +25,13 @@ class JspeakApp extends StatelessWidget {
               maxScaleFactor: 1.15,
             ),
           ),
-          child: child ?? const SizedBox.shrink(),
+          child: Stack(
+            fit: StackFit.expand,
+            children: [
+              child ?? const SizedBox.shrink(),
+              const TitleBadgeUnlockBannerHost(),
+            ],
+          ),
         );
       },
     );

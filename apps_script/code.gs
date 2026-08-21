@@ -23,10 +23,10 @@
  *  I: popular | J: important (Yes/No)
  *
  * 시나리오 시트 (scenarios_en / scenarios_jp / scenarios_cn, 1행은 헤더):
- *  A: scenario_id | B: chapter_no | C: chapter_name | D: chapter_image
+ *  A: scenario_id | B: chapter_no | C: chapter_name | D: avatar_image
  *  E: title | F: order | G: speaker | H: text_ko | I: text_target
  *  J: pronunciation | K: blank_frame | L: flight_stage | M: level | N: new
- *  chapter_image: `ch_boarding.png` 또는 `assets/images/ch_boarding.png`
+ *  avatar_image: `avatar_normal` 또는 `avatar_normal.png`
  *
  * audio 열: Google Drive **파일 ID** 또는 **공유 링크(URL)** 둘 다 가능.
  * "링크 복사"로 받은 주소를 그대로 붙여넣으면 Apps Script가 ID를 추출한다.
@@ -75,6 +75,24 @@ function normalizeChapterImage(raw) {
   path = path.replace(/^images\//i, '');
   if (/\.(png|jpe?g|webp|gif)$/i.test(path)) {
     return path.replace(/^\/+/, '');
+  }
+  return '';
+}
+
+function normalizeAvatarImage(raw) {
+  const text = String(raw || '').trim();
+  if (!text) return '';
+  let path = text.replace(/\\/g, '/');
+  while (path.indexOf('assets/assets/') === 0) {
+    path = path.substring('assets/'.length);
+  }
+  path = path.replace(/^assets\/images\//i, '');
+  path = path.replace(/^images\//i, '');
+  if (/\.(png|jpe?g|webp|gif)$/i.test(path)) {
+    return path.replace(/^\/+/, '');
+  }
+  if (/^avatar_/i.test(path)) {
+    return path + '.png';
   }
   return '';
 }
@@ -170,6 +188,7 @@ function getScenarios(sheetName) {
     chapter_no: 1,
     chapter_name: 2,
     chapter_image: 3,
+    avatar_image: 3,
     title: 4,
     order: 5,
     speaker: 6,
@@ -196,6 +215,7 @@ function getScenarios(sheetName) {
     chapter_no: ['chapter_no', 'chapterno', 'chapter', 'chapter_number'],
     chapter_name: ['chapter_name', 'chaptername', 'chapter_title'],
     chapter_image: ['chapter_image', 'chapterimage', 'chapter_thumb', 'chapter_thumbnail'],
+    avatar_image: ['avatar_image', 'avatarimage', 'avatar', 'character_image'],
     new: ['new', 'is_new', 'isnew', 'new_content'],
   };
 
@@ -248,8 +268,8 @@ function getScenarios(sheetName) {
         level: useHeader ? readCell(row, 'level') : row[FALLBACK.level],
         chapter_no: chapterNo,
         chapter_name: String(useHeader ? readCell(row, 'chapter_name') : row[FALLBACK.chapter_name]).trim(),
-        chapter_image: normalizeChapterImage(
-          useHeader ? readCell(row, 'chapter_image') : row[FALLBACK.chapter_image]
+        avatar_image: normalizeAvatarImage(
+          useHeader ? readCell(row, 'avatar_image') : row[FALLBACK.avatar_image]
         ),
         new: parseBoolCell(useHeader ? readCell(row, 'new') : row[FALLBACK.new]),
       });

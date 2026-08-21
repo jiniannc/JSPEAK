@@ -1,5 +1,3 @@
-import 'dart:math' as math;
-
 import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
 
@@ -280,47 +278,6 @@ class AppHeaderTrailing extends StatelessWidget {
             seamless: true,
           ),
       ],
-    );
-  }
-}
-
-/// 탭 전환 완료 후 헤더 타이틀 위를 왼→오로 스weep하는 시머.
-class AppHeaderShimmerOverlay extends StatelessWidget {
-  final Animation<double> animation;
-
-  const AppHeaderShimmerOverlay({super.key, required this.animation});
-
-  @override
-  Widget build(BuildContext context) {
-    return AnimatedBuilder(
-      animation: animation,
-      builder: (context, _) {
-        final t = Curves.easeInOutCubic.transform(animation.value);
-        return ClipRect(
-          child: Align(
-            alignment: Alignment(-1.5 + 3.0 * t, 0),
-            child: Transform.rotate(
-              angle: -math.pi / 4,
-              child: FractionallySizedBox(
-                widthFactor: 0.34,
-                heightFactor: 2.8,
-                child: DecoratedBox(
-                  decoration: BoxDecoration(
-                    gradient: LinearGradient(
-                      begin: Alignment.centerLeft,
-                      end: Alignment.centerRight,
-                      colors: [
-                        Colors.white.withValues(alpha: 0.0),
-                        Colors.white.withValues(alpha: 0.78),
-                      ],
-                    ),
-                  ),
-                ),
-              ),
-            ),
-          ),
-        );
-      },
     );
   }
 }

@@ -19,6 +19,8 @@ import '../../../features/dashboard/dashboard_palette.dart';
 import '../../../shared/widgets/pronunciation_inline_diff_text.dart';
 import '../../../shared/widgets/pronunciation_result_sheet.dart';
 import '../../../shared/widgets/pronunciation_voice_pipeline_overlay.dart';
+import '../../../core/utils/karaoke_word_index.dart';
+import '../../../core/utils/sentence_text_layout.dart';
 import '../../../shared/widgets/tappable_sentence_rich_text.dart';
 
 const _kHeaderContentGap = 10.0;
@@ -234,65 +236,88 @@ class _WheelLearningPanelState extends ConsumerState<WheelLearningPanel> {
     const outerPadding = EdgeInsets.fromLTRB(18, 14, 18, 12);
     const contentGap = 12.0;
 
-    final textSection = Column(
-      crossAxisAlignment: CrossAxisAlignment.center,
-      mainAxisSize: MainAxisSize.min,
-      children: [
-        TappableSentenceRichText(
-          sentence: sentence.sentence,
-          language: sentence.language,
-          textAlign: TextAlign.center,
-          style: TextStyle(
-            fontSize: metrics.sentenceFontSize + 1,
-            fontWeight: FontWeight.w800,
-            height: 1.35,
-            color: DashboardPalette.navy,
-          ),
-        ),
-        if (sentence.stars > 0) ...[
-          const SizedBox(height: 6),
-          Wrap(
-            alignment: WrapAlignment.center,
-            crossAxisAlignment: WrapCrossAlignment.center,
-            spacing: 6,
-            children: [
-              for (var i = 0; i < sentence.stars; i++)
-                Icon(
-                  Icons.star_rounded,
-                  size: 18,
-                  color: Colors.amber.shade600,
-                ),
-            ],
-          ),
-        ],
-        if (sentence.pronunciation.isNotEmpty) ...[
-          const SizedBox(height: 10),
-          Text(
-            sentence.pronunciation,
-            textAlign: TextAlign.center,
-            style: TextStyle(
-              fontSize: metrics.pronunciationFontSize,
-              fontStyle: FontStyle.italic,
-              color: DashboardPalette.textMuted,
-              height: 1.35,
-            ),
-          ),
-        ],
-        if (sentence.korean.isNotEmpty) ...[
-          const SizedBox(height: 8),
-          Text(
-            sentence.korean,
-            textAlign: TextAlign.center,
-            style: TextStyle(
-              fontSize: metrics.koreanFontSize,
-              fontWeight: FontWeight.w600,
-              color: DashboardPalette.navy.withValues(alpha: 0.7),
-              height: 1.4,
-            ),
-          ),
-        ],
-      ],
+    final karaokeWordIndex = KaraokeWordIndex.resolve(
+      isActive: isThisAudio,
+      position: audio.position,
+      duration: audio.duration,
+      sentence: sentence.sentence,
+      language: sentence.language,
     );
+
+    Widget buildTextSection(double maxTextWidth) {
+      final baseSentenceStyle = TextStyle(
+        fontSize: metrics.sentenceFontSize + 1,
+        fontWeight: FontWeight.w800,
+        height: 1.35,
+        color: DashboardPalette.navy,
+      );
+      final lineCount = SentenceTextLayout.lineCount(
+        text: sentence.sentence,
+        style: baseSentenceStyle,
+        maxWidth: maxTextWidth,
+        textAlign: TextAlign.center,
+      );
+      final sentenceStyle = SentenceTextLayout.adjustForLongText(
+        baseSentenceStyle,
+        isLong: lineCount >= SentenceTextLayout.longLineThreshold,
+      );
+
+      return Column(
+        crossAxisAlignment: CrossAxisAlignment.center,
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          TappableSentenceRichText(
+            sentence: sentence.sentence,
+            language: sentence.language,
+            textAlign: TextAlign.center,
+            karaokeWordIndex: karaokeWordIndex,
+            style: sentenceStyle,
+          ),
+          if (sentence.stars > 0) ...[
+            const SizedBox(height: 6),
+            Wrap(
+              alignment: WrapAlignment.center,
+              crossAxisAlignment: WrapCrossAlignment.center,
+              spacing: 6,
+              children: [
+                for (var i = 0; i < sentence.stars; i++)
+                  Icon(
+                    Icons.star_rounded,
+                    size: 18,
+                    color: Colors.amber.shade600,
+                  ),
+              ],
+            ),
+          ],
+          if (sentence.pronunciation.isNotEmpty) ...[
+            const SizedBox(height: 10),
+            Text(
+              sentence.pronunciation,
+              textAlign: TextAlign.center,
+              style: TextStyle(
+                fontSize: metrics.pronunciationFontSize,
+                fontStyle: FontStyle.italic,
+                color: DashboardPalette.textMuted,
+                height: 1.35,
+              ),
+            ),
+          ],
+          if (sentence.korean.isNotEmpty) ...[
+            const SizedBox(height: 8),
+            Text(
+              sentence.korean,
+              textAlign: TextAlign.center,
+              style: TextStyle(
+                fontSize: metrics.koreanFontSize,
+                fontWeight: FontWeight.w600,
+                color: DashboardPalette.navy.withValues(alpha: 0.7),
+                height: 1.4,
+              ),
+            ),
+          ],
+        ],
+      );
+    }
 
     return Padding(
       padding: outerPadding,
@@ -310,7 +335,13 @@ class _WheelLearningPanelState extends ConsumerState<WheelLearningPanel> {
           ),
           const SizedBox(height: _kHeaderContentGap),
           Expanded(
-            child: _CenteredScrollTextPane(child: textSection),
+            child: LayoutBuilder(
+              builder: (context, constraints) {
+                return _CenteredScrollTextPane(
+                  child: buildTextSection(constraints.maxWidth),
+                );
+              },
+            ),
           ),
           const SizedBox(height: contentGap),
           Column(

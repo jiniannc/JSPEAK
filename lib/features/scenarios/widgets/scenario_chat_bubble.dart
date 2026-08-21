@@ -10,6 +10,7 @@ import '../../../core/utils/word_compare.dart';
 import '../../../data/models/scenario_line.dart';
 import '../../../features/dashboard/dashboard_palette.dart';
 import '../scenario_word_hints.dart';
+import 'scenario_bubble_avatar.dart';
 import 'scenario_word_hint_bubbles.dart';
 
 /// STT 인식 문장의 틀린 단어만 빨간색·취소선으로 표시.
@@ -97,6 +98,11 @@ class ScenarioChatBubble extends StatefulWidget {
   final ValueChanged<int>? onBlankTap;
   final List<ScenarioWordHint> wordHints;
   final GlobalKey? tourHighlightKey;
+  final GlobalKey? scrollAnchorKey;
+  final bool keyboardTyping;
+  /// 위에 겹칠 이전 메시지가 있는지 — 리스트의 첫 메시지는 false로 넘겨야
+  /// 아바타가 헤더 밖으로 삐져나가지 않는다.
+  final bool allowTopOverlap;
 
   const ScenarioChatBubble({
     super.key,
@@ -109,6 +115,9 @@ class ScenarioChatBubble extends StatefulWidget {
     this.onBlankTap,
     this.wordHints = const [],
     this.tourHighlightKey,
+    this.scrollAnchorKey,
+    this.keyboardTyping = false,
+    this.allowTopOverlap = true,
   });
 
   @override
@@ -159,10 +168,147 @@ class _ScenarioChatBubbleState extends State<ScenarioChatBubble>
     final palette = context.languagePalette;
     final accent =
         widget.accentColor ?? palette?.primary ?? DashboardPalette.teal;
-    final maxW = MediaQuery.sizeOf(context).width * 0.88; // 💡 가로폭 살짝 조정
+    final screenW = MediaQuery.sizeOf(context).width;
+    final isPassenger = msg.kind == ChatBubbleKind.passenger;
+    final passengerMaxW =
+        screenW * ScenarioBubbleAvatar.passengerMaxWidthFactor;
+    final crewMaxW = screenW * ScenarioBubbleAvatar.crewMaxWidthFactor;
+    final avatarPath = msg.line.avatarImage;
+    final isCrewTurn = msg.kind == ChatBubbleKind.crewTurn;
+    final hasCrewAvatar = avatarPath.isNotEmpty && isCrewTurn;
+    final isHeroAvatar =
+        hasCrewAvatar && widget.isActive && !msg.isResolved;
+    final stickerSize = ScenarioBubbleAvatar.sizeFor(isHeroAvatar);
+    // 아바타는 카드 위쪽 테두리에 닿기만 할 뿐 콘텐츠 영역과 겹치지 않으므로
+    // 텍스트용 여분 우측 패딩이 필요 없다 — 우측 여백 최소화.
+    final crewContentMaxW = crewMaxW - 36;
 
+    final bubbleCard = Container(
+      margin: const EdgeInsets.only(bottom: 8),
+      padding: const EdgeInsets.fromLTRB(18, 16, 18, 16),
+      decoration: BoxDecoration(
+        color: isUser
+            ? accent.withValues(alpha: widget.isActive ? 0.14 : 0.08)
+            : Colors.white, // 💡 완전한 깔끔 화이트로 변경
+        borderRadius: BorderRadius.only(
+          topLeft: const Radius.circular(24), // 💡 곡률 18 -> 24 확장
+          topRight: const Radius.circular(24), // 💡 곡률 18 -> 24 확장
+          bottomLeft: Radius.circular(isUser ? 24 : 8), // 💡 꼬리 각도 부드럽게
+          bottomRight: Radius.circular(isUser ? 8 : 24),
+        ),
+        border: Border.all(
+          color: widget.isActive
+              ? accent
+              : (isUser
+                  ? accent.withValues(alpha: 0.2)
+                  : Colors.black.withValues(alpha: 0.05)), // 💡 선을 엄청 연하게 변경
+          width: widget.isActive ? 2 : 1,
+        ),
+        boxShadow: [
+          // 💡 넓고 은은하게 퍼지는 대기업 스타일 섀도우 적용
+          BoxShadow(
+            color: Colors.black.withValues(
+              alpha: widget.isActive ? 0.06 : 0.03,
+            ),
+            blurRadius: widget.isActive ? 20 : 12,
+            offset: const Offset(0, 6),
+          ),
+          if (widget.isActive)
+            BoxShadow(
+              color: accent.withValues(alpha: 0.08),
+              blurRadius: 14,
+              offset: const Offset(0, 4),
+            ),
+        ],
+      ),
+      child: msg.kind == ChatBubbleKind.passenger
+          ? _PassengerBody(line: msg.line)
+          : _CrewTurnBody(
+              message: msg,
+              accent: accent,
+              isActive: widget.isActive,
+              liveSpokenText: widget.liveSpokenText,
+              blankInputs: widget.blankInputs,
+              selectedBlankIndex: widget.selectedBlankIndex,
+              onBlankTap: widget.onBlankTap,
+              wordHints: widget.wordHints,
+              keyboardTyping: widget.keyboardTyping,
+              contentMaxWidth: crewContentMaxW,
+            ),
+    );
+
+    // 위에 겹칠 이전 메시지가 있을 때만(allowTopOverlap) 아바타를 이미지
+    // height만큼 정확히 위로 올려 여백 없이 겹침 — 리스트 첫 메시지는 헤더
+    // 밖으로 새어나갈 수 있어 예약된 공간 안에서만 peeking(안전 모드).
+    final avatarWidget = ScenarioBubbleAvatar(
+      assetPath: avatarPath,
+      size: stickerSize,
+      accentColor: accent,
+      muted: hasCrewAvatar && !isHeroAvatar,
+    );
+
+    final bubbleLayout = !hasCrewAvatar
+        ? Padding(
+            padding: const EdgeInsets.only(top: 8),
+            child: bubbleCard,
+          )
+        : widget.allowTopOverlap
+            ? Stack(
+                clipBehavior: Clip.none,
+                children: [
+                  bubbleCard,
+                  Positioned(
+                    right: ScenarioBubbleAvatar.peekInsetRight,
+                    top: -stickerSize,
+                    child: AnimatedContainer(
+                      duration: const Duration(milliseconds: 420),
+                      curve: Curves.easeOutCubic,
+                      width: stickerSize,
+                      height: stickerSize,
+                      child: avatarWidget,
+                    ),
+                  ),
+                ],
+              )
+            : Column(
+                mainAxisSize: MainAxisSize.min,
+                crossAxisAlignment: CrossAxisAlignment.stretch,
+                children: [
+                  AnimatedContainer(
+                    duration: const Duration(milliseconds: 420),
+                    curve: Curves.easeOutCubic,
+                    height: stickerSize,
+                    alignment: Alignment.bottomRight,
+                    child: Padding(
+                      padding: const EdgeInsets.only(
+                        right: ScenarioBubbleAvatar.peekInsetRight,
+                      ),
+                      child: avatarWidget,
+                    ),
+                  ),
+                  bubbleCard,
+                ],
+              );
+
+    final Widget laidOutBubble = IntrinsicWidth(child: bubbleLayout);
+
+    Widget anchoredBubble = laidOutBubble;
+    if (widget.scrollAnchorKey != null) {
+      anchoredBubble = KeyedSubtree(
+        key: widget.scrollAnchorKey,
+        child: anchoredBubble,
+      );
+    }
+    if (widget.tourHighlightKey != null) {
+      anchoredBubble = KeyedSubtree(
+        key: widget.tourHighlightKey,
+        child: anchoredBubble,
+      );
+    }
+
+    // 아바타는 안쪽 Stack에서만 위로 삐져나옴 — 카드 자체는 정상 흐름 위치 유지.
     return Padding(
-      padding: const EdgeInsets.symmetric(horizontal: 4), // 💡 양옆 마진 확보
+      padding: EdgeInsets.symmetric(horizontal: isPassenger ? 4 : 0),
       child: FadeTransition(
         opacity: _fade,
         child: SlideTransition(
@@ -173,62 +319,10 @@ class _ScenarioChatBubbleState extends State<ScenarioChatBubble>
             child: Align(
               alignment: isUser ? Alignment.centerRight : Alignment.centerLeft,
               child: ConstrainedBox(
-                constraints: BoxConstraints(maxWidth: maxW),
-                child: IntrinsicWidth(
-                  child: Container(
-                    key: widget.tourHighlightKey,
-                    margin: const EdgeInsets.symmetric(vertical: 8),
-                    padding: const EdgeInsets.symmetric(
-                      horizontal: 18,
-                      vertical: 16,
-                    ),
-                    decoration: BoxDecoration(
-                      color: isUser
-                          ? accent.withValues(alpha: widget.isActive ? 0.14 : 0.08)
-                          : Colors.white, // 💡 완전한 깔끔 화이트로 변경
-                      borderRadius: BorderRadius.only(
-                        topLeft: const Radius.circular(24),  // 💡 곡률 18 -> 24 확장
-                        topRight: const Radius.circular(24), // 💡 곡률 18 -> 24 확장
-                        bottomLeft: Radius.circular(isUser ? 24 : 8), // 💡 꼬리 각도 부드럽게
-                        bottomRight: Radius.circular(isUser ? 8 : 24),
-                      ),
-                      border: Border.all(
-                        color: widget.isActive
-                            ? accent
-                            : (isUser
-                                ? accent.withValues(alpha: 0.2)
-                                : Colors.black.withValues(alpha: 0.05)), // 💡 선을 엄청 연하게 변경
-                        width: widget.isActive ? 2 : 1,
-                      ),
-                      boxShadow: [
-                        // 💡 넓고 은은하게 퍼지는 대기업 스타일 섀도우 적용
-                        BoxShadow(
-                          color: Colors.black.withValues(alpha: widget.isActive ? 0.06 : 0.03),
-                          blurRadius: widget.isActive ? 20 : 12,
-                          offset: const Offset(0, 6),
-                        ),
-                        if (widget.isActive)
-                          BoxShadow(
-                            color: accent.withValues(alpha: 0.08),
-                            blurRadius: 14,
-                            offset: const Offset(0, 4),
-                          ),
-                      ],
-                    ),
-                    child: msg.kind == ChatBubbleKind.passenger
-                        ? _PassengerBody(line: msg.line)
-                        : _CrewTurnBody(
-                            message: msg,
-                            accent: accent,
-                            isActive: widget.isActive,
-                            liveSpokenText: widget.liveSpokenText,
-                            blankInputs: widget.blankInputs,
-                            selectedBlankIndex: widget.selectedBlankIndex,
-                            onBlankTap: widget.onBlankTap,
-                            wordHints: widget.wordHints,
-                          ),
-                  ),
+                constraints: BoxConstraints(
+                  maxWidth: isPassenger ? passengerMaxW : crewMaxW,
                 ),
+                child: anchoredBubble,
               ),
             ),
           ),
@@ -353,6 +447,8 @@ class _CrewTurnBody extends StatelessWidget {
   final int? selectedBlankIndex;
   final ValueChanged<int>? onBlankTap;
   final List<ScenarioWordHint> wordHints;
+  final bool keyboardTyping;
+  final double contentMaxWidth;
 
   const _CrewTurnBody({
     required this.message,
@@ -363,6 +459,8 @@ class _CrewTurnBody extends StatelessWidget {
     this.selectedBlankIndex,
     this.onBlankTap,
     this.wordHints = const [],
+    this.keyboardTyping = false,
+    required this.contentMaxWidth,
   });
 
   @override
@@ -421,6 +519,8 @@ class _CrewTurnBody extends StatelessWidget {
                       showPronunciation: showPronunciation,
                       showWordHints: message.showWordHints,
                       wordHints: wordHints,
+                      keyboardTyping: keyboardTyping,
+                      contentMaxWidth: contentMaxWidth,
                     ),
                   ),
           ),
@@ -441,6 +541,8 @@ class _SpeakingContent extends StatefulWidget {
   final bool showPronunciation;
   final bool showWordHints;
   final List<ScenarioWordHint> wordHints;
+  final bool keyboardTyping;
+  final double contentMaxWidth;
 
   const _SpeakingContent({
     required this.line,
@@ -453,6 +555,8 @@ class _SpeakingContent extends StatefulWidget {
     this.showPronunciation = false,
     this.showWordHints = false,
     this.wordHints = const [],
+    this.keyboardTyping = false,
+    required this.contentMaxWidth,
   });
 
   @override
@@ -479,9 +583,6 @@ class _SpeakingContentState extends State<_SpeakingContent> {
     final structureOn =
         widget.showBlankFrame && line.blankFrame.trim().isNotEmpty;
 
-    // ConstrainedBox(maxWidth: screen*0.88) − 말풍선 좌우 패딩 18*2
-    final blankMaxW = MediaQuery.sizeOf(context).width * 0.88 - 36;
-
     return Column(
       mainAxisSize: MainAxisSize.min,
       crossAxisAlignment: CrossAxisAlignment.start,
@@ -502,13 +603,14 @@ class _SpeakingContentState extends State<_SpeakingContent> {
           language: line.language,
           accentColor: accent,
           fontSize: 16.5,
-          maxWidth: blankMaxW,
+          maxWidth: widget.contentMaxWidth,
           blankFrame: line.blankFrame,
           structureRevealed: structureOn,
           blankInputs: widget.blankInputs,
           selectedBlankIndex: widget.selectedBlankIndex,
           onBlankTap: structureOn ? widget.onBlankTap : null,
           showHintRunLabels: showWordHints && wordHints.length >= 2,
+          keyboardTyping: widget.keyboardTyping,
         ),
         if (showWordHints && wordHints.isNotEmpty)
           ScenarioWordHintLane(
@@ -627,7 +729,7 @@ class _ResolvedContentState extends State<_ResolvedContent>
     super.dispose();
   }
 
-  Widget _answerText(Color accent, double maxWidth) {
+  Widget _answerText(Color accent) {
     const style = TextStyle(
       fontSize: 16.5,
       fontWeight: FontWeight.w800,
@@ -668,17 +770,13 @@ class _ResolvedContentState extends State<_ResolvedContent>
             ),
           );
 
-    return ConstrainedBox(
-      constraints: BoxConstraints(maxWidth: maxWidth),
-      child: text,
-    );
+    return text;
   }
 
   @override
   Widget build(BuildContext context) {
     final line = widget.line;
     final accent = widget.accent;
-    final textMaxW = MediaQuery.sizeOf(context).width * 0.88 - 36;
     const success = Color(0xFF0C9E6E); // 💡 살짝 청량한 초록으로 변경
 
     return FadeTransition(
@@ -752,7 +850,7 @@ class _ResolvedContentState extends State<_ResolvedContent>
               ],
             ),
             const SizedBox(height: 12),
-            _answerText(accent, textMaxW),
+            _answerText(accent),
             if (widget.showPronunciation && line.pronunciation.isNotEmpty) ...[
               const SizedBox(height: 8),
               Text(

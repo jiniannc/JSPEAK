@@ -19,11 +19,11 @@ import '../features/basic_sentence/basic_sentence_training_screen.dart';
 import '../features/word_swipe/word_swipe_home_screen.dart';
 import '../features/word_swipe/word_swipe_training_screen.dart';
 
-final _rootNavigatorKey = GlobalKey<NavigatorState>();
+final rootNavigatorKey = GlobalKey<NavigatorState>();
 
 /// URL 형태의 라우팅을 사용해 나중에 웹으로 확장할 때 경로를 그대로 쓴다.
 final router = GoRouter(
-  navigatorKey: _rootNavigatorKey,
+  navigatorKey: rootNavigatorKey,
   initialLocation: '/',
   routes: [
     StatefulShellRoute.indexedStack(
@@ -64,7 +64,7 @@ final router = GoRouter(
                       routes: [
                         GoRoute(
                           path: 'play',
-                          parentNavigatorKey: _rootNavigatorKey,
+                          parentNavigatorKey: rootNavigatorKey,
                           builder: (context, state) {
                             final lang =
                                 state.uri.queryParameters['lang'] ?? 'English';
@@ -90,7 +90,7 @@ final router = GoRouter(
                       routes: [
                         GoRoute(
                           path: 'play',
-                          parentNavigatorKey: _rootNavigatorKey,
+                          parentNavigatorKey: rootNavigatorKey,
                           builder: (context, state) {
                             final extra = state.extra;
                             if (extra is WordSwipeArgs) {
@@ -117,7 +117,7 @@ final router = GoRouter(
                     ),
                     GoRoute(
                       path: 'train/:scenarioId',
-                      parentNavigatorKey: _rootNavigatorKey,
+                      parentNavigatorKey: rootNavigatorKey,
                       builder: (context, state) {
                         final scenarioId = state.pathParameters['scenarioId']!;
                         final extra = state.extra;
@@ -170,12 +170,12 @@ final router = GoRouter(
       ],
     ),
     GoRoute(
-      parentNavigatorKey: _rootNavigatorKey,
+      parentNavigatorKey: rootNavigatorKey,
       path: '/settings',
       builder: (context, state) => const SettingsScreen(),
     ),
     GoRoute(
-      parentNavigatorKey: _rootNavigatorKey,
+      parentNavigatorKey: rootNavigatorKey,
       path: '/dictionary/swipe',
       redirect: (context, state) => '/scenarios/swipe',
     ),

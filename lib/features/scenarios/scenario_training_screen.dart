@@ -34,17 +34,23 @@ class ScenarioTrainingScreen extends ConsumerStatefulWidget {
 }
 
 class _ScenarioTrainingScreenState extends ConsumerState<ScenarioTrainingScreen>
-    with SingleTickerProviderStateMixin {
+    with SingleTickerProviderStateMixin, WidgetsBindingObserver {
   final _scrollController = ScrollController();
   final _typingController = TextEditingController();
   final _typingFocus = FocusNode();
+  final _activeBubbleKey = GlobalKey();
 
   late final AnimationController _shakeController;
 
   final ScenarioTourTargetKeys _tourKeys = ScenarioTourTargetKeys();
   bool _tourScheduled = false;
   bool _initialTourFinished = false;
+  /// 코치마크가 실제로 떠 있는 동안만 true — 아니면 tourHighlightKey를
+  /// 아무 말풍선에도 주지 않아, 승객 말풍선 subtree가 GlobalKey 부착/해제로
+  /// 불필요하게 재생성(타이핑 애니메이션 리플레이)되는 것을 막는다.
+  bool _tourActive = false;
   late final LearningTourLocalDataSource _tourLocalDataSource;
+  double _lastKeyboardInset = 0;
 
   LanguagePalette get _palette =>
       LanguagePalette.forLanguage(widget.scenario.language);
@@ -52,15 +58,52 @@ class _ScenarioTrainingScreenState extends ConsumerState<ScenarioTrainingScreen>
   @override
   void initState() {
     super.initState();
+    WidgetsBinding.instance.addObserver(this);
     _tourLocalDataSource = ref.read(learningTourLocalDataSourceProvider);
     _shakeController = AnimationController(
       vsync: this,
       duration: const Duration(milliseconds: 320),
     );
+    _typingFocus.addListener(_onTypingFocusChanged);
 
     WidgetsBinding.instance.addPostFrameCallback((_) {
       ref.read(scenarioTrainingProvider.notifier).init(widget.scenario);
       _scheduleInitialTour();
+    });
+  }
+
+  void _onTypingFocusChanged() {
+    if (_typingFocus.hasFocus) {
+      _ensureActiveBubbleVisible();
+    }
+  }
+
+  @override
+  void didChangeMetrics() {
+    super.didChangeMetrics();
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted) return;
+      final inset = MediaQuery.viewInsetsOf(context).bottom;
+      if (inset == _lastKeyboardInset) return;
+      _lastKeyboardInset = inset;
+      if (inset > 0) {
+        _ensureActiveBubbleVisible();
+      }
+    });
+  }
+
+  /// 키보드·타이핑 중에도 승무원 말풍선이 컨트롤 바 위에 보이도록 스크롤.
+  void _ensureActiveBubbleVisible() {
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted) return;
+      final ctx = _activeBubbleKey.currentContext;
+      if (ctx == null) return;
+      Scrollable.ensureVisible(
+        ctx,
+        alignment: 0.06,
+        duration: const Duration(milliseconds: 280),
+        curve: Curves.easeOutCubic,
+      );
     });
   }
 
@@ -70,6 +113,26 @@ class _ScenarioTrainingScreenState extends ConsumerState<ScenarioTrainingScreen>
       if (msg.kind == ChatBubbleKind.passenger) return msg.id;
     }
     return messages.first.id;
+  }
+
+  /// 코치마크 1단계 — 아바타·한국어 프롬프트가 있는 활성 승무원 말풍선.
+  String? _tourHighlightBubbleId(ScenarioTrainingState training) {
+    final crewId = training.activeCrewMessageId;
+    if (crewId != null) return crewId;
+    return _tourContextBubbleId(training.messages);
+  }
+
+  Future<void> _ensureTourBubbleVisible() async {
+    await Future<void>.delayed(const Duration(milliseconds: 80));
+    if (!mounted) return;
+    final ctx = _tourKeys.opponentBubbleKey.currentContext;
+    if (ctx == null) return;
+    await Scrollable.ensureVisible(
+      ctx,
+      alignment: 0.18,
+      duration: const Duration(milliseconds: 320),
+      curve: Curves.easeOutCubic,
+    );
   }
 
   bool _canShowScenarioTour() {
@@ -107,19 +170,20 @@ class _ScenarioTrainingScreenState extends ConsumerState<ScenarioTrainingScreen>
     if (!mounted || ScenarioTour.isShowing) return;
     if (!force && !_canShowScenarioTour()) return;
 
-    if (_scrollController.hasClients) {
-      _scrollController.jumpTo(0);
-    }
-    await Future<void>.delayed(const Duration(milliseconds: 520));
+    await _ensureTourBubbleVisible();
+    await Future<void>.delayed(const Duration(milliseconds: 480));
     if (!mounted || ScenarioTour.isShowing) return;
 
+    setState(() => _tourActive = true);
     await ScenarioTour.show(
       context: context,
       keys: _tourKeys,
       onComplete: () async {
+        if (mounted) setState(() => _tourActive = false);
         await _tourLocalDataSource.setCompletedScenarioTour(true);
       },
       onSkip: () async {
+        if (mounted) setState(() => _tourActive = false);
         await _tourLocalDataSource.setCompletedScenarioTour(true);
       },
     );
@@ -154,6 +218,8 @@ class _ScenarioTrainingScreenState extends ConsumerState<ScenarioTrainingScreen>
 
   @override
   void dispose() {
+    WidgetsBinding.instance.removeObserver(this);
+    _typingFocus.removeListener(_onTypingFocusChanged);
     // dispose 중에는 ref 사용 불가 — STT 정리는 Provider onDispose / _leaveScreen에서 처리.
     _scrollController.dispose();
     _typingController.dispose();
@@ -214,7 +280,10 @@ class _ScenarioTrainingScreenState extends ConsumerState<ScenarioTrainingScreen>
           (next.selectedBlankIndex != null &&
               prev?.selectedBlankIndex != next.selectedBlankIndex)) {
         WidgetsBinding.instance.addPostFrameCallback((_) {
-          if (mounted) _typingFocus.requestFocus();
+          if (mounted) {
+            _typingFocus.requestFocus();
+            _ensureActiveBubbleVisible();
+          }
         });
       }
       if (prev?.shakeToken != next.shakeToken && next.shakeToken > 0) {
@@ -250,10 +319,27 @@ class _ScenarioTrainingScreenState extends ConsumerState<ScenarioTrainingScreen>
         widget.scenario.level.trim(),
     ];
     final metaLabel = metaParts.join(' • ');
-    final tourBubbleId = _tourContextBubbleId(training.messages);
+    // 코치마크가 실제로 떠 있지 않을 때는 계산하지 않음 — 아니면 fallback id가
+    // 상태 전환마다 바뀌면서 승객 말풍선 subtree가 불필요하게 재생성된다.
+    final tourBubbleId = _tourActive ? _tourHighlightBubbleId(training) : null;
+    final keyboardInset = MediaQuery.viewInsetsOf(context).bottom;
+    final isTyping =
+        training.isTypingMode || training.selectedBlankIndex != null;
+
+    // 키보드가 열리면 inset 변화에 맞춰 말풍선 위치를 재조정한다.
+    if (keyboardInset != _lastKeyboardInset && isTyping) {
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (!mounted) return;
+        if (keyboardInset != _lastKeyboardInset) {
+          _lastKeyboardInset = keyboardInset;
+          if (keyboardInset > 0) _ensureActiveBubbleVisible();
+        }
+      });
+    }
 
     // 플로팅 글래스 헤더 높이만큼 리스트 상단 여백 (스크롤 시 헤더 뒤로 지나감)
     const headerReserve = 84.0;
+    const controlBarClearance = 200.0;
 
     return PopScope(
       canPop: false,
@@ -268,23 +354,32 @@ class _ScenarioTrainingScreenState extends ConsumerState<ScenarioTrainingScreen>
           extensions: [palette],
         ),
         child: DeviceScaffold(
+        resizeToAvoidBottomInset: true,
+        safeAreaBottom: false,
         body: ColoredBox(
           color: DashboardPalette.softGray,
           child: Stack(
             children: [
               ListView(
+                clipBehavior: Clip.none,
                 controller: _scrollController,
+                keyboardDismissBehavior: ScrollViewKeyboardDismissBehavior.onDrag,
                 padding: metrics.pagePadding.copyWith(
                   top: headerReserve,
-                  bottom: isCrewTurn ? 200 : 24,
+                  bottom: isCrewTurn ? controlBarClearance : 24,
                 ),
                 children: [
-                  for (final msg in training.messages)
+                  for (final (msgIndex, msg) in training.messages.indexed)
                     ScenarioChatBubble(
                       key: ValueKey(msg.id),
                       tourHighlightKey: msg.id == tourBubbleId
                           ? _tourKeys.opponentBubbleKey
                           : null,
+                      scrollAnchorKey: msg.id == activeMsgId
+                          ? _activeBubbleKey
+                          : null,
+                      // 리스트 첫 메시지는 위에 겹칠 대상이 없어 안전 모드로 표시.
+                      allowTopOverlap: msgIndex > 0,
                       message: msg,
                       accentColor: palette.primary,
                       isActive:
@@ -312,6 +407,10 @@ class _ScenarioTrainingScreenState extends ConsumerState<ScenarioTrainingScreen>
                               .read(scenarioTrainingProvider.notifier)
                               .selectBlank(i)
                           : null,
+                      keyboardTyping: msg.id == activeMsgId &&
+                          !training.isCompleted &&
+                          (training.isTypingMode ||
+                              training.selectedBlankIndex != null),
                     ),
                   if (training.isCompleted)
                     _CompletionBanner(

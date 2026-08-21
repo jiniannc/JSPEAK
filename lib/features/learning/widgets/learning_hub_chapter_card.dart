@@ -13,6 +13,7 @@ import '../../../data/models/learning_hub_chapter.dart';
 import '../../../data/models/scenario.dart';
 import '../../../data/repositories/sentence_progress_repository.dart';
 import '../../dashboard/dashboard_palette.dart';
+import '../../shell/floating_island_nav_bar.dart';
 import '../../word_swipe/word_swipe_training_screen.dart';
 import 'mode_guide_cards.dart';
 
@@ -183,8 +184,10 @@ class LearningHubChapterCard extends StatefulWidget {
     ),
   ];
 
-  static const _modeBandHeight = 136.0;
+  static const _modeBandHeight = 109.0;
   static const _modeBandBottomInset = 12.0;
+  static const _modeBandSideInset = 8.0;
+  static const _modePanelInnerBottomInset = 10.0;
   static const _heroTextBottomInset = 18.0;
   static const _heroTextAboveModesGap = 14.0;
   static const _imageSlideMax = 26.0;
@@ -1207,8 +1210,8 @@ class _ExpandedChapterVisualState extends State<_ExpandedChapterVisual>
               ),
               if (modeT > 0.001)
                 Positioned(
-                  left: 14,
-                  right: 14,
+                  left: LearningHubChapterCard._modeBandSideInset,
+                  right: LearningHubChapterCard._modeBandSideInset,
                   bottom: LearningHubChapterCard._modeBandBottomInset,
                   child: Transform.translate(
                     offset: Offset(0, modeLift),
@@ -1345,12 +1348,18 @@ class _ChapterTapRevealHintState extends State<_ChapterTapRevealHint>
           height: 72,
           child: AnimatedBuilder(
             animation: _offsetY,
-            child: Lottie.asset(
-              _ChapterTapRevealHint._assetPath,
-              width: 64,
-              height: 64,
-              fit: BoxFit.contain,
-              repeat: true,
+            child: ColorFiltered(
+              colorFilter: const ColorFilter.mode(
+                Colors.white,
+                BlendMode.srcIn,
+              ),
+              child: Lottie.asset(
+                _ChapterTapRevealHint._assetPath,
+                width: 64,
+                height: 64,
+                fit: BoxFit.contain,
+                repeat: true,
+              ),
             ),
             builder: (context, child) {
               return Align(
@@ -1763,6 +1772,7 @@ class _ChapterModeRow extends StatelessWidget {
             child: _ModeCardIntroShimmer(
               key: ValueKey('mode-intro-$index-${modeReplayKeys[index]}'),
               shimmerDelayMs: shimmerDelaysMs[index],
+              clipRadius: 0,
               child: builder(reveal),
             ),
           ),
@@ -1773,50 +1783,67 @@ class _ChapterModeRow extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return SizedBox(
-      height: LearningHubChapterCard._modeBandHeight,
-      child: Row(
-        crossAxisAlignment: CrossAxisAlignment.stretch,
-        children: [
-          Expanded(
-            child: _staggeredSlot(
-              0,
-              (reveal) => _WordModeCell(
-                revealProgress: reveal,
-                wordCount: wordCount,
-                progress: swipeProgress,
-                completed: wordComplete,
-                onPlay: onWordPlay,
-                onReview: onWordReview,
+    return AnimatedBuilder(
+      animation: expandAnimation,
+      builder: (context, _) {
+        final panelReveal = expandAnimation.value.clamp(0.0, 1.0);
+        return SizedBox(
+          height: LearningHubChapterCard._modeBandHeight,
+          child: _UnifiedModeGlassPanel(
+            revealProgress: panelReveal,
+            child: Padding(
+              padding: const EdgeInsets.only(
+                bottom: LearningHubChapterCard._modePanelInnerBottomInset,
+              ),
+              child: Row(
+                crossAxisAlignment: CrossAxisAlignment.stretch,
+                children: [
+                  Expanded(
+                    child: _staggeredSlot(
+                      0,
+                      (reveal) => _WordModeCell(
+                        revealProgress: reveal,
+                        wordCount: wordCount,
+                        progress: swipeProgress,
+                        completed: wordComplete,
+                        onPlay: onWordPlay,
+                        onReview: onWordReview,
+                        slotAlignment: const Alignment(-0.24, 1.0),
+                      ),
+                    ),
+                  ),
+                  const _ModePanelInsetDivider(),
+                  Expanded(
+                    child: _staggeredSlot(
+                      1,
+                      (reveal) => _SentenceModeCell(
+                        revealProgress: reveal,
+                        summary: sentenceSummary,
+                        completed: sentenceComplete,
+                        onPlay: onSentencePlay,
+                        slotAlignment: Alignment.bottomCenter,
+                      ),
+                    ),
+                  ),
+                  const _ModePanelInsetDivider(),
+                  Expanded(
+                    child: _staggeredSlot(
+                      2,
+                      (reveal) => _ScenarioModeCell(
+                        revealProgress: reveal,
+                        scenarios: scenarios,
+                        completed: scenarioComplete,
+                        isCompleted: isScenarioCompleted,
+                        slotAlignment: const Alignment(0.24, 1.0),
+                      ),
+                    ),
+                  ),
+                ],
               ),
             ),
           ),
-          const SizedBox(width: 7),
-          Expanded(
-            child: _staggeredSlot(
-              1,
-              (reveal) => _SentenceModeCell(
-                revealProgress: reveal,
-                summary: sentenceSummary,
-                completed: sentenceComplete,
-                onPlay: onSentencePlay,
-              ),
-            ),
-          ),
-          const SizedBox(width: 7),
-          Expanded(
-            child: _staggeredSlot(
-              2,
-              (reveal) => _ScenarioModeCell(
-                revealProgress: reveal,
-                scenarios: scenarios,
-                completed: scenarioComplete,
-                isCompleted: isScenarioCompleted,
-              ),
-            ),
-          ),
-        ],
-      ),
+        );
+      },
     );
   }
 }
@@ -1825,11 +1852,13 @@ class _ChapterModeRow extends StatelessWidget {
 class _ModeCardIntroShimmer extends StatefulWidget {
   final Widget child;
   final int? shimmerDelayMs;
+  final double clipRadius;
 
   const _ModeCardIntroShimmer({
     super.key,
     required this.child,
     required this.shimmerDelayMs,
+    this.clipRadius = 16.0,
   });
 
   @override
@@ -1840,8 +1869,6 @@ class _ModeCardIntroShimmerState extends State<_ModeCardIntroShimmer>
     with SingleTickerProviderStateMixin {
   late final AnimationController _shimmer;
   bool _started = false;
-
-  static const _radius = 16.0;
 
   @override
   void initState() {
@@ -1898,7 +1925,7 @@ class _ModeCardIntroShimmerState extends State<_ModeCardIntroShimmer>
         Positioned.fill(
           child: IgnorePointer(
             child: ClipRRect(
-              borderRadius: BorderRadius.circular(_radius),
+              borderRadius: BorderRadius.circular(widget.clipRadius),
               child: AnimatedBuilder(
                 animation: _shimmer,
                 builder: (context, _) {
@@ -1986,6 +2013,148 @@ class _ModeShimmerSweepPainter extends CustomPainter {
   @override
   bool shouldRepaint(covariant _ModeShimmerSweepPainter oldDelegate) {
     return oldDelegate.progress != progress;
+  }
+}
+
+/// 3모드 통합 가로 패널 — Frosted Glass 외곽.
+class _UnifiedModeGlassPanel extends StatelessWidget {
+  final Widget child;
+  final double revealProgress;
+
+  const _UnifiedModeGlassPanel({
+    required this.child,
+    required this.revealProgress,
+  });
+
+  static const _radius = 16.0;
+
+  @override
+  Widget build(BuildContext context) {
+    final reveal = revealProgress.clamp(0.0, 1.0);
+    final glassReveal = Curves.easeOutCubic.transform(reveal);
+    final blurSigma = 12.0 * glassReveal;
+    final fillAlpha = 0.15 * glassReveal;
+    final borderAlpha = 0.28 * glassReveal;
+
+    final glassFill = DecoratedBox(
+      decoration: BoxDecoration(
+        color: Colors.white.withValues(alpha: fillAlpha),
+        border: Border.all(
+          color: Colors.white.withValues(alpha: borderAlpha),
+          width: 1.2,
+        ),
+      ),
+    );
+
+    return ClipRRect(
+      borderRadius: BorderRadius.circular(_radius),
+      child: Stack(
+        fit: StackFit.expand,
+        children: [
+          if (blurSigma <= 0.5)
+            Positioned.fill(child: glassFill)
+          else
+            Positioned.fill(
+              child: BackdropFilter(
+                filter: ImageFilter.blur(
+                  sigmaX: blurSigma,
+                  sigmaY: blurSigma,
+                ),
+                child: glassFill,
+              ),
+            ),
+          child,
+        ],
+      ),
+    );
+  }
+}
+
+/// 패널 내부 모드 구분 — 위·아래 여백을 둔 세로선.
+class _ModePanelInsetDivider extends StatelessWidget {
+  const _ModePanelInsetDivider();
+
+  static const _verticalInset = 14.0;
+
+  @override
+  Widget build(BuildContext context) {
+    return Padding(
+      padding: const EdgeInsets.symmetric(vertical: _verticalInset),
+      child: Container(
+        width: 1,
+        decoration: BoxDecoration(
+          gradient: LinearGradient(
+            begin: Alignment.topCenter,
+            end: Alignment.bottomCenter,
+            colors: [
+              Colors.white.withValues(alpha: 0.0),
+              Colors.white.withValues(alpha: 0.38),
+              Colors.white.withValues(alpha: 0.0),
+            ],
+            stops: const [0.0, 0.5, 1.0],
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+/// 통합 패널 내 개별 모드 슬롯 — 완료 오버레이·탭·가이드 버튼.
+class _ModePanelSection extends StatelessWidget {
+  final Widget child;
+  final Color accentColor;
+  final bool completed;
+  final VoidCallback? onTap;
+  final Widget? howItWorks;
+
+  const _ModePanelSection({
+    required this.child,
+    required this.accentColor,
+    this.completed = false,
+    this.onTap,
+    this.howItWorks,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final section = Stack(
+      fit: StackFit.expand,
+      children: [
+        if (completed)
+          const Positioned.fill(
+            child: IgnorePointer(
+              child: ColoredBox(
+                color: Color(0x14F59E0B),
+              ),
+            ),
+          ),
+        child,
+        if (completed)
+          const Positioned(
+            top: 5,
+            left: 5,
+            child: IgnorePointer(child: _ModeClearTrophyBadge()),
+          ),
+        if (howItWorks != null)
+          Positioned(
+            top: 5,
+            right: 5,
+            child: howItWorks!,
+          ),
+      ],
+    );
+
+    if (onTap == null) return section;
+
+    return Material(
+      color: Colors.transparent,
+      child: InkWell(
+        onTap: onTap,
+        splashColor: accentColor.withValues(alpha: 0.1),
+        highlightColor: Colors.white.withValues(alpha: 0.06),
+        child: section,
+      ),
+    );
   }
 }
 
@@ -2162,7 +2331,13 @@ class _ChampagneGoldBorderPainter extends CustomPainter {
 }
 
 class _ChampagneSparkleOverlay extends StatefulWidget {
-  const _ChampagneSparkleOverlay();
+  final bool subtle;
+  final bool iconAnchored;
+
+  const _ChampagneSparkleOverlay({
+    this.subtle = false,
+    this.iconAnchored = false,
+  });
 
   @override
   State<_ChampagneSparkleOverlay> createState() =>
@@ -2198,6 +2373,8 @@ class _ChampagneSparkleOverlayState extends State<_ChampagneSparkleOverlay>
         return CustomPaint(
           painter: _ChampagneSparklePainter(
             t: (_twinkle.value + _phase) % 1.0,
+            subtle: widget.subtle,
+            iconAnchored: widget.iconAnchored,
           ),
         );
       },
@@ -2207,26 +2384,38 @@ class _ChampagneSparkleOverlayState extends State<_ChampagneSparkleOverlay>
 
 class _SparkleSpec {
   const _SparkleSpec({
-    required this.x,
-    required this.y,
+    this.x = 0.5,
+    this.y = 0.5,
+    this.ox = 0,
+    this.oy = 0,
     required this.size,
     required this.phase,
     required this.speed,
     this.star = true,
+    this.anchored = false,
   });
 
   final double x;
   final double y;
+  final double ox;
+  final double oy;
   final double size;
   final double phase;
   final double speed;
   final bool star;
+  final bool anchored;
 }
 
 class _ChampagneSparklePainter extends CustomPainter {
-  const _ChampagneSparklePainter({required this.t});
+  const _ChampagneSparklePainter({
+    required this.t,
+    this.subtle = false,
+    this.iconAnchored = false,
+  });
 
   final double t;
+  final bool subtle;
+  final bool iconAnchored;
 
   static const _specks = [
     _SparkleSpec(x: 0.50, y: 0.13, size: 9.4, phase: 0.00, speed: 1.00),
@@ -2240,22 +2429,88 @@ class _ChampagneSparklePainter extends CustomPainter {
     _SparkleSpec(x: 0.60, y: 0.40, size: 4.6, phase: 0.61, speed: 0.94, star: false),
   ];
 
+  static const _iconSpecks = [
+    _SparkleSpec(
+      ox: 0.02,
+      oy: -0.56,
+      size: 7.2,
+      phase: 0.00,
+      speed: 1.00,
+      anchored: true,
+    ),
+    _SparkleSpec(
+      ox: 0.46,
+      oy: -0.14,
+      size: 2.8,
+      phase: 0.22,
+      speed: 1.08,
+      star: false,
+      anchored: true,
+    ),
+    _SparkleSpec(
+      ox: -0.44,
+      oy: 0.16,
+      size: 5.4,
+      phase: 0.44,
+      speed: 0.94,
+      anchored: true,
+    ),
+    _SparkleSpec(
+      ox: 0.24,
+      oy: 0.42,
+      size: 3.2,
+      phase: 0.66,
+      speed: 1.12,
+      star: false,
+      anchored: true,
+    ),
+    _SparkleSpec(
+      ox: -0.20,
+      oy: -0.30,
+      size: 4.8,
+      phase: 0.84,
+      speed: 0.88,
+      anchored: true,
+    ),
+  ];
+
   @override
   void paint(Canvas canvas, Size size) {
     if (size.isEmpty) return;
 
-    for (final spec in _specks) {
+    final specks = iconAnchored
+        ? _iconSpecks
+        : (subtle ? const <_SparkleSpec>[] : _specks);
+    if (specks.isEmpty) return;
+
+    final minIntensity = iconAnchored ? 0.05 : (subtle ? 0.06 : 0.04);
+    final sizeScale = iconAnchored ? 1.0 : (subtle ? 0.72 : 1.0);
+    final goldAlphaBase = iconAnchored ? 0.07 : (subtle ? 0.08 : 0.18);
+    final goldAlphaPeak = iconAnchored ? 0.30 : (subtle ? 0.34 : 0.62);
+    final whiteAlphaBase = iconAnchored ? 0.04 : (subtle ? 0.05 : 0.10);
+    final whiteAlphaPeak = iconAnchored ? 0.18 : (subtle ? 0.22 : 0.42);
+    final iconRadius = math.min(size.width, size.height) * 0.5;
+
+    for (final spec in specks) {
       final wave = math.sin((t * spec.speed + spec.phase) * math.pi * 2);
       final spark = math.max(0.0, wave);
-      final intensity = math.pow(spark, 2.6).toDouble();
-      if (intensity < 0.04) continue;
+      final intensity = math.pow(
+        spark,
+        iconAnchored ? 3.0 : (subtle ? 3.0 : 2.6),
+      ).toDouble();
+      if (intensity < minIntensity) continue;
 
-      final center = Offset(spec.x * size.width, spec.y * size.height);
-      final radius = spec.size * (0.55 + 0.45 * intensity);
+      final center = spec.anchored
+          ? Offset(size.width * 0.5, size.height * 0.5) +
+              Offset(spec.ox * iconRadius, spec.oy * iconRadius)
+          : Offset(spec.x * size.width, spec.y * size.height);
+      final radius = spec.size * sizeScale * (0.5 + 0.35 * intensity);
       final gold = _HubChapterGoldTheme.hairline.withValues(
-        alpha: 0.18 + 0.62 * intensity,
+        alpha: goldAlphaBase + goldAlphaPeak * intensity,
       );
-      final white = Colors.white.withValues(alpha: 0.10 + 0.42 * intensity);
+      final white = Colors.white.withValues(
+        alpha: whiteAlphaBase + whiteAlphaPeak * intensity,
+      );
 
       if (spec.star) {
         _drawStar(canvas, center, radius, gold);
@@ -2295,7 +2550,9 @@ class _ChampagneSparklePainter extends CustomPainter {
 
   @override
   bool shouldRepaint(covariant _ChampagneSparklePainter oldDelegate) {
-    return oldDelegate.t != t;
+    return oldDelegate.t != t ||
+        oldDelegate.subtle != subtle ||
+        oldDelegate.iconAnchored != iconAnchored;
   }
 }
 
@@ -2303,10 +2560,12 @@ class _CompletedGoldIcon extends StatelessWidget {
   const _CompletedGoldIcon({
     required this.icon,
     required this.shimmerT,
+    this.size = 21,
   });
 
   final IconData icon;
   final double shimmerT;
+  final double size;
 
   @override
   Widget build(BuildContext context) {
@@ -2318,7 +2577,7 @@ class _CompletedGoldIcon extends StatelessWidget {
       children: [
         Icon(
           icon,
-          size: 21,
+          size: size,
           color: _HubChapterGoldTheme.iconGold,
         ),
         ShaderMask(
@@ -2335,7 +2594,7 @@ class _CompletedGoldIcon extends StatelessWidget {
           },
           child: Icon(
             icon,
-            size: 21,
+            size: size,
             color: Colors.white,
           ),
         ),
@@ -2350,6 +2609,7 @@ class _ModeGlassIcon extends StatefulWidget {
   final double progress;
   final double revealProgress;
   final double idlePhase;
+  final bool compact;
 
   const _ModeGlassIcon({
     required this.icon,
@@ -2357,6 +2617,7 @@ class _ModeGlassIcon extends StatefulWidget {
     required this.progress,
     required this.revealProgress,
     this.idlePhase = 0,
+    this.compact = false,
   });
 
   @override
@@ -2373,10 +2634,11 @@ class _ModeGlassIconState extends State<_ModeGlassIcon>
   late final Animation<double> _iconPopScale;
   bool _started = false;
 
-  static const _outer = 50.0;
-  static const _inner = 40.0;
-  static const _restStroke = 3.3;
-  static const _activeStroke = 4.2;
+  double get _outer => widget.compact ? 38.0 : 50.0;
+  double get _inner => widget.compact ? 30.0 : 40.0;
+  double get _iconSize => widget.compact ? 17.0 : 21.0;
+  double get _restStroke => widget.compact ? 2.8 : 3.3;
+  double get _activeStroke => widget.compact ? 3.4 : 4.2;
 
   @override
   void initState() {
@@ -2572,10 +2834,11 @@ class _ModeGlassIconState extends State<_ModeGlassIcon>
                       ? _CompletedGoldIcon(
                           icon: widget.icon,
                           shimmerT: shimmerT,
+                          size: _iconSize,
                         )
                       : Icon(
                           widget.icon,
-                          size: 21,
+                          size: _iconSize,
                           color: widget.color,
                         ),
                 ),
@@ -2746,6 +3009,8 @@ class _ModeVerticalBody extends StatelessWidget {
   final bool completed;
   final VoidCallback? onProgressTap;
   final double idlePhase;
+  final bool compact;
+  final Alignment slotAlignment;
 
   const _ModeVerticalBody({
     required this.icon,
@@ -2758,34 +3023,63 @@ class _ModeVerticalBody extends StatelessWidget {
     this.completed = false,
     this.onProgressTap,
     this.idlePhase = 0,
+    this.compact = false,
+    this.slotAlignment = Alignment.bottomCenter,
   });
 
   @override
   Widget build(BuildContext context) {
-    return Padding(
-      padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 10),
+    final hPad = compact ? 0.0 : 4.0;
+    final iconGap = compact ? 4.0 : 8.0;
+    final labelGap = compact ? 4.0 : 6.0;
+    final titleSize = compact ? 11.0 : 12.0;
+    final titleLines = compact ? 1 : 2;
+    final iconOuter = compact ? 38.0 : 50.0;
+
+    final body = Padding(
+      padding: EdgeInsets.symmetric(horizontal: hPad),
       child: Column(
-        mainAxisAlignment: MainAxisAlignment.center,
+        mainAxisSize: MainAxisSize.min,
         children: [
-          _ModeGlassIcon(
-            icon: icon,
-            color: accentColor,
-            progress: progress,
-            revealProgress: revealProgress,
-            idlePhase: idlePhase,
+          SizedBox(
+            width: iconOuter,
+            height: iconOuter,
+            child: Stack(
+              clipBehavior: Clip.none,
+              alignment: Alignment.center,
+              children: [
+                _ModeGlassIcon(
+                  icon: icon,
+                  color: accentColor,
+                  progress: progress,
+                  revealProgress: revealProgress,
+                  idlePhase: idlePhase,
+                  compact: compact,
+                ),
+                if (completed)
+                  Positioned.fill(
+                    child: IgnorePointer(
+                      child: _ChampagneSparkleOverlay(
+                        subtle: true,
+                        iconAnchored: true,
+                      ),
+                    ),
+                  ),
+              ],
+            ),
           ),
-          const SizedBox(height: 8),
+          SizedBox(height: iconGap),
           Text(
             title,
-            maxLines: 2,
+            maxLines: titleLines,
             textAlign: TextAlign.center,
             overflow: TextOverflow.ellipsis,
-            style: const TextStyle(
-              fontSize: 12,
-              height: 1.15,
+            style: TextStyle(
+              fontSize: titleSize,
+              height: 1.12,
               fontWeight: FontWeight.bold,
               color: Colors.white,
-              shadows: [
+              shadows: const [
                 Shadow(
                   color: Color(0x99000000),
                   blurRadius: 6,
@@ -2794,7 +3088,7 @@ class _ModeVerticalBody extends StatelessWidget {
               ],
             ),
           ),
-          const SizedBox(height: 6),
+          SizedBox(height: labelGap),
           _ModeProgressChip(
             label: progressLabel,
             color: progressColor,
@@ -2803,6 +3097,18 @@ class _ModeVerticalBody extends StatelessWidget {
           ),
         ],
       ),
+    );
+
+    if (!compact) {
+      return Padding(
+        padding: const EdgeInsets.symmetric(vertical: 10),
+        child: body,
+      );
+    }
+
+    return Align(
+      alignment: slotAlignment,
+      child: body,
     );
   }
 }
@@ -2817,6 +3123,7 @@ class _WordModeCell extends StatelessWidget {
   final VoidCallback? onPlay;
   final VoidCallback? onReview;
   final double revealProgress;
+  final Alignment slotAlignment;
 
   const _WordModeCell({
     required this.revealProgress,
@@ -2825,6 +3132,7 @@ class _WordModeCell extends StatelessWidget {
     required this.completed,
     required this.onPlay,
     required this.onReview,
+    this.slotAlignment = Alignment.bottomCenter,
   });
 
   @override
@@ -2844,30 +3152,28 @@ class _WordModeCell extends StatelessWidget {
             ? '$known/$safeTotal · 복습'
             : '$known/$safeTotal';
 
-    return SizedBox(
-      height: LearningHubChapterCard._modeBandHeight,
-      child: _LiquidGlassChip(
+    return _ModePanelSection(
+      accentColor: _accent,
+      completed: completed,
+      onTap: wordCount > 0 ? onPlay : null,
+      howItWorks: _ModeHowItWorksButton(
+        accent: _accent,
+        guideBuilder: (dismiss) =>
+            WordSwipeModeGuideCard(onDismiss: dismiss),
+      ),
+      child: _ModeVerticalBody(
+        compact: true,
+        icon: Icons.style_rounded,
         accentColor: _accent,
-        completed: completed,
+        progressColor: canReview ? const Color(0xFFE53935) : _progressColor,
+        progress: completed ? 1 : ratio,
         revealProgress: revealProgress,
-        onTap: wordCount > 0 ? onPlay : null,
-        howItWorks: _ModeHowItWorksButton(
-          accent: _accent,
-          guideBuilder: (dismiss) =>
-              WordSwipeModeGuideCard(onDismiss: dismiss),
-        ),
-        child: _ModeVerticalBody(
-          icon: Icons.style_rounded,
-          accentColor: _accent,
-          progressColor: canReview ? const Color(0xFFE53935) : _progressColor,
-          progress: completed ? 1 : ratio,
-          revealProgress: revealProgress,
-          title: '단어 스와이프',
-          progressLabel: progressLabel,
-          completed: completed,
-          onProgressTap: canReview ? onReview : null,
-          idlePhase: 0,
-        ),
+        title: '단어 스와이프',
+        progressLabel: progressLabel,
+        completed: completed,
+        onProgressTap: canReview ? onReview : null,
+        idlePhase: 0,
+        slotAlignment: slotAlignment,
       ),
     );
   }
@@ -2881,12 +3187,14 @@ class _SentenceModeCell extends StatelessWidget {
   final bool completed;
   final VoidCallback? onPlay;
   final double revealProgress;
+  final Alignment slotAlignment;
 
   const _SentenceModeCell({
     required this.revealProgress,
     required this.summary,
     required this.completed,
     required this.onPlay,
+    this.slotAlignment = Alignment.bottomCenter,
   });
 
   @override
@@ -2895,29 +3203,27 @@ class _SentenceModeCell extends StatelessWidget {
     final mastered = summary?.masteredCount ?? 0;
     final ratio = total <= 0 ? 0.0 : mastered / total;
 
-    return SizedBox(
-      height: LearningHubChapterCard._modeBandHeight,
-      child: _LiquidGlassChip(
+    return _ModePanelSection(
+      accentColor: _accent,
+      completed: completed,
+      onTap: total > 0 ? onPlay : null,
+      howItWorks: _ModeHowItWorksButton(
+        accent: _accent,
+        guideBuilder: (dismiss) =>
+            BasicSentenceModeGuideCard(onDismiss: dismiss),
+      ),
+      child: _ModeVerticalBody(
+        compact: true,
+        icon: Icons.view_carousel_rounded,
         accentColor: _accent,
-        completed: completed,
+        progressColor: _progressColor,
+        progress: completed ? 1 : ratio,
         revealProgress: revealProgress,
-        onTap: total > 0 ? onPlay : null,
-        howItWorks: _ModeHowItWorksButton(
-          accent: _accent,
-          guideBuilder: (dismiss) =>
-              BasicSentenceModeGuideCard(onDismiss: dismiss),
-        ),
-        child: _ModeVerticalBody(
-          icon: Icons.view_carousel_rounded,
-          accentColor: _accent,
-          progressColor: _progressColor,
-          progress: completed ? 1 : ratio,
-          revealProgress: revealProgress,
-          title: '문장 스피킹',
-          progressLabel: total == 0 ? '0/0' : '$mastered/$total',
-          completed: completed,
-          idlePhase: 2.1,
-        ),
+        title: '문장 스피킹',
+        progressLabel: total == 0 ? '0/0' : '$mastered/$total',
+        completed: completed,
+        idlePhase: 2.1,
+        slotAlignment: slotAlignment,
       ),
     );
   }
@@ -2930,12 +3236,14 @@ class _ScenarioModeCell extends StatefulWidget {
   final bool completed;
   final bool Function(String scenarioId) isCompleted;
   final double revealProgress;
+  final Alignment slotAlignment;
 
   const _ScenarioModeCell({
     required this.revealProgress,
     required this.scenarios,
     required this.completed,
     required this.isCompleted,
+    this.slotAlignment = Alignment.bottomCenter,
   });
 
   @override
@@ -2943,8 +3251,6 @@ class _ScenarioModeCell extends StatefulWidget {
 }
 
 class _ScenarioModeCellState extends State<_ScenarioModeCell> {
-  final _layerLink = LayerLink();
-
   @override
   Widget build(BuildContext context) {
     final total = widget.scenarios.length;
@@ -2952,39 +3258,39 @@ class _ScenarioModeCellState extends State<_ScenarioModeCell> {
         widget.scenarios.where((s) => widget.isCompleted(s.id)).length;
     final ratio = total <= 0 ? 0.0 : done / total;
 
-    return CompositedTransformTarget(
-      link: _layerLink,
-      child: SizedBox(
-        height: LearningHubChapterCard._modeBandHeight,
-        child: _LiquidGlassChip(
-          accentColor: _ScenarioModeCell._accent,
-          completed: widget.completed,
-          revealProgress: widget.revealProgress,
-          onTap: total == 0 ? null : () => _showScenarioPopup(context),
-          howItWorks: _ModeHowItWorksButton(
-            accent: _ScenarioModeCell._accent,
-            guideBuilder: (dismiss) =>
-                ScenarioModeGuideCard(onDismiss: dismiss),
-          ),
-          child: _ModeVerticalBody(
-            icon: Icons.forum_rounded,
-            accentColor: _ScenarioModeCell._accent,
-            progressColor: const Color(0xFF38BDF8),
-            progress: widget.completed ? 1 : ratio,
-            revealProgress: widget.revealProgress,
-            title: '시나리오 롤플레잉',
-            progressLabel: total == 0 ? '0/0' : '$done/$total',
-            completed: widget.completed,
-            idlePhase: 4.2,
-          ),
-        ),
+    return _ModePanelSection(
+      accentColor: _ScenarioModeCell._accent,
+      completed: widget.completed,
+      onTap: total == 0 ? null : () => _showScenarioPopup(context),
+      howItWorks: _ModeHowItWorksButton(
+        accent: _ScenarioModeCell._accent,
+        guideBuilder: (dismiss) =>
+            ScenarioModeGuideCard(onDismiss: dismiss),
+      ),
+      child: _ModeVerticalBody(
+        compact: true,
+        icon: Icons.forum_rounded,
+        accentColor: _ScenarioModeCell._accent,
+        progressColor: const Color(0xFF38BDF8),
+        progress: widget.completed ? 1 : ratio,
+        revealProgress: widget.revealProgress,
+        title: '시나리오 롤플레잉',
+        progressLabel: total == 0 ? '0/0' : '$done/$total',
+        completed: widget.completed,
+        idlePhase: 4.2,
+        slotAlignment: widget.slotAlignment,
       ),
     );
   }
 
   void _showScenarioPopup(BuildContext context) {
-    final overlay = Overlay.of(context);
+    final resolved = _popupAnchorFor(context);
+    if (resolved == null) return;
+
+    final overlay = resolved.overlay;
     final parent = context;
+    final anchor = resolved.anchor;
+    final anchorSize = resolved.size;
     late OverlayEntry entry;
 
     void closeOverlay() {
@@ -2994,7 +3300,8 @@ class _ScenarioModeCellState extends State<_ScenarioModeCell> {
     entry = OverlayEntry(
       builder: (overlayContext) {
         return _ScenarioPickerOverlay(
-          layerLink: _layerLink,
+          anchor: anchor,
+          anchorSize: anchorSize,
           scenarios: widget.scenarios,
           isCompleted: widget.isCompleted,
           onDismiss: closeOverlay,
@@ -3050,12 +3357,12 @@ class _ModeHowItWorksButtonState extends State<_ModeHowItWorksButton> {
       return;
     }
 
-    final box = context.findRenderObject() as RenderBox?;
-    if (box == null || !box.hasSize) return;
-    final origin = box.localToGlobal(Offset.zero);
-    final buttonSize = box.size;
+    final resolved = _popupAnchorFor(context);
+    if (resolved == null) return;
+    final origin = resolved.anchor;
+    final buttonSize = resolved.size;
 
-    final overlay = Overlay.of(context);
+    final overlay = resolved.overlay;
     late OverlayEntry entry;
     entry = OverlayEntry(
       builder: (overlayContext) {
@@ -3084,32 +3391,38 @@ class _ModeHowItWorksButtonState extends State<_ModeHowItWorksButton> {
       child: InkWell(
         onTap: _showOverlay,
         customBorder: const CircleBorder(),
-        child: Container(
+        child: SizedBox(
           width: 22,
           height: 22,
-          alignment: Alignment.center,
-          decoration: BoxDecoration(
-            color: Colors.black.withValues(alpha: 0.48),
-            shape: BoxShape.circle,
-            border: Border.all(
-              color: Colors.white.withValues(alpha: 0.78),
-              width: 1,
-            ),
-            boxShadow: [
-              BoxShadow(
-                color: widget.accent.withValues(alpha: 0.28),
-                blurRadius: 6,
-                offset: const Offset(0, 1),
+          child: Center(
+            child: Container(
+              width: 16,
+              height: 16,
+              alignment: Alignment.center,
+              decoration: BoxDecoration(
+                color: Colors.black.withValues(alpha: 0.48),
+                shape: BoxShape.circle,
+                border: Border.all(
+                  color: Colors.white.withValues(alpha: 0.78),
+                  width: 0.9,
+                ),
+                boxShadow: [
+                  BoxShadow(
+                    color: widget.accent.withValues(alpha: 0.24),
+                    blurRadius: 4,
+                    offset: const Offset(0, 1),
+                  ),
+                ],
               ),
-            ],
-          ),
-          child: const Text(
-            '!',
-            style: TextStyle(
-              fontSize: 13,
-              fontWeight: FontWeight.w900,
-              color: Colors.white,
-              height: 1,
+              child: const Text(
+                '!',
+                style: TextStyle(
+                  fontSize: 10,
+                  fontWeight: FontWeight.w900,
+                  color: Colors.white,
+                  height: 1,
+                ),
+              ),
             ),
           ),
         ),
@@ -3169,12 +3482,17 @@ class _ModeHowItWorksOverlayState extends State<_ModeHowItWorksOverlay>
     final pad = MediaQuery.paddingOf(context);
     final popupWidth = (size.width - 28).clamp(280.0, 360.0);
     final maxHeight = size.height * 0.62;
+    final bottomObstruction =
+        pad.bottom + FloatingIslandNavBar.reservedHeight(context);
     final spaceAbove = widget.anchor.dy - pad.top - 12;
     final spaceBelow = size.height -
-        pad.bottom -
+        bottomObstruction -
         (widget.anchor.dy + widget.anchorSize.height) -
         12;
-    final showAbove = spaceAbove >= 200 || spaceAbove >= spaceBelow;
+    final nearBottom = widget.anchor.dy + widget.anchorSize.height >
+        size.height - bottomObstruction - maxHeight * 0.35;
+    final showAbove =
+        nearBottom || (spaceAbove >= 200 && spaceAbove >= spaceBelow);
     var left = widget.anchor.dx + widget.anchorSize.width / 2 - popupWidth / 2;
     left = left.clamp(14.0, size.width - popupWidth - 14.0);
 
@@ -3228,15 +3546,34 @@ class _ModeHowItWorksOverlayState extends State<_ModeHowItWorksOverlay>
   }
 }
 
+/// 팝업 앵커 — root overlay 좌표계 기준.
+/// 학습 탭 ShellRoute 등 중첩 Navigator·크롬 웹에서 global/overlay 좌표가
+/// 어긋나 팝업이 화면 하단에 붙는 문제를 막는다.
+({Offset anchor, Size size, OverlayState overlay})? _popupAnchorFor(
+  BuildContext context,
+) {
+  final box = context.findRenderObject() as RenderBox?;
+  if (box == null || !box.hasSize) return null;
+
+  final overlay = Overlay.of(context, rootOverlay: true);
+  final overlayBox = overlay.context.findRenderObject() as RenderBox?;
+  final anchor = overlayBox != null
+      ? box.localToGlobal(Offset.zero, ancestor: overlayBox)
+      : box.localToGlobal(Offset.zero);
+  return (anchor: anchor, size: box.size, overlay: overlay);
+}
+
 class _ScenarioPickerOverlay extends StatefulWidget {
-  final LayerLink layerLink;
+  final Offset anchor;
+  final Size anchorSize;
   final List<Scenario> scenarios;
   final bool Function(String scenarioId) isCompleted;
   final VoidCallback onDismiss;
   final ValueChanged<Scenario> onSelect;
 
   const _ScenarioPickerOverlay({
-    required this.layerLink,
+    required this.anchor,
+    required this.anchorSize,
     required this.scenarios,
     required this.isCompleted,
     required this.onDismiss,
@@ -3279,6 +3616,29 @@ class _ScenarioPickerOverlayState extends State<_ScenarioPickerOverlay>
 
   @override
   Widget build(BuildContext context) {
+    final size = MediaQuery.sizeOf(context);
+    final pad = MediaQuery.paddingOf(context);
+    const popupWidth = _popupWidth;
+    final estimatedHeight = math.min(
+      widget.scenarios.length * 48.0 + 56,
+      size.height * 0.45,
+    );
+    final bottomObstruction =
+        pad.bottom + FloatingIslandNavBar.reservedHeight(context);
+    final spaceAbove = widget.anchor.dy - pad.top - 12;
+    final spaceBelow = size.height -
+        bottomObstruction -
+        (widget.anchor.dy + widget.anchorSize.height) -
+        12;
+    // 아래 공간이 충분할 때만 아래로 — 네비·하단 근처면 위로 연다.
+    final nearBottom = widget.anchor.dy + widget.anchorSize.height >
+        size.height - bottomObstruction - estimatedHeight * 0.4;
+    final showBelow = !nearBottom &&
+        (spaceBelow >= estimatedHeight || spaceBelow >= spaceAbove);
+
+    var left = widget.anchor.dx + widget.anchorSize.width - popupWidth;
+    left = left.clamp(14.0, size.width - popupWidth - 14.0);
+
     final curved = CurvedAnimation(
       parent: _entry,
       curve: Curves.easeOutBack,
@@ -3299,25 +3659,37 @@ class _ScenarioPickerOverlayState extends State<_ScenarioPickerOverlay>
             ),
           ),
         ),
-        CompositedTransformFollower(
-          link: widget.layerLink,
-          showWhenUnlinked: false,
-          targetAnchor: Alignment.topRight,
-          followerAnchor: Alignment.bottomRight,
-          offset: const Offset(0, -10),
+        Positioned(
+          left: left,
+          width: popupWidth,
+          top: showBelow
+              ? widget.anchor.dy + widget.anchorSize.height + 8
+              : null,
+          bottom: showBelow
+              ? null
+              : size.height - widget.anchor.dy + 8,
           child: FadeTransition(
             opacity: _entry,
             child: ScaleTransition(
               scale: Tween<double>(begin: 0.86, end: 1).animate(curved),
-              alignment: Alignment.bottomRight,
+              alignment: showBelow
+                  ? Alignment.topRight
+                  : Alignment.bottomRight,
               child: Material(
                 color: Colors.transparent,
-                child: SizedBox(
-                  width: _popupWidth,
-                  child: _ScenarioPickerPanel(
-                    scenarios: widget.scenarios,
-                    isCompleted: widget.isCompleted,
-                    onSelect: widget.onSelect,
+                child: ConstrainedBox(
+                  constraints: BoxConstraints(
+                    maxHeight: math.min(
+                      showBelow ? spaceBelow - 8 : spaceAbove - 8,
+                      size.height * 0.52,
+                    ),
+                  ),
+                  child: SingleChildScrollView(
+                    child: _ScenarioPickerPanel(
+                      scenarios: widget.scenarios,
+                      isCompleted: widget.isCompleted,
+                      onSelect: widget.onSelect,
+                    ),
                   ),
                 ),
               ),

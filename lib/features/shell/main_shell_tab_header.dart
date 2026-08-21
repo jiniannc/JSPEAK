@@ -39,11 +39,9 @@ class _MainShellTabHeaderState extends ConsumerState<MainShellTabHeader>
     with TickerProviderStateMixin {
   static const _switchDuration = Duration(milliseconds: 480);
   static const _trailingFadeDuration = Duration(milliseconds: 420);
-  static const _shimmerDuration = Duration(milliseconds: 340);
 
   late final AnimationController _controller;
   late final AnimationController _trailingFadeController;
-  late final AnimationController _shimmerController;
   late final Animation<double> _trailingFade;
   int? _outgoingTabIndex;
   int _lastTabIndex = -1;
@@ -64,17 +62,12 @@ class _MainShellTabHeaderState extends ConsumerState<MainShellTabHeader>
       curve: Curves.easeInOutCubic,
       reverseCurve: Curves.easeInOutCubic,
     );
-    _shimmerController = AnimationController(
-      vsync: this,
-      duration: _shimmerDuration,
-    );
     _controller.addStatusListener((status) {
       if (status == AnimationStatus.completed && _animating) {
         setState(() {
           _animating = false;
           _outgoingTabIndex = null;
         });
-        _shimmerController.forward(from: 0);
       }
     });
     _lastTabIndex = widget.tabIndex;
@@ -89,7 +82,6 @@ class _MainShellTabHeaderState extends ConsumerState<MainShellTabHeader>
       final previousTab = _lastTabIndex;
       _outgoingTabIndex = previousTab;
       _animating = true;
-      _shimmerController.value = 0;
 
       if (_involvesMyPageTransition(previousTab, widget.tabIndex)) {
         if (widget.tabIndex == MainShellTabHeader.kMyPageTabIndex) {
@@ -122,7 +114,6 @@ class _MainShellTabHeaderState extends ConsumerState<MainShellTabHeader>
   void dispose() {
     _controller.dispose();
     _trailingFadeController.dispose();
-    _shimmerController.dispose();
     super.dispose();
   }
 
@@ -341,9 +332,6 @@ class _MainShellTabHeaderState extends ConsumerState<MainShellTabHeader>
 
     final trailingTab = _trailingTabIndexForDisplay();
     final mountTrailing = _shouldMountTrailingLayer();
-    final titleTrailingReserve = widget.tabIndex == MainShellTabHeader.kMyPageTabIndex
-        ? 0.0
-        : _trailingSlotWidthFor(widget.tabIndex);
 
     // 타이틀만 크로스페이드하고, 언어 스위치·즐겨찾기는 Stack 최상단에 고정.
     return SizedBox(
@@ -353,21 +341,6 @@ class _MainShellTabHeaderState extends ConsumerState<MainShellTabHeader>
         clipBehavior: Clip.none,
         children: [
           buildTitleLayers(progressT),
-          if (!_animating && _shimmerController.isAnimating)
-            Positioned(
-              top: AppHeader.topInset,
-              left: inset,
-              right: inset + titleTrailingReserve,
-              height: AppHeader.barContentHeight,
-              child: IgnorePointer(
-                child: ClipRRect(
-                  borderRadius: BorderRadius.circular(12),
-                  child: AppHeaderShimmerOverlay(
-                    animation: _shimmerController,
-                  ),
-                ),
-              ),
-            ),
           if (mountTrailing && trailingTab != null)
             Positioned(
               top: AppHeader.topInset,
@@ -397,7 +370,6 @@ class _MainShellTabHeaderState extends ConsumerState<MainShellTabHeader>
       animation: Listenable.merge([
         _controller,
         _trailingFadeController,
-        _shimmerController,
       ]),
       builder: (context, _) {
         final progressT = _animating ? _controller.value : 1.0;

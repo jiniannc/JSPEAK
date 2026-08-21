@@ -3,6 +3,7 @@ import 'dart:ui';
 
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../../app/learning_tour_providers.dart';
@@ -10,6 +11,7 @@ import '../../../app/providers.dart';
 import '../../../app/speech_providers.dart';
 import '../../../core/config/active5_layout.dart';
 import '../../../core/services/audio_prefetch.dart';
+import '../../../core/theme/app_theme.dart';
 import '../../../core/theme/language_palette.dart';
 import '../../../data/models/sentence.dart';
 import '../../../features/basic_sentence/widgets/in_flight_briefing_tour.dart';
@@ -21,15 +23,15 @@ const _kInactiveOpacity = 0.62;
 
 /// 드래그 포커스 모드 — 스냅 타겟 외 영역 딤 강도.
 /// 3D 휠 스텝 간격(카드 높이 아님) — 슬롯 중심 간 거리만 결정한다.
-/// `_NeighborPreview`가 영문 2줄 + 한글 1줄로 높이가 상한선(bound)까지만
+/// `_NeighborPreview`가 한국어 2줄로 높이가 상한선(bound)까지만
 /// 늘어나도록(`maxLines`) 고정해 두었으므로, 이 값은 그 상한 높이보다
 /// 살짝 작게만 잡아도 이웃 카드끼리 심하게 겹치지 않는다.
-const _kWheelItemExtent = 60.0;
+const _kWheelItemExtent = 50.0;
 
 /// 동적 카드가 슬롯 밖으로 늘어날 수 있는 최대 높이(안전 상한). 텍스트가
 /// `maxLines`로 제한돼 있어 실제 콘텐츠 높이는 이 값을 넘지 않으므로,
 /// RenderFlex 오버플로우 없이 항상 이 상한 안에서만 그려진다.
-const _kMaxCardOverflowHeight = 112.0;
+const _kMaxCardOverflowHeight = 120.0;
 
 class SentenceWheelView extends ConsumerStatefulWidget {
   final List<Sentence> sentences;
@@ -38,6 +40,10 @@ class SentenceWheelView extends ConsumerStatefulWidget {
   final VoidCallback? onCompleted;
   final BuildContext? tourOverlayContext;
 
+  /// 상단 글래스 헤더 등 이 위젯 위에 겹치는 크롬 높이 — 전체 화면
+  /// 중앙(약간 위) 정렬 계산에 사용한다.
+  final double topChromeHeight;
+
   const SentenceWheelView({
     super.key,
     required this.sentences,
@@ -45,6 +51,7 @@ class SentenceWheelView extends ConsumerStatefulWidget {
     this.onIndexChanged,
     this.onCompleted,
     this.tourOverlayContext,
+    this.topChromeHeight = 84,
   });
 
   @override
@@ -57,6 +64,7 @@ class _SentenceWheelViewState extends ConsumerState<SentenceWheelView>
   late AnimationController _swipeHintController;
   late AnimationController _expandController;
   late AnimationController _snapShimmerController;
+  late AnimationController _navArrowPop;
   late AudioController _audioController;
   late SpeechPracticeController _speechPracticeController;
 
@@ -67,6 +75,8 @@ class _SentenceWheelViewState extends ConsumerState<SentenceWheelView>
   bool _isAnimatingSwap = false;
   bool _isDragging = false;
   bool _tourScheduled = false;
+  int? _dragHapticAnchorIndex;
+  double _navArrowDirection = 0;
 
   final LearningTourTargetKeys _tourKeys = LearningTourTargetKeys();
 
@@ -74,7 +84,7 @@ class _SentenceWheelViewState extends ConsumerState<SentenceWheelView>
   static const _itemExtent = _kWheelItemExtent;
   static const _diameterRatio = 2.5;
   static const _perspective = 0.0015;
-  static const _squeeze = 0.72;
+  static const _squeeze = 0.76;
 
   /// 반대쪽 끝에서 더는 넘어갈 곳이 없을 때 주는 저항 배율.
   static const _kEdgeResistance = 0.35;
@@ -96,6 +106,26 @@ class _SentenceWheelViewState extends ConsumerState<SentenceWheelView>
   /// 정착 후 콤팩트 요약 → 풀 학습 패널로 펼쳐지는 데 걸리는 시간 — 릴리즈
   /// 스냅과 동일한 타임라인으로 함께 움직여야 하므로 300ms로 동기화.
   static const _kUnfoldDuration = Duration(milliseconds: 300);
+
+  /// 전체 화면(상·하단 세이프 영역 포함) 기준 포커스 Y — 0.5보다 작을수록 위.
+  static const _kVisualCenterFraction = 0.32;
+
+  /// 위·아래 네비 화살표가 있을 때 카드만 시각 중심에 오도록 보정.
+  static const _kNavChromeBias = 34.0;
+
+  /// 메인 카드·3D 휠을 추가로 위로 올리는 보정.
+  static const _kFocusLiftBias = 52.0;
+  /// focusAlignment 클램프와 별도로, 전체 휠·카드 블록을 추가로 위로 올림.
+  static const _kFocusExtraLift = 30.0;
+
+  /// 스와이프 코치를 메인 카드 위에 띄울 때 카드 상단과의 간격.
+  static const _kSwipeCoachGapAboveCard = 10.0;
+
+  /// 위 네비 화살표 + spacing 높이(스와이프 코치 Y 계산용).
+  static const _kUpNavBlockHeight = 46.0;
+
+  /// 스와이프 코치 블록 대략 높이의 절반.
+  static const _kSwipeCoachHalfHeight = 48.0;
 
   @override
   void initState() {
@@ -124,6 +154,10 @@ class _SentenceWheelViewState extends ConsumerState<SentenceWheelView>
     _snapShimmerController = AnimationController(
       vsync: this,
       duration: const Duration(milliseconds: 1100),
+    );
+    _navArrowPop = AnimationController(
+      vsync: this,
+      duration: const Duration(milliseconds: 300),
     );
     WidgetsBinding.instance.addPostFrameCallback((_) {
       widget.onIndexChanged?.call(_currentIndex);
@@ -199,6 +233,7 @@ class _SentenceWheelViewState extends ConsumerState<SentenceWheelView>
     _swipeHintController.dispose();
     _expandController.dispose();
     _snapShimmerController.dispose();
+    _navArrowPop.dispose();
     _controller.dispose();
     super.dispose();
   }
@@ -207,6 +242,12 @@ class _SentenceWheelViewState extends ConsumerState<SentenceWheelView>
     if (!_hideSwipeHint) {
       setState(() => _hideSwipeHint = true);
     }
+  }
+
+  void _maybeHapticForSnapIndex(int index) {
+    if (_dragHapticAnchorIndex == index) return;
+    _dragHapticAnchorIndex = index;
+    HapticFeedback.lightImpact();
   }
 
   bool get _isLastCard =>
@@ -242,11 +283,12 @@ class _SentenceWheelViewState extends ConsumerState<SentenceWheelView>
   /// 으로 동작한다.
   Future<void> _settleTo(int targetIndex, {Duration? settleDuration}) async {
     if (_isAnimatingSwap) return;
-    _isAnimatingSwap = true;
+    setState(() => _isAnimatingSwap = true);
     _onUserSwiped();
 
     final changed = targetIndex != _currentIndex;
     if (changed) {
+      _maybeHapticForSnapIndex(targetIndex);
       _audioController.stop();
       _speechPracticeController.reset();
       setState(() => _currentIndex = targetIndex);
@@ -267,9 +309,15 @@ class _SentenceWheelViewState extends ConsumerState<SentenceWheelView>
       curve: Curves.easeOutCubic,
     );
 
-    await Future.wait([wheelFuture, expandFuture]);
-    if (!mounted) return;
-    _isAnimatingSwap = false;
+    try {
+      await Future.wait([wheelFuture, expandFuture]);
+    } finally {
+      if (!mounted) return;
+      setState(() {
+        _dragHapticAnchorIndex = targetIndex;
+        _isAnimatingSwap = false;
+      });
+    }
   }
 
   /// 이웃 카드 탭 — 드래그 커밋과 동일한 정착 연출로 이동해 손맛을 통일한다.
@@ -280,8 +328,118 @@ class _SentenceWheelViewState extends ConsumerState<SentenceWheelView>
     _settleTo(clamped);
   }
 
+  /// 위·아래 네비 — 카드가 사라지지 않고 슬라이드·스케일로 이어지며 정착.
+  Future<void> _navigateViaArrow(int targetIndex) async {
+    if (_isAnimatingSwap) return;
+    final clamped = targetIndex.clamp(0, widget.sentences.length - 1);
+    if (clamped == _currentIndex) return;
+
+    _navArrowDirection = clamped > _currentIndex ? -1.0 : 1.0;
+    HapticFeedback.mediumImpact();
+
+    setState(() => _isAnimatingSwap = true);
+    _onUserSwiped();
+
+    _audioController.stop();
+    _speechPracticeController.reset();
+    _navArrowPop.value = 0;
+
+    const exitEnd = 0.42;
+    const exitMs = 130;
+
+    await Future.wait([
+      _navArrowPop.animateTo(
+        exitEnd,
+        duration: const Duration(milliseconds: exitMs),
+        curve: Curves.easeInOutCubic,
+      ),
+      _expandController.animateTo(
+        0.93,
+        duration: const Duration(milliseconds: exitMs),
+        curve: Curves.easeInOutCubic,
+      ),
+    ]);
+    if (!mounted) return;
+
+    setState(() => _currentIndex = clamped);
+    widget.onIndexChanged?.call(clamped);
+    AudioPrefetch.around(widget.sentences, clamped);
+    _dragHapticAnchorIndex = null;
+    _maybeHapticForSnapIndex(clamped);
+
+    final wheelFuture = _controller.hasClients
+        ? _controller.animateToItem(
+            clamped,
+            duration: const Duration(milliseconds: 280),
+            curve: Curves.easeOutCubic,
+          )
+        : Future<void>.value();
+    final enterFuture = _navArrowPop.animateTo(
+      1.0,
+      duration: const Duration(milliseconds: 320),
+      curve: Curves.easeOutCubic,
+    );
+    final expandFuture = _expandController.animateTo(
+      1,
+      duration: const Duration(milliseconds: 320),
+      curve: Curves.easeOutCubic,
+    );
+
+    try {
+      await Future.wait([wheelFuture, enterFuture, expandFuture]);
+    } finally {
+      if (!mounted) return;
+      _navArrowPop.value = 0;
+      setState(() {
+        _dragHapticAnchorIndex = clamped;
+        _isAnimatingSwap = false;
+      });
+    }
+  }
+
+  Widget _wrapNavPopCard(Widget child) {
+    return AnimatedBuilder(
+      animation: _navArrowPop,
+      child: child,
+      builder: (context, child) {
+        final popT = _navArrowPop.value;
+        if (popT <= 0.001 && !_isAnimatingSwap) return child!;
+
+        const exitEnd = 0.42;
+        final double slide;
+        final double scale;
+
+        if (popT <= exitEnd) {
+          final exitT = popT / exitEnd;
+          final eased = Curves.easeInOutCubic.transform(exitT);
+          slide = -_navArrowDirection * 12.0 * eased;
+          scale = 1.0 - 0.035 * eased;
+        } else {
+          final enterT = (popT - exitEnd) / (1.0 - exitEnd);
+          final eased = Curves.easeOutCubic.transform(enterT);
+          slide = _navArrowDirection * 14.0 * (1.0 - eased);
+          if (enterT < 0.58) {
+            scale = 0.965 + (1.045 - 0.965) * (enterT / 0.58);
+          } else {
+            scale = 1.045 - (1.045 - 1.0) * ((enterT - 0.58) / 0.42);
+          }
+        }
+
+        return Transform.translate(
+          offset: Offset(0, slide),
+          child: Transform.scale(
+            alignment: Alignment.center,
+            scale: scale,
+            child: child,
+          ),
+        );
+      },
+    );
+  }
+
   void _onMainDragStart(DragStartDetails details) {
     if (_isAnimatingSwap) return;
+    _dragHapticAnchorIndex = _currentIndex;
     setState(() => _isDragging = true);
     _snapShimmerController.repeat();
     // 손대는 순간 순삭이 아니라, 100ms easeInCubic 타임라인을 타고 '찰싹'
@@ -313,6 +471,10 @@ class _SentenceWheelViewState extends ConsumerState<SentenceWheelView>
       final maxOffset = (widget.sentences.length - 1) * _itemExtent;
       final nextOffset = (_controller.offset - delta).clamp(0.0, maxOffset);
       _controller.jumpTo(nextOffset);
+      final nearestIndex = (nextOffset / _itemExtent)
+          .round()
+          .clamp(0, widget.sentences.length - 1);
+      _maybeHapticForSnapIndex(nearestIndex);
     }
   }
 
@@ -367,6 +529,44 @@ class _SentenceWheelViewState extends ConsumerState<SentenceWheelView>
     _settleTo(nearestIndex);
   }
 
+  /// 헤더 아래 위젯 영역 기준 — 메인 카드·3D 휠을 함께 올릴 Align 오프셋.
+  double _focusVerticalShift(BuildContext context, double maxHeight) {
+    if (maxHeight <= 0) return 0;
+
+    final media = MediaQuery.of(context);
+    final screenH = media.size.height;
+    final safeTop = media.padding.top;
+    final safeBottom = media.padding.bottom;
+    final viewportH = screenH - safeTop - safeBottom;
+    final globalTargetY =
+        safeTop + viewportH * _kVisualCenterFraction;
+    final widgetTop = safeTop + widget.topChromeHeight;
+    final localTargetY = globalTargetY - widgetTop;
+    final geometricCenter = maxHeight / 2;
+    final navBias =
+        widget.sentences.length > 1 ? _kNavChromeBias : 0.0;
+    return (geometricCenter - localTargetY + navBias + _kFocusLiftBias)
+        .clamp(0.0, maxHeight * 0.38);
+  }
+
+  Alignment _focusAlignment(double maxHeight, double shiftUp) {
+    if (maxHeight <= 0) return Alignment.center;
+    final half = maxHeight / 2;
+    final alignY = -(shiftUp / half).clamp(0.0, 0.52);
+    return Alignment(0, alignY);
+  }
+
+  /// 세로 드래그는 3D 휠·메인 카드에만 적용 — 네비 화살표 탭과 경합하지 않게.
+  Widget _wrapVerticalDrag(Widget child) {
+    return GestureDetector(
+      behavior: HitTestBehavior.opaque,
+      onVerticalDragStart: _onMainDragStart,
+      onVerticalDragUpdate: _onMainDragUpdate,
+      onVerticalDragEnd: _onMainDragEnd,
+      child: child,
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     ref.listen<int>(learningTourReplaySignalProvider, (prev, next) {
@@ -396,131 +596,204 @@ class _SentenceWheelViewState extends ConsumerState<SentenceWheelView>
             .clamp(300.0, 480.0);
         final maxFocusWidth = constraints.maxWidth - cardSideInset * 2;
         final isLastCard = _currentIndex >= widget.sentences.length - 1;
+        final hasPrev = _currentIndex > 0;
+        final hasNext = _currentIndex < widget.sentences.length - 1;
+        final focusShiftUp =
+            _focusVerticalShift(context, constraints.maxHeight);
+        final focusAlignment =
+            _focusAlignment(constraints.maxHeight, focusShiftUp);
+        final showNavArrows = widget.sentences.length > 1 && !_isDragging;
+        final showSwipeCoach =
+            !_hideSwipeHint && widget.sentences.length > 1 && hasNext;
+        final swipeCoachLift = showSwipeCoach
+            ? maxFocusHeight * 0.5 +
+                (widget.sentences.length > 1 ? _kUpNavBlockHeight : 0) +
+                _kSwipeCoachGapAboveCard +
+                _kSwipeCoachHalfHeight
+            : 0.0;
 
-        // 최상위 GestureDetector가 배경 휠·딤·메인 카드·버튼을 모두 조상으로
-        // 감싸므로, 카드 내부(빈 공간·텍스트 위)를 터치해도 100% 드래그가
-        // 인식된다. 버튼 탭은 (움직임이 없으면) 여전히 탭 인식기가 이긴다.
-        return GestureDetector(
-          behavior: HitTestBehavior.opaque,
-          onVerticalDragStart: _onMainDragStart,
-          onVerticalDragUpdate: _onMainDragUpdate,
-          onVerticalDragEnd: _onMainDragEnd,
-          child: Stack(
-            clipBehavior: Clip.none,
-            alignment: Alignment.center,
-            children: [
-              // 레이어 1: 단일 3D 휠 — 모든 슬롯(중앙 포함)이 동일한 요약 카드
-              // 규격으로 정렬되어 손가락 delta와 1:1로 함께 구른다. 어둡게
-              // 톤다운하는 딤 레이어 없이 항상 밝고 또렷하게 유지한다.
-              Positioned.fill(
-                child: ShaderMask(
-                  blendMode: BlendMode.dstIn,
-                  shaderCallback: (Rect bounds) =>
-                      _wheelFadeShader(bounds, maxFocusHeight),
-                  child: ListWheelScrollView.useDelegate(
-                    controller: _controller,
-                    itemExtent: _itemExtent,
-                    perspective: _perspective,
-                    diameterRatio: _diameterRatio,
-                    squeeze: _squeeze,
-                    clipBehavior: Clip.none,
-                    useMagnifier: false,
-                    physics: const NeverScrollableScrollPhysics(),
-                    childDelegate: ListWheelChildBuilderDelegate(
-                      childCount: widget.sentences.length,
-                      builder: (context, index) {
-                        return _WheelSlotItem(
-                          index: index,
-                          currentIndex: _currentIndex,
-                          horizontalPadding: horizontalPad,
-                          cardSideInset: cardSideInset,
-                          sentence: widget.sentences[index],
-                          onTap: () => _navigateTo(index),
-                          controller: _controller,
-                          itemExtent: _itemExtent,
-                          centerExpand: _expandController,
-                          accent: accent,
-                          isDragging: _isDragging,
-                          shimmerAnimation: _snapShimmerController,
-                        );
-                      },
-                    ),
-                  ),
-                ),
-              ),
-
-              // 레이어 2: 펼쳐진 중앙 카드 + 스와이프 코치 — 투어 5단계 컷홀 타겟.
-              Align(
-                alignment: Alignment.center,
-                child: KeyedSubtree(
-                  key: _tourKeys.swipeKey,
-                  child: Column(
-                    mainAxisSize: MainAxisSize.min,
-                    children: [
-                      if (!_hideSwipeHint && widget.sentences.length > 1)
-                        Padding(
-                          padding: const EdgeInsets.only(bottom: 10),
-                          child: _WheelSwipeCoach(
-                            animation: _swipeHintController,
-                            accent: accent,
-                            hasNext:
-                                _currentIndex < widget.sentences.length - 1,
+        // 세로 드래그는 휠·메인 카드에만 걸어, 네비 화살표는 한 번 탭으로 이동.
+        // 휠과 메인 카드는 동일 Align 한 번만 적용 — 휠에만 translate를 주면
+        // 후보 카드만 위로 쏠린다.
+        return Stack(
+          clipBehavior: Clip.none,
+          alignment: Alignment.center,
+          children: [
+            Transform.translate(
+              offset: const Offset(0, -_kFocusExtraLift),
+              child: Align(
+                alignment: focusAlignment,
+                child: SizedBox(
+                width: constraints.maxWidth,
+                height: constraints.maxHeight,
+                child: Stack(
+                  clipBehavior: Clip.none,
+                  alignment: Alignment.center,
+                  children: [
+                    // 레이어 1: 3D 휠(후보 카드)
+                    Positioned.fill(
+                      child: _wrapVerticalDrag(
+                        ShaderMask(
+                          blendMode: BlendMode.dstIn,
+                          shaderCallback: (Rect bounds) =>
+                              _wheelFadeShader(bounds, maxFocusHeight),
+                          child: ListWheelScrollView.useDelegate(
+                            controller: _controller,
+                            itemExtent: _itemExtent,
+                            perspective: _perspective,
+                            diameterRatio: _diameterRatio,
+                            squeeze: _squeeze,
+                            clipBehavior: Clip.none,
+                            useMagnifier: false,
+                            physics: const NeverScrollableScrollPhysics(),
+                            childDelegate: ListWheelChildBuilderDelegate(
+                              childCount: widget.sentences.length,
+                              builder: (context, index) {
+                                return _WheelSlotItem(
+                                  index: index,
+                                  currentIndex: _currentIndex,
+                                  horizontalPadding: horizontalPad,
+                                  cardSideInset: cardSideInset,
+                                  sentence: widget.sentences[index],
+                                  onTap: () => _navigateTo(index),
+                                  controller: _controller,
+                                  itemExtent: _itemExtent,
+                                  centerExpand: _expandController,
+                                  accent: accent,
+                                  isDragging: _isDragging,
+                                  shimmerAnimation: _snapShimmerController,
+                                );
+                              },
+                            ),
                           ),
                         ),
-                      ConstrainedBox(
-                        constraints: BoxConstraints(
-                          maxWidth: maxFocusWidth,
-                          maxHeight: maxFocusHeight,
-                        ),
-                        child: _CenterFocusCard(
-                          key: ValueKey(widget.sentences[_currentIndex].id),
-                          sentence: widget.sentences[_currentIndex],
-                          displayIndex: _currentIndex + 1,
-                          totalCount: widget.sentences.length,
-                          horizontalPadding: 0,
-                          accent: accent,
-                          expand: _expandController,
-                          fullHeight: maxFocusHeight,
-                          tourKeys: _tourKeys,
-                          onNextSentence: _currentIndex <
-                                  widget.sentences.length - 1
-                              ? () => _settleTo(_currentIndex + 1)
-                              : null,
-                        ),
                       ),
-                    ],
-                  ),
-                ),
-              ),
-
-              // 마지막 카드 하단 — Shimmer 글래스 완료 칩.
-              if (!_hideCompletionHint &&
-                  isLastCard &&
-                  widget.onCompleted != null)
-                Positioned(
-                  bottom: 48,
-                  left: horizontalPad,
-                  right: horizontalPad,
-                  child: Align(
-                    alignment: Alignment.bottomCenter,
-                    child: _CompletionGlassChip(
-                      onTap: _onCompletionChipTap,
                     ),
-                  ),
-                ),
 
+                    // 레이어 2: 메인 카드·네비(중심) + 스와이프 코치(카드 위 오버레이).
+                    KeyedSubtree(
+                      key: _tourKeys.swipeKey,
+                      child: Stack(
+                        clipBehavior: Clip.none,
+                        alignment: Alignment.center,
+                        children: [
+                          Column(
+                            mainAxisSize: MainAxisSize.min,
+                            children: [
+                              if (widget.sentences.length > 1) ...[
+                                AnimatedOpacity(
+                                  opacity: showNavArrows ? 1.0 : 0.0,
+                                  duration: const Duration(milliseconds: 180),
+                                  curve: Curves.easeOut,
+                                  child: IgnorePointer(
+                                    ignoring: !showNavArrows,
+                                    child: _WheelNavArrow(
+                                      upward: true,
+                                      enabled: hasPrev && !_isAnimatingSwap,
+                                      accent: accent,
+                                      onTap: hasPrev
+                                          ? () => _navigateViaArrow(
+                                                _currentIndex - 1,
+                                              )
+                                          : null,
+                                    ),
+                                  ),
+                                ),
+                                const SizedBox(height: 10),
+                              ],
+                              _wrapVerticalDrag(
+                                _wrapNavPopCard(
+                                  ConstrainedBox(
+                                    constraints: BoxConstraints(
+                                      maxWidth: maxFocusWidth,
+                                      maxHeight: maxFocusHeight,
+                                    ),
+                                    child: _CenterFocusCard(
+                                      key: ValueKey(
+                                          widget.sentences[_currentIndex].id),
+                                      sentence: widget.sentences[_currentIndex],
+                                      displayIndex: _currentIndex + 1,
+                                      totalCount: widget.sentences.length,
+                                      horizontalPadding: 0,
+                                      accent: accent,
+                                      expand: _expandController,
+                                      fullHeight: maxFocusHeight,
+                                      tourKeys: _tourKeys,
+                                      onNextSentence: hasNext
+                                          ? () => _settleTo(_currentIndex + 1)
+                                          : null,
+                                    ),
+                                  ),
+                                ),
+                              ),
+                              if (widget.sentences.length > 1) ...[
+                                const SizedBox(height: 10),
+                                AnimatedOpacity(
+                                  opacity: showNavArrows ? 1.0 : 0.0,
+                                  duration: const Duration(milliseconds: 180),
+                                  curve: Curves.easeOut,
+                                  child: IgnorePointer(
+                                    ignoring: !showNavArrows,
+                                    child: _WheelNavArrow(
+                                      upward: false,
+                                      enabled: hasNext && !_isAnimatingSwap,
+                                      accent: accent,
+                                      onTap: hasNext
+                                          ? () => _navigateViaArrow(
+                                                _currentIndex + 1,
+                                              )
+                                          : null,
+                                    ),
+                                  ),
+                                ),
+                              ],
+                            ],
+                          ),
+                          if (showSwipeCoach)
+                            Transform.translate(
+                              offset: Offset(0, -swipeCoachLift),
+                              child: _WheelSwipeCoach(
+                                animation: _swipeHintController,
+                                accent: accent,
+                                hasNext: hasNext,
+                              ),
+                            ),
+                        ],
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ),
+            ),
+
+            // 마지막 카드 하단 — Shimmer 글래스 완료 칩.
+            if (!_hideCompletionHint &&
+                isLastCard &&
+                widget.onCompleted != null)
               Positioned(
-                bottom: 10,
-                child: IgnorePointer(
-                  child: _IndexIndicator(
-                    current: _currentIndex + 1,
-                    total: widget.sentences.length,
-                    accent: accent,
+                bottom: 48,
+                left: horizontalPad,
+                right: horizontalPad,
+                child: Align(
+                  alignment: Alignment.bottomCenter,
+                  child: _CompletionGlassChip(
+                    onTap: _onCompletionChipTap,
                   ),
                 ),
               ),
-            ],
-          ),
+
+            Positioned(
+              bottom: 10,
+              child: IgnorePointer(
+                child: _IndexIndicator(
+                  current: _currentIndex + 1,
+                  total: widget.sentences.length,
+                  accent: accent,
+                ),
+              ),
+            ),
+          ],
         );
       },
     );
@@ -849,96 +1122,105 @@ class _NeighborPreview extends StatelessWidget {
       ),
       child: ClipRRect(
         borderRadius: BorderRadius.circular(14),
-        child: BackdropFilter(
-          filter: ImageFilter.blur(sigmaX: 10, sigmaY: 10),
-          child: Container(
-            decoration: BoxDecoration(
-              borderRadius: BorderRadius.circular(14),
-              color: Colors.white.withValues(
-                alpha: isActiveTarget ? 0.92 : 0.58,
+        child: isActiveTarget
+            ? Container(
+                decoration: BoxDecoration(
+                  borderRadius: BorderRadius.circular(14),
+                  color: Colors.white,
+                ),
+                child: _previewBody(
+                  metrics: metrics,
+                  scheme: scheme,
+                  detailOpacity: detailOpacity,
+                ),
+              )
+            : BackdropFilter(
+                filter: ImageFilter.blur(sigmaX: 10, sigmaY: 10),
+                child: Container(
+                  decoration: BoxDecoration(
+                    borderRadius: BorderRadius.circular(14),
+                    color: Colors.white.withValues(alpha: 0.58),
+                  ),
+                  child: _previewBody(
+                    metrics: metrics,
+                    scheme: scheme,
+                    detailOpacity: detailOpacity,
+                  ),
+                ),
               ),
-            ),
-            child: Stack(
-              clipBehavior: Clip.none,
-              children: [
-                Padding(
-                  padding: const EdgeInsets.fromLTRB(12, 22, 12, 8),
-                  child: Column(
-                    mainAxisSize: MainAxisSize.min,
-                    children: [
-                      Row(
-                        mainAxisAlignment: MainAxisAlignment.center,
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          Flexible(
-                            child: Text(
-                              sentence.sentence,
-                              textAlign: TextAlign.center,
-                              softWrap: true,
-                              maxLines: 2,
-                              overflow: TextOverflow.ellipsis,
-                              style: TextStyle(
-                                fontSize: metrics.sentenceFontSize - 1,
-                                fontWeight: isActiveTarget
-                                    ? FontWeight.w800
-                                    : FontWeight.w700,
-                                color: isActiveTarget
-                                    ? DashboardPalette.navy
-                                    : scheme.onSurface.withValues(alpha: 0.72),
-                                height: 1.3,
-                              ),
-                            ),
-                          ),
-                        ],
-                      ),
-                      if (sentence.korean.isNotEmpty) ...[
-                        const SizedBox(height: 3),
-                        Text(
-                          sentence.korean,
-                          textAlign: TextAlign.center,
-                          softWrap: true,
-                          maxLines: 1,
-                          overflow: TextOverflow.ellipsis,
-                          style: TextStyle(
-                            fontSize: metrics.koreanFontSize - 1,
-                            fontWeight: FontWeight.w600,
-                            color: isActiveTarget
-                                ? DashboardPalette.navy.withValues(alpha: 0.65)
-                                : Colors.grey.shade600.withValues(alpha: 0.68),
-                            height: 1.3,
-                          ),
-                        ),
-                      ],
-                    ],
-                  ),
-                ),
-                Positioned(
-                  top: 6,
-                  left: 8,
-                  child: Opacity(
-                    opacity: detailOpacity,
-                    child: _PreviewIndexChip(
-                      label: displayIndex.toString().padLeft(2, '0'),
-                      isActiveTarget: isActiveTarget,
-                    ),
-                  ),
-                ),
-                if (showSnapGlow)
-                  Positioned.fill(
-                    child: IgnorePointer(
-                      child: ClipRRect(
-                        borderRadius: BorderRadius.circular(14),
-                        child: _SnapShimmerOverlay(
-                          animation: shimmerAnimation,
-                        ),
+      ),
+    );
+  }
+
+  Widget _previewBody({
+    required Active5Metrics metrics,
+    required ColorScheme scheme,
+    required double detailOpacity,
+  }) {
+    return Stack(
+      clipBehavior: Clip.none,
+      children: [
+        Padding(
+          padding: const EdgeInsets.fromLTRB(16, 26, 16, 14),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            mainAxisAlignment: MainAxisAlignment.center,
+            crossAxisAlignment: CrossAxisAlignment.center,
+            children: [
+              Row(
+                mainAxisAlignment: MainAxisAlignment.center,
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Flexible(
+                    child: Text(
+                      sentence.korean,
+                      textAlign: TextAlign.center,
+                      softWrap: true,
+                      maxLines: 2,
+                      overflow: TextOverflow.ellipsis,
+                      style: TextStyle(
+                        fontFamily: AppTheme.fontBody,
+                        fontFamilyFallback: AppTheme.fontFallback,
+                        fontSize: metrics.koreanFontSize - 1,
+                        fontWeight: isActiveTarget
+                            ? FontWeight.w700
+                            : FontWeight.w600,
+                        letterSpacing: -0.2,
+                        color: isActiveTarget
+                            ? DashboardPalette.navy.withValues(alpha: 0.85)
+                            : scheme.onSurface.withValues(alpha: 0.68),
+                        height: 1.3,
                       ),
                     ),
                   ),
-              ],
+                ],
+              ),
+            ],
+          ),
+        ),
+        Positioned(
+          top: 6,
+          left: 8,
+          child: Opacity(
+            opacity: detailOpacity,
+            child: _PreviewIndexChip(
+              label: displayIndex.toString().padLeft(2, '0'),
+              isActiveTarget: isActiveTarget,
             ),
           ),
         ),
-      ),
+        if (showSnapGlow)
+          Positioned.fill(
+            child: IgnorePointer(
+              child: ClipRRect(
+                borderRadius: BorderRadius.circular(14),
+                child: _SnapShimmerOverlay(
+                  animation: shimmerAnimation,
+                ),
+              ),
+            ),
+          ),
+      ],
     );
   }
 }
@@ -1024,6 +1306,64 @@ class _SnapShimmerOverlay extends StatelessWidget {
           ),
         );
       },
+    );
+  }
+}
+
+/// 메인 카드 위·아래 미니 네비 — 탭으로 이전/다음 문장 이동.
+class _WheelNavArrow extends StatelessWidget {
+  final bool upward;
+  final bool enabled;
+  final Color accent;
+  final VoidCallback? onTap;
+
+  const _WheelNavArrow({
+    required this.upward,
+    required this.enabled,
+    required this.accent,
+    this.onTap,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return GestureDetector(
+      onTap: enabled ? onTap : null,
+      behavior: HitTestBehavior.opaque,
+      child: AnimatedOpacity(
+        duration: const Duration(milliseconds: 180),
+        opacity: enabled ? 1 : 0.22,
+        child: Container(
+          width: 32,
+          height: 32,
+          decoration: BoxDecoration(
+            shape: BoxShape.circle,
+            color: Colors.white.withValues(alpha: 0.78),
+            border: Border.all(
+              color: Colors.white.withValues(alpha: 0.95),
+              width: 0.8,
+            ),
+            boxShadow: [
+              BoxShadow(
+                color: Colors.black.withValues(alpha: 0.07),
+                blurRadius: 10,
+                offset: Offset(0, upward ? -2 : 2),
+              ),
+              BoxShadow(
+                color: accent.withValues(alpha: 0.08),
+                blurRadius: 6,
+                offset: const Offset(0, 1),
+              ),
+            ],
+          ),
+          child: Icon(
+            upward
+                ? Icons.keyboard_arrow_up_rounded
+                : Icons.keyboard_arrow_down_rounded,
+            size: 20,
+            color: accent.withValues(alpha: 0.88),
+          ),
+        ),
+      ),
     );
   }
 }

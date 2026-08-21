@@ -9,12 +9,14 @@ class FloatingIslandNavBar extends StatefulWidget {
   final int selectedIndex;
   final ValueChanged<int> onSelected;
   final List<FloatingIslandNavItem> items;
+  final Set<int> badgeTabIndices;
 
   const FloatingIslandNavBar({
     super.key,
     required this.selectedIndex,
     required this.onSelected,
     required this.items,
+    this.badgeTabIndices = const {},
   });
 
   static const height = 64.0;
@@ -150,6 +152,7 @@ class _FloatingIslandNavBarState extends State<FloatingIslandNavBar> {
                             child: _NavItemSlot(
                               item: widget.items[i],
                               selected: i == _visualIndex,
+                              showBadge: widget.badgeTabIndices.contains(i),
                             ),
                           ),
                       ],
@@ -213,10 +216,12 @@ class FloatingIslandNavItem {
 class _NavItemSlot extends StatelessWidget {
   final FloatingIslandNavItem item;
   final bool selected;
+  final bool showBadge;
 
   const _NavItemSlot({
     required this.item,
     required this.selected,
+    this.showBadge = false,
   });
 
   @override
@@ -226,13 +231,29 @@ class _NavItemSlot extends StatelessWidget {
     return Column(
       mainAxisAlignment: MainAxisAlignment.center,
       children: [
-        AnimatedSwitcher(
-          duration: const Duration(milliseconds: 200),
-          child: Icon(
-            selected ? item.selectedIcon : item.icon,
-            key: ValueKey('${item.label}-$selected'),
-            size: 24,
-            color: color,
+        SizedBox(
+          width: 30,
+          height: 26,
+          child: Stack(
+            clipBehavior: Clip.none,
+            alignment: Alignment.center,
+            children: [
+              AnimatedSwitcher(
+                duration: const Duration(milliseconds: 200),
+                child: Icon(
+                  selected ? item.selectedIcon : item.icon,
+                  key: ValueKey('${item.label}-$selected'),
+                  size: 24,
+                  color: color,
+                ),
+              ),
+              if (showBadge)
+                const Positioned(
+                  top: 0,
+                  right: 2,
+                  child: _NavBadgeDot(),
+                ),
+            ],
           ),
         ),
         const SizedBox(height: 2),
@@ -248,6 +269,58 @@ class _NavItemSlot extends StatelessWidget {
           child: Text(item.label),
         ),
       ],
+    );
+  }
+}
+
+/// 마이페이지 — 미확인 칭호 획득 알림.
+class _NavBadgeDot extends StatefulWidget {
+  const _NavBadgeDot();
+
+  @override
+  State<_NavBadgeDot> createState() => _NavBadgeDotState();
+}
+
+class _NavBadgeDotState extends State<_NavBadgeDot>
+    with SingleTickerProviderStateMixin {
+  late final AnimationController _pulse;
+
+  @override
+  void initState() {
+    super.initState();
+    _pulse = AnimationController(
+      vsync: this,
+      duration: const Duration(milliseconds: 1300),
+    )..repeat(reverse: true);
+  }
+
+  @override
+  void dispose() {
+    _pulse.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return FadeTransition(
+      opacity: Tween<double>(begin: 0.55, end: 1).animate(
+        CurvedAnimation(parent: _pulse, curve: Curves.easeInOut),
+      ),
+      child: Container(
+        width: 8,
+        height: 8,
+        decoration: BoxDecoration(
+          shape: BoxShape.circle,
+          color: const Color(0xFFFBBF24),
+          border: Border.all(color: Colors.white, width: 1.4),
+          boxShadow: [
+            BoxShadow(
+              color: const Color(0xFFF59E0B).withValues(alpha: 0.45),
+              blurRadius: 5,
+            ),
+          ],
+        ),
+      ),
     );
   }
 }

@@ -65,7 +65,7 @@ class CrewFlightLogDialog extends StatelessWidget {
                     children: [
                       Expanded(
                         child: Text(
-                          '✈️ CREW FLIGHT LOG ($monthLabel 비행 일지)',
+                          '✈️ CREW LEARNING LOG ($monthLabel 학습 일지)',
                           style: const TextStyle(
                             fontSize: 14,
                             fontWeight: FontWeight.w700,
@@ -101,7 +101,7 @@ class CrewFlightLogDialog extends StatelessWidget {
                       borderRadius: BorderRadius.circular(12),
                     ),
                     child: Text(
-                      '이번 달 비행 횟수: $monthlyCheckIns일 / 연속 출석: $consecutiveStreak일',
+                      '이번 달 출석 횟수: $monthlyCheckIns일 / 연속 출석: $consecutiveStreak일',
                       textAlign: TextAlign.center,
                       style: const TextStyle(
                         fontSize: 12,

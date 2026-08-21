@@ -18,6 +18,7 @@ class Scenario {
     'chapter_no',
     'chapter_name',
     'chapter_image',
+    'avatar_image',
     'new',
   };
 
@@ -56,6 +57,13 @@ class Scenario {
 
   static bool isSheetHeaderToken(String value) =>
       _sheetHeaderKeys.contains(value.trim().toLowerCase());
+
+  static String _firstAvatarFromLines(List<ScenarioLine> lines) {
+    for (final line in lines) {
+      if (line.avatarImage.isNotEmpty) return line.avatarImage;
+    }
+    return '';
+  }
 
   /// order 1 행 title 우선, 없으면 첫 비어 있지 않은 title.
   static String titleFromLines(List<ScenarioLine> lines) {
@@ -114,7 +122,9 @@ class Scenario {
         level: meta.level,
         chapterNo: meta.chapterNo,
         chapterName: meta.chapterName,
-        chapterImage: meta.chapterImage,
+        chapterImage: meta.chapterImage.isNotEmpty
+            ? meta.chapterImage
+            : _firstAvatarFromLines(sorted),
         isNewContent: sorted.any((line) => line.isNewContent),
         lines: sorted,
       );

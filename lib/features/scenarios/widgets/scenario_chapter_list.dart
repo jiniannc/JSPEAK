@@ -319,6 +319,7 @@ class _MetallicPassBadgeState extends State<_MetallicPassBadge>
       Color(0xFFCBD5E1),
       Color(0xFF94A3B8),
     ],
+    stops: [0.0, 0.33, 0.66, 1.0],
   );
 
   static const _engravedInk = Color(0xFF334155);

@@ -324,6 +324,18 @@ class _DictionaryLiveSearchViewState extends ConsumerState<DictionaryLiveSearchV
     return bundle.searchWords(q, language: widget.language);
   }
 
+  Future<void> _onPullToRefresh() async {
+    if (_searchEngaged) {
+      _clearSearch();
+    } else {
+      _focusNode.unfocus();
+    }
+    await ref.read(contentProvider.notifier).sync();
+    if (!mounted) return;
+    _refreshQuickSearchChips(reroll: true);
+    _replayEntryAnimation();
+  }
+
   @override
   Widget build(BuildContext context) {
     ref.listen<int>(shellTabIndexProvider, (previous, next) {
@@ -388,9 +400,6 @@ class _DictionaryLiveSearchViewState extends ConsumerState<DictionaryLiveSearchV
                 0.0,
                 constraints.maxHeight - favoritesReserve - navBottom,
               );
-              final heroMaxHeight = active
-                  ? constraints.maxHeight
-                  : idleHeroMaxHeight;
               final heroContentHeight = titleBlockHeight +
                   heroGap +
                   compactBarHeight +
@@ -425,72 +434,89 @@ class _DictionaryLiveSearchViewState extends ConsumerState<DictionaryLiveSearchV
                               showLoading: showLoading,
                             ),
                           )
-                        : Column(
-                            crossAxisAlignment: CrossAxisAlignment.stretch,
-                            children: [
-                              Expanded(
-                                child: SingleChildScrollView(
-                                  padding: EdgeInsets.symmetric(
-                                    horizontal: widget.inset,
+                        : RefreshIndicator(
+                            color: widget.palette.primary,
+                            onRefresh: _onPullToRefresh,
+                            child: CustomScrollView(
+                                  physics: const AlwaysScrollableScrollPhysics(
+                                    parent: ClampingScrollPhysics(),
                                   ),
-                                  child: ConstrainedBox(
-                                    constraints: BoxConstraints(
-                                      minHeight: heroMaxHeight,
-                                    ),
-                                    child: Column(
-                                      children: [
-                                        SizedBox(height: heroTopPadding),
-                                        DictionaryHeroTitleAnimated(
-                                          progress: _titleTyping,
-                                          language: widget.language,
-                                          palette: widget.palette,
-                                          onDiceTap: _hasChipCandidates
-                                              ? _rollQuickSearchChips
-                                              : null,
-                                          diceSpin: _diceSpin,
+                                  slivers: [
+                                    SliverPadding(
+                                      padding: EdgeInsets.symmetric(
+                                        horizontal: widget.inset,
+                                      ),
+                                      sliver: SliverToBoxAdapter(
+                                        child: Column(
+                                          crossAxisAlignment:
+                                              CrossAxisAlignment.stretch,
+                                          children: [
+                                            SizedBox(height: heroTopPadding),
+                                            DictionaryHeroTitleAnimated(
+                                              progress: _titleTyping,
+                                              language: widget.language,
+                                              palette: widget.palette,
+                                              onDiceTap: _hasChipCandidates
+                                                  ? _rollQuickSearchChips
+                                                  : null,
+                                              diceSpin: _diceSpin,
+                                            ),
+                                            SizedBox(height: heroGap),
+                                            SizedBox(height: compactBarHeight),
+                                            SizedBox(height: chipsGap),
+                                            DictionaryQuickSearchChips(
+                                              tags: _chipLabels,
+                                              generation: _chipGeneration,
+                                              palette: widget.palette,
+                                              onTagSelected: _applyQuery,
+                                              entryAnimations:
+                                                  _chipGeneration == 0
+                                                  ? _chipAnimations
+                                                  : null,
+                                            ),
+                                          ],
                                         ),
-                                        SizedBox(height: heroGap),
-                                        SizedBox(height: compactBarHeight),
-                                        SizedBox(height: chipsGap),
-                                        DictionaryQuickSearchChips(
-                                          tags: _chipLabels,
-                                          generation: _chipGeneration,
-                                          palette: widget.palette,
-                                          onTagSelected: _applyQuery,
-                                          entryAnimations: _chipGeneration == 0
-                                              ? _chipAnimations
-                                              : null,
-                                        ),
-                                      ],
+                                      ),
                                     ),
-                                  ),
+                                    SliverFillRemaining(
+                                      hasScrollBody: false,
+                                      child: Padding(
+                                        padding: EdgeInsets.symmetric(
+                                          horizontal: widget.inset,
+                                        ),
+                                        child: Column(
+                                          crossAxisAlignment:
+                                              CrossAxisAlignment.stretch,
+                                          children: [
+                                            const Spacer(),
+                                            SlideTransition(
+                                              position: Tween<Offset>(
+                                                begin: const Offset(0, 0.4),
+                                                end: Offset.zero,
+                                              ).animate(_favoritesSlide),
+                                              child: FadeTransition(
+                                                opacity: _favoritesFade,
+                                                child: _CompactFavoritesPanel(
+                                                  inset: 0,
+                                                  palette: widget.palette,
+                                                  favorites: widget.favorites,
+                                                  onFavoriteTap:
+                                                      widget.onFavoriteTap,
+                                                  onViewAll: () =>
+                                                      BookmarkVaultModal.show(
+                                                        context,
+                                                      ),
+                                                ),
+                                              ),
+                                            ),
+                                            SizedBox(height: navBottom),
+                                          ],
+                                        ),
+                                      ),
+                                    ),
+                                  ],
                                 ),
                               ),
-                              Padding(
-                                padding: EdgeInsets.symmetric(
-                                  horizontal: widget.inset,
-                                ),
-                                child: SlideTransition(
-                                  position: Tween<Offset>(
-                                    begin: const Offset(0, 0.4),
-                                    end: Offset.zero,
-                                  ).animate(_favoritesSlide),
-                                  child: FadeTransition(
-                                    opacity: _favoritesFade,
-                                    child: _CompactFavoritesPanel(
-                                      inset: 0,
-                                      palette: widget.palette,
-                                      favorites: widget.favorites,
-                                      onFavoriteTap: widget.onFavoriteTap,
-                                      onViewAll: () =>
-                                          BookmarkVaultModal.show(context),
-                                    ),
-                                  ),
-                                ),
-                              ),
-                              SizedBox(height: navBottom),
-                            ],
-                          ),
                   ),
                   AnimatedBuilder(
                     animation: Listenable.merge([

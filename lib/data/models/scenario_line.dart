@@ -1,3 +1,4 @@
+import '../../core/utils/avatar_asset_path.dart';
 import '../../core/utils/chapter_asset_path.dart';
 
 /// 시나리오 대화 한 줄 (시트 행).
@@ -15,7 +16,10 @@ class ScenarioLine {
   final String language;
   final int chapterNo;
   final String chapterName;
+  /// 챕터 썸네일(레거시·메타). 시나리오 시트 D열은 [avatarImage]로 대체됨.
   final String chapterImage;
+  /// 말풍선 좌상단 캐릭터 (`avatar_normal` → assets/images/avatar_normal.png).
+  final String avatarImage;
   final bool isNewContent;
 
   const ScenarioLine({
@@ -33,6 +37,7 @@ class ScenarioLine {
     this.chapterNo = 1,
     this.chapterName = '',
     this.chapterImage = '',
+    this.avatarImage = '',
     this.isNewContent = false,
   });
 
@@ -58,6 +63,9 @@ class ScenarioLine {
       chapterName: json['chapter_name']?.toString().trim() ?? '',
       chapterImage: resolveChapterAssetPath(
         json['chapter_image']?.toString() ?? '',
+      ),
+      avatarImage: resolveAvatarAssetPath(
+        json['avatar_image']?.toString() ?? '',
       ),
       isNewContent: _parseNewFlag(json['new']),
     );
@@ -89,6 +97,7 @@ class ScenarioLine {
         'chapter_no': chapterNo,
         if (chapterName.isNotEmpty) 'chapter_name': chapterName,
         if (chapterImage.isNotEmpty) 'chapter_image': chapterImage,
+        if (avatarImage.isNotEmpty) 'avatar_image': avatarImage,
         if (isNewContent) 'new': true,
       };
 }

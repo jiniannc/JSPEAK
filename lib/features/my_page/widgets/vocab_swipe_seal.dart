@@ -75,7 +75,14 @@ class _VocabSwipeSealState extends State<VocabSwipeSeal>
       WidgetsBinding.instance.addPostFrameCallback((_) {
         if (mounted) _playEntrance();
       });
+    } else {
+      _snapToRest();
     }
+  }
+
+  void _snapToRest() {
+    _entrance.value = 1.0;
+    _ring.value = 1.0;
   }
 
   @override
@@ -88,6 +95,9 @@ class _VocabSwipeSealState extends State<VocabSwipeSeal>
       _playEntrance();
     } else if (!widget.isActive && oldWidget.isActive) {
       _twinkle.stop();
+      _snapToRest();
+    } else if (widget.isActive && _ring.value >= 1.0) {
+      _twinkle.repeat();
     }
   }
 
@@ -109,19 +119,24 @@ class _VocabSwipeSealState extends State<VocabSwipeSeal>
   Widget build(BuildContext context) {
     final theme = _VocabSealTheme.of(widget.language);
     final target = (widget.percent.clamp(0, 100)) / 100;
-    final dpr = MediaQuery.devicePixelRatioOf(context);
 
     return LayoutBuilder(
       builder: (context, constraints) {
-        final size =
-            math.min(constraints.maxWidth, constraints.maxHeight) * _displayScale;
-        final cacheSize = (size * dpr * 1.35).round().clamp(512, 1024);
+        final maxSide = math.min(constraints.maxWidth, constraints.maxHeight);
+        if (!maxSide.isFinite || maxSide <= 0) {
+          return const SizedBox.shrink();
+        }
+        final size = maxSide * _displayScale;
 
         return Center(
           child: AnimatedBuilder(
             animation: Listenable.merge([_entrance, _ring, _twinkle]),
             builder: (context, _) {
-              final shown = target * Curves.easeOutCubic.transform(_ring.value);
+              final animating = _ring.status == AnimationStatus.forward;
+              final ringT = animating
+                  ? Curves.easeOutCubic.transform(_ring.value)
+                  : 1.0;
+              final shown = target * ringT;
               final percentLabel = (shown * 100).round();
               final pulse = 0.55 + 0.45 * math.sin(_twinkle.value * math.pi * 2);
 
@@ -154,7 +169,6 @@ class _VocabSwipeSealState extends State<VocabSwipeSeal>
                         _BadgeImage(
                           assetPath: theme.assetPath,
                           size: size,
-                          cacheSize: cacheSize,
                         ),
                         CustomPaint(
                           size: Size.square(size),
@@ -178,9 +192,11 @@ class _VocabSwipeSealState extends State<VocabSwipeSeal>
                           holeDiameter: _holeDiameter,
                           textYOffset: size * _holeTextYOffset,
                           size: size,
-                          appear: Curves.easeOutBack.transform(
-                            (_ring.value * 1.1).clamp(0.0, 1.0),
-                          ),
+                          appear: animating
+                              ? Curves.easeOutBack.transform(
+                                  (_ring.value * 1.1).clamp(0.0, 1.0),
+                                )
+                              : 1.0,
                         ),
                       ],
                     ),
@@ -199,12 +215,10 @@ class _BadgeImage extends StatelessWidget {
   const _BadgeImage({
     required this.assetPath,
     required this.size,
-    required this.cacheSize,
   });
 
   final String assetPath;
   final double size;
-  final int cacheSize;
 
   @override
   Widget build(BuildContext context) {
@@ -214,11 +228,24 @@ class _BadgeImage extends StatelessWidget {
         width: size,
         height: size,
         fit: BoxFit.contain,
-        cacheWidth: cacheSize,
-        cacheHeight: cacheSize,
         filterQuality: FilterQuality.high,
         isAntiAlias: true,
         gaplessPlayback: true,
+        errorBuilder: (context, error, stackTrace) => SizedBox(
+          width: size,
+          height: size,
+          child: DecoratedBox(
+            decoration: BoxDecoration(
+              shape: BoxShape.circle,
+              color: Colors.grey.shade200,
+            ),
+            child: Icon(
+              Icons.emoji_events_outlined,
+              size: size * 0.42,
+              color: Colors.grey.shade500,
+            ),
+          ),
+        ),
       ),
     );
   }
@@ -366,7 +393,7 @@ class _PercentLabel extends StatelessWidget {
     final hole = size * holeDiameter;
     return IgnorePointer(
       child: Opacity(
-        opacity: appear.clamp(0.0, 1.0),
+        opacity: appear.clamp(0.35, 1.0),
         child: Transform.translate(
           offset: Offset(0, textYOffset),
           child: Transform.scale(
@@ -387,12 +414,7 @@ class _PercentLabel extends StatelessWidget {
                     fontWeight: FontWeight.w900,
                     height: 1,
                     letterSpacing: -0.5,
-                    foreground: Paint()
-                      ..shader = ui.Gradient.linear(
-                        Offset(0, -hole * 0.08),
-                        Offset(0, hole * 0.12),
-                        theme.textGradient,
-                      ),
+                    color: theme.textGradient.first,
                     shadows: [
                       Shadow(
                         color: theme.glow.withValues(alpha: 0.42),
@@ -546,14 +568,14 @@ class _BadgeShimmerPainter extends CustomPainter {
         band.topRight,
         [
           const Color(0x00FFFFFF),
-          Color(0xAAFFFFFF).withValues(alpha: intensity),
-          const Color(0xCCFFF7D6),
-          Color(0x88FCD34D).withValues(alpha: intensity * 0.9),
+          Color(0x55FFFFFF).withValues(alpha: intensity),
+          const Color(0x66FFF7D6),
+          Color(0x44FCD34D).withValues(alpha: intensity * 0.9),
           const Color(0x00FFFFFF),
         ],
         const [0, 0.28, 0.5, 0.72, 1],
       )
-      ..blendMode = BlendMode.softLight;
+      ..blendMode = BlendMode.srcATop;
     canvas.drawRect(band, paint);
     canvas.restore();
     canvas.restore();

@@ -151,6 +151,29 @@ class SentenceProgressRepository {
     return bundle.sentences.where((s) => s.language == language).length;
   }
 
+  /// 언어 전체 문장 스탬프 진도 — 문장별 LISTEN/SPEAK/MASTER 합산 (0~100).
+  double languageSentenceStampPercent({
+    required String language,
+    required ContentBundle bundle,
+    required SentenceProgressStats stats,
+  }) {
+    final sentences =
+        bundle.sentences.where((s) => s.language == language).toList();
+    if (sentences.isEmpty) return 0;
+
+    var earned = 0;
+    for (final sentence in sentences) {
+      final progress = stats.forSentence(sentence.id);
+      if (progress.hasListened || progress.isRead) earned++;
+      if (progress.isAttempted) earned++;
+      if (progress.isMastered) earned++;
+    }
+
+    final possible = sentences.length * 3;
+    if (possible == 0) return 0;
+    return (earned / possible * 100).clamp(0.0, 100.0);
+  }
+
   /// 언어 단위 스탬프 집계 — 주제(챕터)당 1개씩.
   /// read/attempted/mastered = 해당 단계를 전부 채운 주제 수, total = 주제 수.
   SentenceCategorySummary languageStampSummary({

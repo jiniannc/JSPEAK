@@ -157,6 +157,7 @@ class TitleBadgeUnlockState {
 
 /// 칭호 뱃지 해제 시점을 영구 저장하고, 신규 해제 뱃지를 축하 애니메이션 큐로 전달.
 class TitleBadgeUnlockController extends Notifier<TitleBadgeUnlockState> {
+  bool _bootstrapStarted = false;
   bool _bootstrapped = false;
   Map<String, DateTime> _baseline = {};
   List<String> _pendingCelebrations = [];
@@ -164,12 +165,21 @@ class TitleBadgeUnlockController extends Notifier<TitleBadgeUnlockState> {
 
   @override
   TitleBadgeUnlockState build() {
-    if (!_bootstrapped) {
-      _bootstrap();
-      return const TitleBadgeUnlockState();
+    ref.listen<Map<String, TitleBadgeSignal>>(
+      titleBadgeSignalsProvider,
+      (previous, next) {
+        if (_bootstrapped) {
+          unawaited(_commitReconcile(next));
+        }
+      },
+    );
+
+    if (!_bootstrapStarted) {
+      _bootstrapStarted = true;
+      unawaited(_bootstrap());
     }
-    final signals = ref.watch(titleBadgeSignalsProvider);
-    return _reconcile(signals);
+
+    return const TitleBadgeUnlockState();
   }
 
   Future<void> _bootstrap() async {
@@ -177,10 +187,17 @@ class TitleBadgeUnlockController extends Notifier<TitleBadgeUnlockState> {
     _baseline = await repo.loadUnlockDates();
     _pendingCelebrations = await repo.loadPendingCelebrations();
     _bootstrapped = true;
-    state = _reconcile(ref.read(titleBadgeSignalsProvider));
+    await _commitReconcile(ref.read(titleBadgeSignalsProvider));
   }
 
-  TitleBadgeUnlockState _reconcile(Map<String, TitleBadgeSignal> signals) {
+  Future<void> _commitReconcile(Map<String, TitleBadgeSignal> signals) async {
+    final next = await _reconcile(signals);
+    state = next;
+  }
+
+  Future<TitleBadgeUnlockState> _reconcile(
+    Map<String, TitleBadgeSignal> signals,
+  ) async {
     final merged = Map<String, DateTime>.from(_baseline);
     final newlyUnlocked = <String>[];
     for (final entry in signals.entries) {
@@ -200,8 +217,8 @@ class TitleBadgeUnlockController extends Notifier<TitleBadgeUnlockState> {
         ...newlyUnlocked.where((id) => !_pendingBanners.contains(id)),
       ];
       final repo = ref.read(titleBadgeRepositoryProvider);
-      unawaited(repo.saveUnlockDates(merged));
-      unawaited(repo.savePendingCelebrations(_pendingCelebrations));
+      await repo.saveUnlockDates(merged);
+      await repo.savePendingCelebrations(_pendingCelebrations);
     }
     return TitleBadgeUnlockState(
       unlockedAt: merged,
