@@ -45,6 +45,7 @@ class _ScenarioTrainingScreenState extends ConsumerState<ScenarioTrainingScreen>
   final ScenarioTourTargetKeys _tourKeys = ScenarioTourTargetKeys();
   bool _tourScheduled = false;
   bool _initialTourFinished = false;
+
   /// 코치마크가 실제로 떠 있는 동안만 true — 아니면 tourHighlightKey를
   /// 아무 말풍선에도 주지 않아, 승객 말풍선 subtree가 GlobalKey 부착/해제로
   /// 불필요하게 재생성(타이핑 애니메이션 리플레이)되는 것을 막는다.
@@ -234,8 +235,7 @@ class _ScenarioTrainingScreenState extends ConsumerState<ScenarioTrainingScreen>
     final palette = _palette;
     final metrics = Active5Layout.of(context);
     final currentLine = ref.read(scenarioTrainingProvider.notifier).currentLine;
-    final isCrewTurn =
-        currentLine?.isCrew == true && !training.isCompleted;
+    final isCrewTurn = currentLine?.isCrew == true && !training.isCompleted;
 
     ref.listen<int>(scenarioTourReplaySignalProvider, (prev, next) {
       if ((prev ?? 0) < next) {
@@ -313,10 +313,8 @@ class _ScenarioTrainingScreenState extends ConsumerState<ScenarioTrainingScreen>
         ? 1.0
         : (training.currentLineIndex / lineCount).clamp(0.0, 1.0);
     final metaParts = <String>[
-      if (widget.scenario.title.trim().isNotEmpty)
-        widget.scenario.title.trim(),
-      if (widget.scenario.level.trim().isNotEmpty)
-        widget.scenario.level.trim(),
+      if (widget.scenario.title.trim().isNotEmpty) widget.scenario.title.trim(),
+      if (widget.scenario.level.trim().isNotEmpty) widget.scenario.level.trim(),
     ];
     final metaLabel = metaParts.join(' • ');
     // 코치마크가 실제로 떠 있지 않을 때는 계산하지 않음 — 아니면 fallback id가
@@ -349,143 +347,153 @@ class _ScenarioTrainingScreenState extends ConsumerState<ScenarioTrainingScreen>
         }
       },
       child: Theme(
-        data: Theme.of(context).copyWith(
-          colorScheme: palette.toColorScheme(),
-          extensions: [palette],
-        ),
+        data: Theme.of(
+          context,
+        ).copyWith(colorScheme: palette.toColorScheme(), extensions: [palette]),
         child: DeviceScaffold(
-        resizeToAvoidBottomInset: true,
-        safeAreaBottom: false,
-        body: ColoredBox(
-          color: DashboardPalette.softGray,
-          child: Stack(
-            children: [
-              ListView(
-                clipBehavior: Clip.none,
-                controller: _scrollController,
-                keyboardDismissBehavior: ScrollViewKeyboardDismissBehavior.onDrag,
-                padding: metrics.pagePadding.copyWith(
-                  top: headerReserve,
-                  bottom: isCrewTurn ? controlBarClearance : 24,
-                ),
-                children: [
-                  for (final (msgIndex, msg) in training.messages.indexed)
-                    ScenarioChatBubble(
-                      key: ValueKey(msg.id),
-                      tourHighlightKey: msg.id == tourBubbleId
-                          ? _tourKeys.opponentBubbleKey
-                          : null,
-                      scrollAnchorKey: msg.id == activeMsgId
-                          ? _activeBubbleKey
-                          : null,
-                      // 리스트 첫 메시지는 위에 겹칠 대상이 없어 안전 모드로 표시.
-                      allowTopOverlap: msgIndex > 0,
-                      message: msg,
-                      accentColor: palette.primary,
-                      isActive:
-                          msg.id == activeMsgId && !training.isCompleted,
-                      liveSpokenText: msg.id == activeMsgId
-                          ? training.spokenText
-                          : '',
-                      blankInputs: msg.id == activeMsgId
-                          ? training.blankInputs
-                          : const [],
-                      selectedBlankIndex: msg.id == activeMsgId
-                          ? training.selectedBlankIndex
-                          : null,
-                      wordHints: msg.showWordHints
-                          ? resolveBlankWordHints(
-                              index: ref.watch(vocabularyProvider),
-                              correct: msg.line.textTarget,
-                              blankFrame: msg.line.blankFrame,
-                              language: msg.line.language,
-                            )
-                          : const [],
-                      onBlankTap: msg.id == activeMsgId &&
-                              training.isBlankFillMode
-                          ? (i) => ref
-                              .read(scenarioTrainingProvider.notifier)
-                              .selectBlank(i)
-                          : null,
-                      keyboardTyping: msg.id == activeMsgId &&
-                          !training.isCompleted &&
-                          (training.isTypingMode ||
-                              training.selectedBlankIndex != null),
-                    ),
-                  if (training.isCompleted)
-                    _CompletionBanner(
-                      scenarioTitle: widget.scenario.title,
-                      primaryColor: palette.primary,
-                      secondaryColor: palette.secondary,
-                    ),
-                ],
-              ),
-              Positioned(
-                top: 0,
-                left: 0,
-                right: 0,
-                child: SafeArea(
-                  bottom: false,
-                  child: ScenarioGlassHeader(
-                    progress: progress,
-                    metaLabel: metaLabel,
-                    accentColor: palette.primary,
-                    onBack: _leaveScreen,
-                    onOptions: () => _showTrainingOptions(context),
-                  ),
-                ),
-              ),
-              if (isCrewTurn)
+          resizeToAvoidBottomInset: true,
+          safeAreaBottom: false,
+          body: ColoredBox(
+            color: DashboardPalette.softGray,
+            child: Stack(
+              children: [
+                // 리스트 뷰포트 자체를 플로팅 헤더 아래에서 시작시킨다.
+                // 단순 top padding은 스크롤되면 사라져 overflow 아바타가 헤더와
+                // 시스템 영역까지 침범하지만, Positioned 경계는 계속 유지된다.
                 Positioned(
-                  left: 12,
-                  right: 12,
-                  bottom: 10,
+                  top: headerReserve,
+                  left: 0,
+                  right: 0,
+                  bottom: 0,
+                  child: ListView(
+                    clipBehavior: Clip.hardEdge,
+                    controller: _scrollController,
+                    keyboardDismissBehavior:
+                        ScrollViewKeyboardDismissBehavior.onDrag,
+                    padding: metrics.pagePadding.copyWith(
+                      top: 0,
+                      bottom: isCrewTurn ? controlBarClearance : 24,
+                    ),
+                    children: [
+                      for (final (msgIndex, msg) in training.messages.indexed)
+                        ScenarioChatBubble(
+                          key: ValueKey(msg.id),
+                          tourHighlightKey: msg.id == tourBubbleId
+                              ? _tourKeys.opponentBubbleKey
+                              : null,
+                          scrollAnchorKey: msg.id == activeMsgId
+                              ? _activeBubbleKey
+                              : null,
+                          // 리스트 첫 메시지는 위에 겹칠 대상이 없어 안전 모드로 표시.
+                          allowTopOverlap: msgIndex > 0,
+                          message: msg,
+                          accentColor: palette.primary,
+                          isActive:
+                              msg.id == activeMsgId && !training.isCompleted,
+                          liveSpokenText: msg.id == activeMsgId
+                              ? training.spokenText
+                              : '',
+                          blankInputs: msg.id == activeMsgId
+                              ? training.blankInputs
+                              : const [],
+                          selectedBlankIndex: msg.id == activeMsgId
+                              ? training.selectedBlankIndex
+                              : null,
+                          wordHints: msg.showWordHints
+                              ? resolveBlankWordHints(
+                                  index: ref.watch(vocabularyProvider),
+                                  correct: msg.line.textTarget,
+                                  blankFrame: msg.line.blankFrame,
+                                  language: msg.line.language,
+                                )
+                              : const [],
+                          onBlankTap:
+                              msg.id == activeMsgId && training.isBlankFillMode
+                              ? (i) => ref
+                                    .read(scenarioTrainingProvider.notifier)
+                                    .selectBlank(i)
+                              : null,
+                          keyboardTyping:
+                              msg.id == activeMsgId &&
+                              !training.isCompleted &&
+                              (training.isTypingMode ||
+                                  training.selectedBlankIndex != null),
+                        ),
+                      if (training.isCompleted)
+                        _CompletionBanner(
+                          scenarioTitle: widget.scenario.title,
+                          primaryColor: palette.primary,
+                          secondaryColor: palette.secondary,
+                        ),
+                    ],
+                  ),
+                ),
+                Positioned(
+                  top: 0,
+                  left: 0,
+                  right: 0,
                   child: SafeArea(
-                    top: false,
-                    child: _FloatingControlBar(
-                      training: training,
-                      primaryColor: palette.primary,
-                      secondaryColor: palette.secondary,
-                      shakeAnimation: _shakeController,
-                      typingController: _typingController,
-                      typingFocus: _typingFocus,
-                      tourKeys: _tourKeys,
-                      onHint: () => ref
-                          .read(scenarioTrainingProvider.notifier)
-                          .revealNextHint(),
-                      onMic: () => ref
-                          .read(scenarioTrainingProvider.notifier)
-                          .toggleMic(),
-                      onRevealAnswer: () => ref
-                          .read(scenarioTrainingProvider.notifier)
-                          .revealAnswerAndSkip(),
-                      onToggleTyping: () {
-                        final next = !training.isTypingMode;
-                        ref
+                    bottom: false,
+                    child: ScenarioGlassHeader(
+                      progress: progress,
+                      metaLabel: metaLabel,
+                      accentColor: palette.primary,
+                      onBack: _leaveScreen,
+                      onOptions: () => _showTrainingOptions(context),
+                    ),
+                  ),
+                ),
+                if (isCrewTurn)
+                  Positioned(
+                    left: 12,
+                    right: 12,
+                    bottom: 10,
+                    child: SafeArea(
+                      top: false,
+                      child: _FloatingControlBar(
+                        training: training,
+                        primaryColor: palette.primary,
+                        secondaryColor: palette.secondary,
+                        shakeAnimation: _shakeController,
+                        typingController: _typingController,
+                        typingFocus: _typingFocus,
+                        tourKeys: _tourKeys,
+                        onHint: () => ref
                             .read(scenarioTrainingProvider.notifier)
-                            .setTypingMode(next);
-                      },
-                      onTypedChanged: (text) => ref
-                          .read(scenarioTrainingProvider.notifier)
-                          .updateTypedText(text),
-                      onSubmitTyped: () => ref
-                          .read(scenarioTrainingProvider.notifier)
-                          .submitTypedAnswer(),
+                            .revealNextHint(),
+                        onMic: () => ref
+                            .read(scenarioTrainingProvider.notifier)
+                            .toggleMic(),
+                        onRevealAnswer: () => ref
+                            .read(scenarioTrainingProvider.notifier)
+                            .revealAnswerAndSkip(),
+                        onToggleTyping: () {
+                          final next = !training.isTypingMode;
+                          ref
+                              .read(scenarioTrainingProvider.notifier)
+                              .setTypingMode(next);
+                        },
+                        onTypedChanged: (text) => ref
+                            .read(scenarioTrainingProvider.notifier)
+                            .updateTypedText(text),
+                        onSubmitTyped: () => ref
+                            .read(scenarioTrainingProvider.notifier)
+                            .submitTypedAnswer(),
+                      ),
                     ),
                   ),
-                ),
-              if (training.isCompleted)
-                const Positioned.fill(
-                  child: IgnorePointer(
-                    child: ScoreCelebrationOverlay(
-                      tier: ScoreCelebrationTier.perfect,
+                if (training.isCompleted)
+                  const Positioned.fill(
+                    child: IgnorePointer(
+                      child: ScoreCelebrationOverlay(
+                        tier: ScoreCelebrationTier.perfect,
+                      ),
                     ),
                   ),
-                ),
-            ],
+              ],
+            ),
           ),
         ),
-      ),
       ),
     );
   }
@@ -593,9 +601,7 @@ class _FloatingControlBar extends StatelessWidget {
           decoration: BoxDecoration(
             color: Colors.white.withValues(alpha: 0.78),
             borderRadius: BorderRadius.circular(28),
-            border: Border.all(
-              color: Colors.white.withValues(alpha: 0.55),
-            ),
+            border: Border.all(color: Colors.white.withValues(alpha: 0.55)),
             boxShadow: [
               BoxShadow(
                 color: primaryColor.withValues(alpha: 0.12),
@@ -666,7 +672,9 @@ class _FloatingControlBar extends StatelessWidget {
                             focusedBorder: OutlineInputBorder(
                               borderRadius: BorderRadius.circular(14),
                               borderSide: BorderSide(
-                                  color: primaryColor, width: 1.5),
+                                color: primaryColor,
+                                width: 1.5,
+                              ),
                             ),
                           ),
                         ),
@@ -710,7 +718,8 @@ class _FloatingControlBar extends StatelessWidget {
                               ? '두 번째 힌트'
                               : '빈칸 터치',
                           color: primaryColor,
-                          enabled: training.canRevealMoreHints &&
+                          enabled:
+                              training.canRevealMoreHints &&
                               !training.isListening &&
                               !training.isInitializingStt,
                           onTap: onHint,
@@ -719,17 +728,18 @@ class _FloatingControlBar extends StatelessWidget {
                       _CompactIconButton(
                         icon: Icons.keyboard_rounded,
                         color: primaryColor,
-                        enabled: !training.isListening &&
+                        enabled:
+                            !training.isListening &&
                             !training.isInitializingStt,
                         onTap: onToggleTyping,
                         tooltip: '첫 빈칸 선택',
                       ),
                       const SizedBox(width: 8),
                       _MicButton(
-                        enabled: training.isListening ||
-                            !training.isInitializingStt,
-                        isInitializing: training.isInitializingStt &&
-                            !training.isListening,
+                        enabled:
+                            training.isListening || !training.isInitializingStt,
+                        isInitializing:
+                            training.isInitializingStt && !training.isListening,
                         isListening: training.isListening,
                         primaryColor: primaryColor,
                         secondaryColor: secondaryColor,
@@ -741,7 +751,8 @@ class _FloatingControlBar extends StatelessWidget {
                           icon: Icons.visibility_outlined,
                           label: '정답',
                           color: primaryColor,
-                          enabled: !training.isListening &&
+                          enabled:
+                              !training.isListening &&
                               !training.isInitializingStt,
                           onTap: onRevealAnswer,
                         ),
@@ -789,8 +800,10 @@ class _FloatingControlBar extends StatelessWidget {
                           ),
                           focusedBorder: OutlineInputBorder(
                             borderRadius: BorderRadius.circular(14),
-                            borderSide:
-                                BorderSide(color: primaryColor, width: 1.5),
+                            borderSide: BorderSide(
+                              color: primaryColor,
+                              width: 1.5,
+                            ),
                           ),
                         ),
                       ),
@@ -837,7 +850,8 @@ class _FloatingControlBar extends StatelessWidget {
                           icon: Icons.lightbulb_outline_rounded,
                           label: '힌트',
                           color: primaryColor,
-                          enabled: !training.isListening &&
+                          enabled:
+                              !training.isListening &&
                               !training.isInitializingStt &&
                               training.canRevealMoreHints,
                           onTap: onHint,
@@ -846,7 +860,8 @@ class _FloatingControlBar extends StatelessWidget {
                       _CompactIconButton(
                         icon: Icons.keyboard_rounded,
                         color: primaryColor,
-                        enabled: !training.isListening &&
+                        enabled:
+                            !training.isListening &&
                             !training.isInitializingStt,
                         onTap: onToggleTyping,
                         tooltip: '타이핑 입력',
@@ -854,10 +869,10 @@ class _FloatingControlBar extends StatelessWidget {
                       const SizedBox(width: 8),
                       _MicButton(
                         tourKey: tourKeys?.micKey,
-                        enabled: training.isListening ||
-                            !training.isInitializingStt,
-                        isInitializing: training.isInitializingStt &&
-                            !training.isListening,
+                        enabled:
+                            training.isListening || !training.isInitializingStt,
+                        isInitializing:
+                            training.isInitializingStt && !training.isListening,
                         isListening: training.isListening,
                         primaryColor: primaryColor,
                         secondaryColor: secondaryColor,
@@ -869,7 +884,8 @@ class _FloatingControlBar extends StatelessWidget {
                           icon: Icons.visibility_outlined,
                           label: '정답',
                           color: primaryColor,
-                          enabled: !training.isListening &&
+                          enabled:
+                              !training.isListening &&
                               !training.isInitializingStt,
                           onTap: onRevealAnswer,
                         ),
@@ -902,8 +918,7 @@ class _CompactIconButton extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final iconColor =
-        enabled ? color : color.withValues(alpha: 0.35);
+    final iconColor = enabled ? color : color.withValues(alpha: 0.35);
     return Tooltip(
       message: tooltip,
       child: Material(
@@ -957,10 +972,7 @@ class _GuidanceBanner extends StatelessWidget {
       builder: (context, child) {
         final t = shakeAnimation.value;
         final shakeX = math.sin(t * math.pi * 6) * (1 - t) * 10;
-        return Transform.translate(
-          offset: Offset(shakeX, 0),
-          child: child,
-        );
+        return Transform.translate(offset: Offset(shakeX, 0), child: child);
       },
       child: AnimatedSwitcher(
         duration: const Duration(milliseconds: 320),
@@ -982,10 +994,7 @@ class _GuidanceBanner extends StatelessWidget {
             opacity: anim,
             child: SlideTransition(
               position: slide,
-              child: ScaleTransition(
-                scale: scale,
-                child: child,
-              ),
+              child: ScaleTransition(scale: scale, child: child),
             ),
           );
         },
@@ -1117,7 +1126,9 @@ class _MicButtonState extends State<_MicButton>
     final button = Material(
       color: Colors.transparent,
       child: InkWell(
-        onTap: widget.enabled && !widget.isInitializing ? widget.onPressed : null,
+        onTap: widget.enabled && !widget.isInitializing
+            ? widget.onPressed
+            : null,
         customBorder: const CircleBorder(),
         child: SizedBox(
           width: micSize,
@@ -1144,7 +1155,8 @@ class _MicButtonState extends State<_MicButton>
                                 shape: BoxShape.circle,
                                 border: Border.all(
                                   color: Colors.red.withValues(
-                                    alpha: 0.42 *
+                                    alpha:
+                                        0.42 *
                                         (1 - ((_pulse.value + phase) % 1.0)),
                                   ),
                                   width: 2.2,
@@ -1164,28 +1176,31 @@ class _MicButtonState extends State<_MicButton>
                   shape: BoxShape.circle,
                   gradient: widget.enabled
                       ? (widget.isListening
-                          ? const LinearGradient(
-                              colors: [Color(0xFFFF5252), Color(0xFFD32F2F)],
-                              begin: Alignment.topLeft,
-                              end: Alignment.bottomRight,
-                            )
-                          : LinearGradient(
-                              colors: [
-                                widget.primaryColor,
-                                widget.secondaryColor,
-                              ],
-                              begin: Alignment.topLeft,
-                              end: Alignment.bottomRight,
-                            ))
+                            ? const LinearGradient(
+                                colors: [Color(0xFFFF5252), Color(0xFFD32F2F)],
+                                begin: Alignment.topLeft,
+                                end: Alignment.bottomRight,
+                              )
+                            : LinearGradient(
+                                colors: [
+                                  widget.primaryColor,
+                                  widget.secondaryColor,
+                                ],
+                                begin: Alignment.topLeft,
+                                end: Alignment.bottomRight,
+                              ))
                       : null,
                   color: widget.enabled ? null : DashboardPalette.borderLight,
                   boxShadow: widget.enabled
                       ? [
                           BoxShadow(
-                            color: (widget.isListening
-                                    ? Colors.red
-                                    : widget.primaryColor)
-                                .withValues(alpha: widget.isListening ? 0.42 : 0.35),
+                            color:
+                                (widget.isListening
+                                        ? Colors.red
+                                        : widget.primaryColor)
+                                    .withValues(
+                                      alpha: widget.isListening ? 0.42 : 0.35,
+                                    ),
                             blurRadius: widget.isListening ? 18 : 14,
                             spreadRadius: widget.isListening ? 1 : 0,
                             offset: const Offset(0, 4),

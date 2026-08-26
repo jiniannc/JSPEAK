@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:just_audio/just_audio.dart';
 
@@ -20,7 +22,9 @@ class AudioPlayerService {
   Future<void> playFile(String path) async {
     await _player.stop();
     await _player.setFilePath(path);
-    await _player.play();
+    // just_audio의 play() Future는 재생 "시작"이 아니라 완료/중단 시 끝난다.
+    // 이를 await하면 이전 재생의 후속 상태가 다음 재생 세션을 덮어쓴다.
+    unawaited(_player.play());
   }
 
   Future<void> playUrl(String url) async {
@@ -30,12 +34,14 @@ class AudioPlayerService {
     } else {
       await _player.setUrl(url);
     }
-    await _player.play();
+    unawaited(_player.play());
   }
 
   Future<void> pause() => _player.pause();
 
-  Future<void> resume() => _player.play();
+  Future<void> resume() async {
+    unawaited(_player.play());
+  }
 
   Future<void> setSpeed(double speed) => _player.setSpeed(speed);
 

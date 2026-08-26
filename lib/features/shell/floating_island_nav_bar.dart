@@ -1,3 +1,5 @@
+import 'dart:ui';
+
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 
@@ -172,30 +174,66 @@ class _FloatingIslandNavBarState extends State<FloatingIslandNavBar> {
 class _DeepGlassNavChip extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
-    return AnimatedContainer(
-      duration: const Duration(milliseconds: 200),
-      curve: Curves.easeOutCubic,
-      decoration: GlassSurfaceStyle.deepDarkGlassButton(
-        radius: 24,
-        opacity: 0.9,
-      ),
-      child: Stack(
-        children: [
-          Positioned(
-            top: 0,
-            left: 10,
-            right: 10,
-            child: IgnorePointer(
-              child: Container(
-                height: 1,
-                decoration: BoxDecoration(
-                  color: Colors.white.withValues(alpha: 0.2),
-                  borderRadius: BorderRadius.circular(1),
+    return ClipRRect(
+      borderRadius: BorderRadius.circular(24),
+      clipBehavior: Clip.antiAlias,
+      child: BackdropFilter(
+        filter: ImageFilter.blur(sigmaX: 8, sigmaY: 8),
+        child: AnimatedContainer(
+          duration: const Duration(milliseconds: 200),
+          curve: Curves.easeOutCubic,
+          decoration: BoxDecoration(
+            borderRadius: BorderRadius.circular(24),
+            gradient: LinearGradient(
+              begin: Alignment.topLeft,
+              end: Alignment.bottomRight,
+              colors: [
+                GlassSurfaceStyle.deepSlate.withValues(alpha: 0.58),
+                GlassSurfaceStyle.deepSlate.withValues(alpha: 0.40),
+              ],
+            ),
+            border: Border.all(
+              color: Colors.white.withValues(alpha: 0.34),
+              width: 1,
+            ),
+            boxShadow: [
+              BoxShadow(
+                color: GlassSurfaceStyle.deepSlate.withValues(alpha: 0.16),
+                blurRadius: 10,
+                offset: const Offset(0, 4),
+              ),
+              BoxShadow(
+                color: Colors.white.withValues(alpha: 0.10),
+                blurRadius: 6,
+                offset: const Offset(-2, -2),
+              ),
+            ],
+          ),
+          child: Stack(
+            children: [
+              Positioned(
+                top: 0,
+                left: 10,
+                right: 10,
+                child: IgnorePointer(
+                  child: Container(
+                    height: 1,
+                    decoration: BoxDecoration(
+                      gradient: LinearGradient(
+                        colors: [
+                          Colors.white.withValues(alpha: 0),
+                          Colors.white.withValues(alpha: 0.52),
+                          Colors.white.withValues(alpha: 0),
+                        ],
+                      ),
+                      borderRadius: BorderRadius.circular(1),
+                    ),
+                  ),
                 ),
               ),
-            ),
+            ],
           ),
-        ],
+        ),
       ),
     );
   }
@@ -248,11 +286,7 @@ class _NavItemSlot extends StatelessWidget {
                 ),
               ),
               if (showBadge)
-                const Positioned(
-                  top: 0,
-                  right: 2,
-                  child: _NavBadgeDot(),
-                ),
+                const Positioned(top: 0, right: 2, child: _NavBadgeDot()),
             ],
           ),
         ),
@@ -303,9 +337,10 @@ class _NavBadgeDotState extends State<_NavBadgeDot>
   @override
   Widget build(BuildContext context) {
     return FadeTransition(
-      opacity: Tween<double>(begin: 0.55, end: 1).animate(
-        CurvedAnimation(parent: _pulse, curve: Curves.easeInOut),
-      ),
+      opacity: Tween<double>(
+        begin: 0.55,
+        end: 1,
+      ).animate(CurvedAnimation(parent: _pulse, curve: Curves.easeInOut)),
       child: Container(
         width: 8,
         height: 8,

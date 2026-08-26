@@ -115,6 +115,7 @@ class _SentenceWheelViewState extends ConsumerState<SentenceWheelView>
 
   /// 메인 카드·3D 휠을 추가로 위로 올리는 보정.
   static const _kFocusLiftBias = 52.0;
+
   /// focusAlignment 클램프와 별도로, 전체 휠·카드 블록을 추가로 위로 올림.
   static const _kFocusExtraLift = 30.0;
 
@@ -471,9 +472,10 @@ class _SentenceWheelViewState extends ConsumerState<SentenceWheelView>
       final maxOffset = (widget.sentences.length - 1) * _itemExtent;
       final nextOffset = (_controller.offset - delta).clamp(0.0, maxOffset);
       _controller.jumpTo(nextOffset);
-      final nearestIndex = (nextOffset / _itemExtent)
-          .round()
-          .clamp(0, widget.sentences.length - 1);
+      final nearestIndex = (nextOffset / _itemExtent).round().clamp(
+        0,
+        widget.sentences.length - 1,
+      );
       _maybeHapticForSnapIndex(nearestIndex);
     }
   }
@@ -513,16 +515,15 @@ class _SentenceWheelViewState extends ConsumerState<SentenceWheelView>
     // 연속 드래그 — 손을 놓은 시점의 휠 오프셋에서 가장 가까운 인덱스로
     // 자연스럽게 정착한다(여러 칸을 한 번에 밀었다면 그만큼 이동).
     final nearestIndex = _controller.hasClients
-        ? (_controller.offset / _itemExtent)
-            .round()
-            .clamp(0, widget.sentences.length - 1)
+        ? (_controller.offset / _itemExtent).round().clamp(
+            0,
+            widget.sentences.length - 1,
+          )
         : _currentIndex;
 
     if (!hasNext && _controller.hasClients) {
-      final overshoot =
-          _controller.offset - _currentIndex * _itemExtent;
-      final wantsForward =
-          overshoot > _itemExtent * 0.22 || velocity < -120;
+      final overshoot = _controller.offset - _currentIndex * _itemExtent;
+      final wantsForward = overshoot > _itemExtent * 0.22 || velocity < -120;
       if (_tryTriggerCompletion(wantsForward: wantsForward)) return;
     }
 
@@ -538,15 +539,15 @@ class _SentenceWheelViewState extends ConsumerState<SentenceWheelView>
     final safeTop = media.padding.top;
     final safeBottom = media.padding.bottom;
     final viewportH = screenH - safeTop - safeBottom;
-    final globalTargetY =
-        safeTop + viewportH * _kVisualCenterFraction;
+    final globalTargetY = safeTop + viewportH * _kVisualCenterFraction;
     final widgetTop = safeTop + widget.topChromeHeight;
     final localTargetY = globalTargetY - widgetTop;
     final geometricCenter = maxHeight / 2;
-    final navBias =
-        widget.sentences.length > 1 ? _kNavChromeBias : 0.0;
-    return (geometricCenter - localTargetY + navBias + _kFocusLiftBias)
-        .clamp(0.0, maxHeight * 0.38);
+    final navBias = widget.sentences.length > 1 ? _kNavChromeBias : 0.0;
+    return (geometricCenter - localTargetY + navBias + _kFocusLiftBias).clamp(
+      0.0,
+      maxHeight * 0.38,
+    );
   }
 
   Alignment _focusAlignment(double maxHeight, double shiftUp) {
@@ -598,18 +599,22 @@ class _SentenceWheelViewState extends ConsumerState<SentenceWheelView>
         final isLastCard = _currentIndex >= widget.sentences.length - 1;
         final hasPrev = _currentIndex > 0;
         final hasNext = _currentIndex < widget.sentences.length - 1;
-        final focusShiftUp =
-            _focusVerticalShift(context, constraints.maxHeight);
-        final focusAlignment =
-            _focusAlignment(constraints.maxHeight, focusShiftUp);
+        final focusShiftUp = _focusVerticalShift(
+          context,
+          constraints.maxHeight,
+        );
+        final focusAlignment = _focusAlignment(
+          constraints.maxHeight,
+          focusShiftUp,
+        );
         final showNavArrows = widget.sentences.length > 1 && !_isDragging;
         final showSwipeCoach =
             !_hideSwipeHint && widget.sentences.length > 1 && hasNext;
         final swipeCoachLift = showSwipeCoach
             ? maxFocusHeight * 0.5 +
-                (widget.sentences.length > 1 ? _kUpNavBlockHeight : 0) +
-                _kSwipeCoachGapAboveCard +
-                _kSwipeCoachHalfHeight
+                  (widget.sentences.length > 1 ? _kUpNavBlockHeight : 0) +
+                  _kSwipeCoachGapAboveCard +
+                  _kSwipeCoachHalfHeight
             : 0.0;
 
         // 세로 드래그는 휠·메인 카드에만 걸어, 네비 화살표는 한 번 탭으로 이동.
@@ -624,147 +629,149 @@ class _SentenceWheelViewState extends ConsumerState<SentenceWheelView>
               child: Align(
                 alignment: focusAlignment,
                 child: SizedBox(
-                width: constraints.maxWidth,
-                height: constraints.maxHeight,
-                child: Stack(
-                  clipBehavior: Clip.none,
-                  alignment: Alignment.center,
-                  children: [
-                    // 레이어 1: 3D 휠(후보 카드)
-                    Positioned.fill(
-                      child: _wrapVerticalDrag(
-                        ShaderMask(
-                          blendMode: BlendMode.dstIn,
-                          shaderCallback: (Rect bounds) =>
-                              _wheelFadeShader(bounds, maxFocusHeight),
-                          child: ListWheelScrollView.useDelegate(
-                            controller: _controller,
-                            itemExtent: _itemExtent,
-                            perspective: _perspective,
-                            diameterRatio: _diameterRatio,
-                            squeeze: _squeeze,
-                            clipBehavior: Clip.none,
-                            useMagnifier: false,
-                            physics: const NeverScrollableScrollPhysics(),
-                            childDelegate: ListWheelChildBuilderDelegate(
-                              childCount: widget.sentences.length,
-                              builder: (context, index) {
-                                return _WheelSlotItem(
-                                  index: index,
-                                  currentIndex: _currentIndex,
-                                  horizontalPadding: horizontalPad,
-                                  cardSideInset: cardSideInset,
-                                  sentence: widget.sentences[index],
-                                  onTap: () => _navigateTo(index),
-                                  controller: _controller,
-                                  itemExtent: _itemExtent,
-                                  centerExpand: _expandController,
-                                  accent: accent,
-                                  isDragging: _isDragging,
-                                  shimmerAnimation: _snapShimmerController,
-                                );
-                              },
+                  width: constraints.maxWidth,
+                  height: constraints.maxHeight,
+                  child: Stack(
+                    clipBehavior: Clip.none,
+                    alignment: Alignment.center,
+                    children: [
+                      // 레이어 1: 3D 휠(후보 카드)
+                      Positioned.fill(
+                        child: _wrapVerticalDrag(
+                          ShaderMask(
+                            blendMode: BlendMode.dstIn,
+                            shaderCallback: (Rect bounds) =>
+                                _wheelFadeShader(bounds, maxFocusHeight),
+                            child: ListWheelScrollView.useDelegate(
+                              controller: _controller,
+                              itemExtent: _itemExtent,
+                              perspective: _perspective,
+                              diameterRatio: _diameterRatio,
+                              squeeze: _squeeze,
+                              clipBehavior: Clip.none,
+                              useMagnifier: false,
+                              physics: const NeverScrollableScrollPhysics(),
+                              childDelegate: ListWheelChildBuilderDelegate(
+                                childCount: widget.sentences.length,
+                                builder: (context, index) {
+                                  return _WheelSlotItem(
+                                    index: index,
+                                    currentIndex: _currentIndex,
+                                    horizontalPadding: horizontalPad,
+                                    cardSideInset: cardSideInset,
+                                    sentence: widget.sentences[index],
+                                    onTap: () => _navigateTo(index),
+                                    controller: _controller,
+                                    itemExtent: _itemExtent,
+                                    centerExpand: _expandController,
+                                    accent: accent,
+                                    isDragging: _isDragging,
+                                    shimmerAnimation: _snapShimmerController,
+                                  );
+                                },
+                              ),
                             ),
                           ),
                         ),
                       ),
-                    ),
 
-                    // 레이어 2: 메인 카드·네비(중심) + 스와이프 코치(카드 위 오버레이).
-                    KeyedSubtree(
-                      key: _tourKeys.swipeKey,
-                      child: Stack(
-                        clipBehavior: Clip.none,
-                        alignment: Alignment.center,
-                        children: [
-                          Column(
-                            mainAxisSize: MainAxisSize.min,
-                            children: [
-                              if (widget.sentences.length > 1) ...[
-                                AnimatedOpacity(
-                                  opacity: showNavArrows ? 1.0 : 0.0,
-                                  duration: const Duration(milliseconds: 180),
-                                  curve: Curves.easeOut,
-                                  child: IgnorePointer(
-                                    ignoring: !showNavArrows,
-                                    child: _WheelNavArrow(
-                                      upward: true,
-                                      enabled: hasPrev && !_isAnimatingSwap,
-                                      accent: accent,
-                                      onTap: hasPrev
-                                          ? () => _navigateViaArrow(
+                      // 레이어 2: 메인 카드·네비(중심) + 스와이프 코치(카드 위 오버레이).
+                      KeyedSubtree(
+                        key: _tourKeys.swipeKey,
+                        child: Stack(
+                          clipBehavior: Clip.none,
+                          alignment: Alignment.center,
+                          children: [
+                            Column(
+                              mainAxisSize: MainAxisSize.min,
+                              children: [
+                                if (widget.sentences.length > 1) ...[
+                                  AnimatedOpacity(
+                                    opacity: showNavArrows ? 1.0 : 0.0,
+                                    duration: const Duration(milliseconds: 180),
+                                    curve: Curves.easeOut,
+                                    child: IgnorePointer(
+                                      ignoring: !showNavArrows,
+                                      child: _WheelNavArrow(
+                                        upward: true,
+                                        enabled: hasPrev && !_isAnimatingSwap,
+                                        accent: accent,
+                                        onTap: hasPrev
+                                            ? () => _navigateViaArrow(
                                                 _currentIndex - 1,
                                               )
-                                          : null,
+                                            : null,
+                                      ),
+                                    ),
+                                  ),
+                                  const SizedBox(height: 10),
+                                ],
+                                _wrapVerticalDrag(
+                                  _wrapNavPopCard(
+                                    ConstrainedBox(
+                                      constraints: BoxConstraints(
+                                        maxWidth: maxFocusWidth,
+                                        maxHeight: maxFocusHeight,
+                                      ),
+                                      child: _CenterFocusCard(
+                                        key: ValueKey(
+                                          widget.sentences[_currentIndex].id,
+                                        ),
+                                        sentence:
+                                            widget.sentences[_currentIndex],
+                                        displayIndex: _currentIndex + 1,
+                                        totalCount: widget.sentences.length,
+                                        horizontalPadding: 0,
+                                        accent: accent,
+                                        expand: _expandController,
+                                        fullHeight: maxFocusHeight,
+                                        tourKeys: _tourKeys,
+                                        onNextSentence: hasNext
+                                            ? () => _settleTo(_currentIndex + 1)
+                                            : null,
+                                      ),
                                     ),
                                   ),
                                 ),
-                                const SizedBox(height: 10),
-                              ],
-                              _wrapVerticalDrag(
-                                _wrapNavPopCard(
-                                  ConstrainedBox(
-                                    constraints: BoxConstraints(
-                                      maxWidth: maxFocusWidth,
-                                      maxHeight: maxFocusHeight,
-                                    ),
-                                    child: _CenterFocusCard(
-                                      key: ValueKey(
-                                          widget.sentences[_currentIndex].id),
-                                      sentence: widget.sentences[_currentIndex],
-                                      displayIndex: _currentIndex + 1,
-                                      totalCount: widget.sentences.length,
-                                      horizontalPadding: 0,
-                                      accent: accent,
-                                      expand: _expandController,
-                                      fullHeight: maxFocusHeight,
-                                      tourKeys: _tourKeys,
-                                      onNextSentence: hasNext
-                                          ? () => _settleTo(_currentIndex + 1)
-                                          : null,
-                                    ),
-                                  ),
-                                ),
-                              ),
-                              if (widget.sentences.length > 1) ...[
-                                const SizedBox(height: 10),
-                                AnimatedOpacity(
-                                  opacity: showNavArrows ? 1.0 : 0.0,
-                                  duration: const Duration(milliseconds: 180),
-                                  curve: Curves.easeOut,
-                                  child: IgnorePointer(
-                                    ignoring: !showNavArrows,
-                                    child: _WheelNavArrow(
-                                      upward: false,
-                                      enabled: hasNext && !_isAnimatingSwap,
-                                      accent: accent,
-                                      onTap: hasNext
-                                          ? () => _navigateViaArrow(
+                                if (widget.sentences.length > 1) ...[
+                                  const SizedBox(height: 10),
+                                  AnimatedOpacity(
+                                    opacity: showNavArrows ? 1.0 : 0.0,
+                                    duration: const Duration(milliseconds: 180),
+                                    curve: Curves.easeOut,
+                                    child: IgnorePointer(
+                                      ignoring: !showNavArrows,
+                                      child: _WheelNavArrow(
+                                        upward: false,
+                                        enabled: hasNext && !_isAnimatingSwap,
+                                        accent: accent,
+                                        onTap: hasNext
+                                            ? () => _navigateViaArrow(
                                                 _currentIndex + 1,
                                               )
-                                          : null,
+                                            : null,
+                                      ),
                                     ),
                                   ),
-                                ),
+                                ],
                               ],
-                            ],
-                          ),
-                          if (showSwipeCoach)
-                            Transform.translate(
-                              offset: Offset(0, -swipeCoachLift),
-                              child: _WheelSwipeCoach(
-                                animation: _swipeHintController,
-                                accent: accent,
-                                hasNext: hasNext,
-                              ),
                             ),
-                        ],
+                            if (showSwipeCoach)
+                              Transform.translate(
+                                offset: Offset(0, -swipeCoachLift),
+                                child: _WheelSwipeCoach(
+                                  animation: _swipeHintController,
+                                  accent: accent,
+                                  hasNext: hasNext,
+                                ),
+                              ),
+                          ],
+                        ),
                       ),
-                    ),
-                  ],
+                    ],
+                  ),
                 ),
               ),
-            ),
             ),
 
             // 마지막 카드 하단 — Shimmer 글래스 완료 칩.
@@ -777,9 +784,7 @@ class _SentenceWheelViewState extends ConsumerState<SentenceWheelView>
                 right: horizontalPad,
                 child: Align(
                   alignment: Alignment.bottomCenter,
-                  child: _CompletionGlassChip(
-                    onTap: _onCompletionChipTap,
-                  ),
+                  child: _CompletionGlassChip(onTap: _onCompletionChipTap),
                 ),
               ),
 
@@ -803,8 +808,9 @@ class _SentenceWheelViewState extends ConsumerState<SentenceWheelView>
 Shader _wheelFadeShader(Rect bounds, double focusHeight) {
   final h = bounds.height;
   if (h <= 0) {
-    return const LinearGradient(colors: [Colors.white, Colors.white])
-        .createShader(bounds);
+    return const LinearGradient(
+      colors: [Colors.white, Colors.white],
+    ).createShader(bounds);
   }
 
   final halfNorm = (focusHeight / 2) / h;
@@ -875,8 +881,9 @@ class _WheelSlotItem extends StatelessWidget {
       builder: (context, _) {
         // 휠 중심 오프셋에 가장 가까운 인덱스를 실시간으로 계산 — 휠이
         // 굴러갈 때마다 스냅 타겟 카드가 '착착착' 지나가며 하이라이트된다.
-        final liveOffset =
-            controller.hasClients ? controller.offset : index * itemExtent;
+        final liveOffset = controller.hasClients
+            ? controller.offset
+            : index * itemExtent;
         final nearestIndex = (liveOffset / itemExtent).round();
         final isActiveTarget = index == nearestIndex;
         // 지금 손을 떼면 이 카드가 선택된다 — 드래그 중에만 반짝인다.
@@ -929,10 +936,7 @@ class _WheelSlotItem extends StatelessWidget {
           alignment: Alignment.center,
           child: Opacity(
             opacity: (1 - focusT) * slotOpacity,
-            child: IgnorePointer(
-              ignoring: focusT > 0.5,
-              child: preview,
-            ),
+            child: IgnorePointer(ignoring: focusT > 0.5, child: preview),
           ),
         );
       },
@@ -993,44 +997,44 @@ class _CenterFocusCard extends StatelessWidget {
                   // 2중 그림자가 부모 ConstrainedBox에 잘리지 않도록 여백 확보.
                   padding: EdgeInsets.fromLTRB(4, 4, 4, 12 * t + 4),
                   child: DecoratedBox(
-                      decoration: BoxDecoration(
+                    decoration: BoxDecoration(
+                      borderRadius: BorderRadius.circular(24),
+                      boxShadow: [
+                        BoxShadow(
+                          color: Colors.black.withValues(alpha: 0.08 * t),
+                          blurRadius: 20,
+                          offset: Offset(0, 8 * t),
+                        ),
+                        BoxShadow(
+                          color: accent.withValues(alpha: 0.12 * t),
+                          blurRadius: 10,
+                          offset: Offset(0, 4 * t),
+                        ),
+                      ],
+                    ),
+                    child: ClipRRect(
+                      borderRadius: BorderRadius.circular(24),
+                      child: _WheelCardGlassShell(
                         borderRadius: BorderRadius.circular(24),
-                        boxShadow: [
-                          BoxShadow(
-                            color: Colors.black.withValues(alpha: 0.08 * t),
-                            blurRadius: 20,
-                            offset: Offset(0, 8 * t),
-                          ),
-                          BoxShadow(
-                            color: accent.withValues(alpha: 0.12 * t),
-                            blurRadius: 10,
-                            offset: Offset(0, 4 * t),
-                          ),
-                        ],
-                      ),
-                      child: ClipRRect(
-                        borderRadius: BorderRadius.circular(24),
-                        child: _WheelCardGlassShell(
-                          borderRadius: BorderRadius.circular(24),
-                          fillColor: Colors.white.withValues(alpha: 0.92),
-                          blurSigma: 16,
-                          child: Container(
-                            decoration: BoxDecoration(
-                              borderRadius: BorderRadius.circular(24),
-                              border: Border.all(
-                                color: Colors.white.withValues(alpha: 0.9),
-                                width: 1.0,
-                              ),
+                        fillColor: Colors.white.withValues(alpha: 0.92),
+                        blurSigma: 16,
+                        child: Container(
+                          decoration: BoxDecoration(
+                            borderRadius: BorderRadius.circular(24),
+                            border: Border.all(
+                              color: Colors.white.withValues(alpha: 0.9),
+                              width: 1.0,
                             ),
-                            child: ClipRect(
-                              child: Align(
-                                alignment: Alignment.topCenter,
-                                heightFactor: t,
-                                child: ConstrainedBox(
-                                  constraints:
-                                      BoxConstraints(maxHeight: fullHeight),
-                                  child: learningPanel,
+                          ),
+                          child: ClipRect(
+                            child: Align(
+                              alignment: Alignment.topCenter,
+                              heightFactor: t,
+                              child: ConstrainedBox(
+                                constraints: BoxConstraints(
+                                  maxHeight: fullHeight,
                                 ),
+                                child: learningPanel,
                               ),
                             ),
                           ),
@@ -1040,6 +1044,7 @@ class _CenterFocusCard extends StatelessWidget {
                   ),
                 ),
               ),
+            ),
           );
         },
         child: WheelLearningPanel(
@@ -1181,9 +1186,11 @@ class _NeighborPreview extends StatelessWidget {
                       style: TextStyle(
                         fontFamily: AppTheme.fontBody,
                         fontFamilyFallback: AppTheme.fontFallback,
-                        fontSize: metrics.koreanFontSize - 1,
+                        fontSize: isActiveTarget
+                            ? metrics.koreanFontSize
+                            : metrics.koreanFontSize - 1,
                         fontWeight: isActiveTarget
-                            ? FontWeight.w700
+                            ? FontWeight.w800
                             : FontWeight.w600,
                         letterSpacing: -0.2,
                         color: isActiveTarget
@@ -1214,9 +1221,7 @@ class _NeighborPreview extends StatelessWidget {
             child: IgnorePointer(
               child: ClipRRect(
                 borderRadius: BorderRadius.circular(14),
-                child: _SnapShimmerOverlay(
-                  animation: shimmerAnimation,
-                ),
+                child: _SnapShimmerOverlay(animation: shimmerAnimation),
               ),
             ),
           ),
@@ -1231,10 +1236,7 @@ class _PreviewIndexChip extends StatelessWidget {
   final String label;
   final bool isActiveTarget;
 
-  const _PreviewIndexChip({
-    required this.label,
-    required this.isActiveTarget,
-  });
+  const _PreviewIndexChip({required this.label, required this.isActiveTarget});
 
   @override
   Widget build(BuildContext context) {
@@ -1530,8 +1532,12 @@ class _CompletionGlassChipState extends State<_CompletionGlassChip>
 
     return GestureDetector(
       onTap: widget.onTap,
-      onTapDown: widget.onTap != null ? (_) => setState(() => _pressed = true) : null,
-      onTapUp: widget.onTap != null ? (_) => setState(() => _pressed = false) : null,
+      onTapDown: widget.onTap != null
+          ? (_) => setState(() => _pressed = true)
+          : null,
+      onTapUp: widget.onTap != null
+          ? (_) => setState(() => _pressed = false)
+          : null,
       onTapCancel: widget.onTap != null
           ? () => setState(() => _pressed = false)
           : null,
@@ -1708,7 +1714,7 @@ class _IndexIndicator extends StatelessWidget {
             color: Colors.black.withValues(alpha: 0.05),
             blurRadius: 4,
             offset: const Offset(0, 2),
-          )
+          ),
         ],
       ),
       child: Text(
@@ -1745,18 +1751,12 @@ class _WheelCardGlassShell extends StatelessWidget {
     );
 
     if (kIsWeb) {
-      return DecoratedBox(
-        decoration: decoration,
-        child: child,
-      );
+      return DecoratedBox(decoration: decoration, child: child);
     }
 
     return BackdropFilter(
       filter: ImageFilter.blur(sigmaX: blurSigma, sigmaY: blurSigma),
-      child: DecoratedBox(
-        decoration: decoration,
-        child: child,
-      ),
+      child: DecoratedBox(decoration: decoration, child: child),
     );
   }
 }

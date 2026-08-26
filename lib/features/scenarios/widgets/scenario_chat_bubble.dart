@@ -100,6 +100,7 @@ class ScenarioChatBubble extends StatefulWidget {
   final GlobalKey? tourHighlightKey;
   final GlobalKey? scrollAnchorKey;
   final bool keyboardTyping;
+
   /// 위에 겹칠 이전 메시지가 있는지 — 리스트의 첫 메시지는 false로 넘겨야
   /// 아바타가 헤더 밖으로 삐져나가지 않는다.
   final bool allowTopOverlap;
@@ -176,8 +177,7 @@ class _ScenarioChatBubbleState extends State<ScenarioChatBubble>
     final avatarPath = msg.line.avatarImage;
     final isCrewTurn = msg.kind == ChatBubbleKind.crewTurn;
     final hasCrewAvatar = avatarPath.isNotEmpty && isCrewTurn;
-    final isHeroAvatar =
-        hasCrewAvatar && widget.isActive && !msg.isResolved;
+    final isHeroAvatar = hasCrewAvatar && widget.isActive && !msg.isResolved;
     final stickerSize = ScenarioBubbleAvatar.sizeFor(isHeroAvatar);
     // 아바타는 카드 위쪽 테두리에 닿기만 할 뿐 콘텐츠 영역과 겹치지 않으므로
     // 텍스트용 여분 우측 패딩이 필요 없다 — 우측 여백 최소화.
@@ -200,8 +200,8 @@ class _ScenarioChatBubbleState extends State<ScenarioChatBubble>
           color: widget.isActive
               ? accent
               : (isUser
-                  ? accent.withValues(alpha: 0.2)
-                  : Colors.black.withValues(alpha: 0.05)), // 💡 선을 엄청 연하게 변경
+                    ? accent.withValues(alpha: 0.2)
+                    : Colors.black.withValues(alpha: 0.05)), // 💡 선을 엄청 연하게 변경
           width: widget.isActive ? 2 : 1,
         ),
         boxShadow: [
@@ -248,63 +248,67 @@ class _ScenarioChatBubbleState extends State<ScenarioChatBubble>
     );
 
     final bubbleLayout = !hasCrewAvatar
-        ? Padding(
-            padding: const EdgeInsets.only(top: 8),
-            child: bubbleCard,
-          )
+        ? Padding(padding: const EdgeInsets.only(top: 8), child: bubbleCard)
         : widget.allowTopOverlap
-            ? Stack(
-                clipBehavior: Clip.none,
-                children: [
-                  bubbleCard,
-                  Positioned(
+        ? Stack(
+            clipBehavior: Clip.none,
+            children: [
+              bubbleCard,
+              AnimatedPositioned(
+                right: ScenarioBubbleAvatar.peekInsetRight,
+                top: -stickerSize,
+                width: stickerSize,
+                height: stickerSize,
+                duration: ScenarioBubbleAvatar.resizeDuration,
+                curve: ScenarioBubbleAvatar.resizeCurve,
+                child: avatarWidget,
+              ),
+            ],
+          )
+        : Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              AnimatedContainer(
+                duration: ScenarioBubbleAvatar.resizeDuration,
+                curve: ScenarioBubbleAvatar.resizeCurve,
+                height: stickerSize,
+                alignment: Alignment.bottomRight,
+                child: Padding(
+                  padding: const EdgeInsets.only(
                     right: ScenarioBubbleAvatar.peekInsetRight,
-                    top: -stickerSize,
-                    child: AnimatedContainer(
-                      duration: const Duration(milliseconds: 420),
-                      curve: Curves.easeOutCubic,
-                      width: stickerSize,
-                      height: stickerSize,
-                      child: avatarWidget,
-                    ),
                   ),
-                ],
-              )
-            : Column(
-                mainAxisSize: MainAxisSize.min,
-                crossAxisAlignment: CrossAxisAlignment.stretch,
-                children: [
-                  AnimatedContainer(
-                    duration: const Duration(milliseconds: 420),
-                    curve: Curves.easeOutCubic,
-                    height: stickerSize,
-                    alignment: Alignment.bottomRight,
-                    child: Padding(
-                      padding: const EdgeInsets.only(
-                        right: ScenarioBubbleAvatar.peekInsetRight,
-                      ),
-                      child: avatarWidget,
-                    ),
-                  ),
-                  bubbleCard,
-                ],
-              );
+                  child: avatarWidget,
+                ),
+              ),
+              bubbleCard,
+            ],
+          );
 
     final Widget laidOutBubble = IntrinsicWidth(child: bubbleLayout);
 
-    Widget anchoredBubble = laidOutBubble;
-    if (widget.scrollAnchorKey != null) {
-      anchoredBubble = KeyedSubtree(
-        key: widget.scrollAnchorKey,
-        child: anchoredBubble,
-      );
-    }
-    if (widget.tourHighlightKey != null) {
-      anchoredBubble = KeyedSubtree(
-        key: widget.tourHighlightKey,
-        child: anchoredBubble,
-      );
-    }
+    // 측정용 GlobalKey가 활성 턴 전환 때 붙었다 떨어져도 실제 말풍선
+    // 서브트리는 교체되지 않아야 한다. 키를 콘텐츠 래퍼에 직접 적용하면
+    // 정답 확정 순간 AnimatedContainer 상태가 초기화되어 아바타가
+    // 사라졌다 작은 크기로 즉시 재등장한다.
+    final anchoredBubble = Stack(
+      clipBehavior: Clip.none,
+      children: [
+        laidOutBubble,
+        if (widget.scrollAnchorKey != null)
+          Positioned(
+            top: 0,
+            left: 0,
+            child: SizedBox(key: widget.scrollAnchorKey, width: 1, height: 1),
+          ),
+        if (widget.tourHighlightKey != null)
+          Positioned.fill(
+            child: IgnorePointer(
+              child: SizedBox.expand(key: widget.tourHighlightKey),
+            ),
+          ),
+      ],
+    );
 
     // 아바타는 안쪽 Stack에서만 위로 삐져나옴 — 카드 자체는 정상 흐름 위치 유지.
     return Padding(
@@ -616,11 +620,9 @@ class _SpeakingContentState extends State<_SpeakingContent> {
           ScenarioWordHintLane(
             hints: wordHints,
             dismissedRunIndices: _dismissedHintRuns,
-            gradient: context.languagePalette?.speechBubbleGradient ??
-                [
-                  Color.lerp(accent, Colors.white, 0.28)!,
-                  accent,
-                ],
+            gradient:
+                context.languagePalette?.speechBubbleGradient ??
+                [Color.lerp(accent, Colors.white, 0.28)!, accent],
             shadowColor: context.languagePalette?.primary ?? accent,
             onDismiss: (runIndex) =>
                 setState(() => _dismissedHintRuns.add(runIndex)),
@@ -764,10 +766,7 @@ class _ResolvedContentState extends State<_ResolvedContent>
                 child: child,
               );
             },
-            child: Text(
-              widget.line.textTarget,
-              style: style,
-            ),
+            child: Text(widget.line.textTarget, style: style),
           );
 
     return text;
@@ -810,10 +809,7 @@ class _ResolvedContentState extends State<_ResolvedContent>
                       ),
                       decoration: BoxDecoration(
                         gradient: LinearGradient(
-                          colors: [
-                            success,
-                            Color.lerp(success, accent, 0.25)!,
-                          ],
+                          colors: [success, Color.lerp(success, accent, 0.25)!],
                         ),
                         borderRadius: BorderRadius.circular(99),
                         boxShadow: [

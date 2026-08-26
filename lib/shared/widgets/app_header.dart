@@ -5,10 +5,7 @@ import '../../core/config/active5_layout.dart';
 import 'compact_language_switcher.dart';
 
 /// 헤더 타이틀 전환 축 — 탭 전환(수평) vs 학습 상세(수직).
-enum AppHeaderTransitionAxis {
-  horizontal,
-  vertical,
-}
+enum AppHeaderTransitionAxis { horizontal, vertical }
 
 /// 메인 탭 · 학습 모드 공통 상단 헤더 (라인 아이콘 + 타이틀 + 언어 스위치).
 /// 배경·구분선·섀도우 없이 화면 배경과 seamless하게 이어진다.
@@ -56,8 +53,7 @@ class AppHeader extends StatelessWidget {
     required Color accent,
     String? titleKey,
     bool animateTitle = true,
-    AppHeaderTransitionAxis transitionAxis =
-        AppHeaderTransitionAxis.horizontal,
+    AppHeaderTransitionAxis transitionAxis = AppHeaderTransitionAxis.horizontal,
     double trailingSlotWidth = 0,
     VoidCallback? onBrandTap,
     VoidCallback? onBookmarkVaultTap,
@@ -132,17 +128,10 @@ class AppHeader extends StatelessWidget {
         Row(
           crossAxisAlignment: CrossAxisAlignment.center,
           children: [
-            Icon(
-              icon,
-              size: iconSize,
-              color: resolvedIconColor,
-            ),
+            Icon(icon, size: iconSize, color: resolvedIconColor),
             const SizedBox(width: iconSpacing),
             Expanded(
-              child: _TitleText(
-                title: title,
-                dotColor: titleDotColor,
-              ),
+              child: _TitleText(title: title, dotColor: titleDotColor),
             ),
           ],
         ),
@@ -246,7 +235,7 @@ class AppHeaderTrailing extends StatelessWidget {
     required bool showBookmark,
   }) {
     if (!showLanguageSwitcher && !showBookmark) return 0;
-    var width = showBookmark ? 32.0 + 6.0 : AppHeader.trailingGap;
+    var width = showBookmark ? 32.0 + 4.0 : AppHeader.trailingGap;
     if (showLanguageSwitcher) {
       width += CompactLanguageSwitcher.outerWidth;
     }
@@ -267,7 +256,7 @@ class AppHeaderTrailing extends StatelessWidget {
             accent: accent,
             onTap: onBookmarkVaultTap!,
           ),
-          const SizedBox(width: 6),
+          const SizedBox(width: 4),
         ] else if (showLanguageSwitcher)
           const SizedBox(width: AppHeader.trailingGap),
         if (showLanguageSwitcher)
@@ -325,7 +314,7 @@ class _BookmarkVaultHeaderButton extends StatelessWidget {
       color: Colors.transparent,
       child: InkWell(
         onTap: onTap,
-        borderRadius: BorderRadius.circular(10),
+        customBorder: const CircleBorder(),
         splashColor: accent.withValues(alpha: 0.10),
         highlightColor: accent.withValues(alpha: 0.05),
         child: Ink(
@@ -333,7 +322,7 @@ class _BookmarkVaultHeaderButton extends StatelessWidget {
           height: 32,
           decoration: BoxDecoration(
             color: Colors.white.withValues(alpha: 0.42),
-            borderRadius: BorderRadius.circular(10),
+            shape: BoxShape.circle,
             boxShadow: [
               BoxShadow(
                 color: Colors.black.withValues(alpha: 0.06),
@@ -344,7 +333,7 @@ class _BookmarkVaultHeaderButton extends StatelessWidget {
           ),
           child: Icon(
             Icons.star_rounded,
-            size: 17,
+            size: 19,
             color: accent.withValues(alpha: 0.92),
           ),
         ),

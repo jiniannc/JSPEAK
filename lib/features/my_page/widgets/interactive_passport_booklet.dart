@@ -13,7 +13,6 @@ import '../../../data/models/content_chapter.dart';
 import '../../../data/models/learning_hub_chapter.dart';
 import '../../../data/models/scenario.dart';
 import '../../../data/models/sentence.dart';
-import 'my_page_section_header.dart';
 import 'title_badge_tile.dart';
 import 'vocab_swipe_seal.dart';
 
@@ -89,42 +88,22 @@ class _InteractivePassportBookletState extends State<InteractivePassportBooklet>
   Widget build(BuildContext context) {
     final mission = widget.report.languageMission;
 
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.stretch,
-      children: [
-        Row(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            const Expanded(
-              child: MyPageSectionHeader(
-                icon: Icons.badge_outlined,
-                title: 'CREW LEARNING PASSPORT',
-                subtitle: '학습 미션 달성 스탬프 및 자격 칭호',
-              ),
-            ),
-            const SizedBox(width: 8),
-            _TitleBadgeDebugUnlockSwitch(),
-          ],
-        ),
-        const SizedBox(height: 12),
-        _PassportBookletView(
-          mission: mission,
-          report: widget.report,
-          currentPage: _currentPage,
-          pageController: _pageController,
-          selectedLanguage: widget.selectedLanguage,
-          onLanguageSelected: widget.onLanguageSelected,
-          onPageChanged: (i) => setState(() => _currentPage = i),
-          onTabSelected: _goToPage,
-        ),
-      ],
+    return _PassportBookletView(
+      mission: mission,
+      report: widget.report,
+      currentPage: _currentPage,
+      pageController: _pageController,
+      selectedLanguage: widget.selectedLanguage,
+      onLanguageSelected: widget.onLanguageSelected,
+      onPageChanged: (i) => setState(() => _currentPage = i),
+      onTabSelected: _goToPage,
     );
   }
 }
 
-/// QA용 — 헤더 옆 전체 칭호 해제 미리보기 스위치.
-class _TitleBadgeDebugUnlockSwitch extends ConsumerWidget {
-  const _TitleBadgeDebugUnlockSwitch();
+/// QA용 — 섹션 카드 헤더 옆 전체 칭호 해제 미리보기 스위치.
+class TitleBadgeDebugUnlockSwitch extends ConsumerWidget {
+  const TitleBadgeDebugUnlockSwitch({super.key});
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {

@@ -22,7 +22,8 @@ class CompactLanguageSwitcher extends StatelessWidget {
     this.seamless = false,
   });
 
-  static const outerPadding = 3.0;
+  // 헤더에서 트랙 바깥에 별도 띠가 보이지 않도록 외곽 패딩 제거.
+  static const outerPadding = 0.0;
 
   static int get _languageCount => kDictionaryLanguages.length;
 
@@ -47,60 +48,68 @@ class CompactLanguageSwitcher extends StatelessWidget {
     final count = kDictionaryLanguages.length;
     final trackWidth = segmentWidth * count;
 
-    return DecoratedBox(
-      decoration: seamless
-          ? BoxDecoration(
-              color: accent.withValues(alpha: 0.07),
-              borderRadius: BorderRadius.circular(22),
-            )
-          : palette.glassCardDecoration(
-              radius: 22,
-              fillAlpha: 0.72,
-              borderAlpha: 0.55,
-              shadows: [
-                BoxShadow(
-                  color: Colors.black.withValues(alpha: 0.04),
-                  blurRadius: 8,
-                  offset: const Offset(0, 2),
-                ),
-              ],
-            ),
-      child: Padding(
-        padding: const EdgeInsets.all(outerPadding),
-        child: ClipRRect(
-          borderRadius: BorderRadius.circular(18),
-          child: SizedBox(
-            width: trackWidth,
-            height: trackHeight,
-            child: Stack(
-              clipBehavior: Clip.hardEdge,
-              children: [
-                AnimatedPositioned(
-                  duration: slideDuration,
-                  curve: Curves.easeOutCubic,
-                  left: _indicatorLeft,
-                  top: 0,
-                  width: segmentWidth,
-                  height: trackHeight,
-                  child: DecoratedBox(
-                    decoration: BoxDecoration(
-                      color: accent,
-                      borderRadius: BorderRadius.circular(16),
+    // DecoratedBox만 둥글게 칠하면 언어 팔레트가 보간되는 프레임에서
+    // Android 합성 레이어의 사각 경계가 비칠 수 있다. 외곽부터 명시적으로
+    // clip하고, seamless 배경은 언어색이 아닌 중립색으로 고정한다.
+    return ClipRRect(
+      borderRadius: BorderRadius.circular(16),
+      clipBehavior: Clip.antiAlias,
+      child: DecoratedBox(
+        decoration: seamless
+            ? BoxDecoration(
+                color: Colors.white.withValues(alpha: 0.42),
+                borderRadius: BorderRadius.circular(16),
+              )
+            : palette.glassCardDecoration(
+                radius: 16,
+                fillAlpha: 0.72,
+                borderAlpha: 0.55,
+                shadows: [
+                  BoxShadow(
+                    color: Colors.black.withValues(alpha: 0.04),
+                    blurRadius: 8,
+                    offset: const Offset(0, 2),
+                  ),
+                ],
+              ),
+        child: Padding(
+          padding: const EdgeInsets.all(outerPadding),
+          child: ClipRRect(
+            borderRadius: BorderRadius.circular(16),
+            clipBehavior: Clip.antiAlias,
+            child: SizedBox(
+              width: trackWidth,
+              height: trackHeight,
+              child: Stack(
+                clipBehavior: Clip.hardEdge,
+                children: [
+                  AnimatedPositioned(
+                    duration: slideDuration,
+                    curve: Curves.easeOutCubic,
+                    left: _indicatorLeft,
+                    top: 0,
+                    width: segmentWidth,
+                    height: trackHeight,
+                    child: DecoratedBox(
+                      decoration: BoxDecoration(
+                        color: accent,
+                        borderRadius: BorderRadius.circular(16),
+                      ),
                     ),
                   ),
-                ),
-                Row(
-                  children: [
-                    for (var i = 0; i < count; i++)
-                      _LanguageSegment(
-                        lang: kDictionaryLanguages[i],
-                        isSelected: _selectedIndex == i,
-                        accent: accent,
-                        onTap: () => onSelected(kDictionaryLanguages[i]),
-                      ),
-                  ],
-                ),
-              ],
+                  Row(
+                    children: [
+                      for (var i = 0; i < count; i++)
+                        _LanguageSegment(
+                          lang: kDictionaryLanguages[i],
+                          isSelected: _selectedIndex == i,
+                          accent: accent,
+                          onTap: () => onSelected(kDictionaryLanguages[i]),
+                        ),
+                    ],
+                  ),
+                ],
+              ),
             ),
           ),
         ),

@@ -20,6 +20,7 @@ import '../../features/dashboard/dashboard_palette.dart';
 import '../shell/floating_island_nav_bar.dart';
 import '../shell/main_shell_tab_header.dart';
 import '../../shared/widgets/app_header.dart';
+import '../../shared/widgets/chapter_hero_image.dart';
 import '../../shared/widgets/cascade_entrance.dart';
 import '../../shared/widgets/flight_progress_bar.dart';
 import 'widgets/learning_hub_chapter_card.dart';
@@ -29,8 +30,7 @@ class LearningHomeScreen extends ConsumerStatefulWidget {
   const LearningHomeScreen({super.key});
 
   @override
-  ConsumerState<LearningHomeScreen> createState() =>
-      _LearningHomeScreenState();
+  ConsumerState<LearningHomeScreen> createState() => _LearningHomeScreenState();
 }
 
 class _LearningHomeScreenState extends ConsumerState<LearningHomeScreen> {
@@ -47,10 +47,8 @@ class _LearningHomeScreenState extends ConsumerState<LearningHomeScreen> {
   int _listEpoch = 0;
   String? _precachedImagesLanguage;
   bool _compactScrollMode = false;
-  double _scrollDragStartOffset = 0;
   bool _isUserDragScroll = false;
   List<int> _orderedChapterNos = const [];
-  Map<int, LearningHubChapter> _chaptersByNo = const {};
   int? _outgoingExpandedChapterNo;
   int? _activeCenterScrollChapter;
   int _scrollGeneration = 0;
@@ -82,7 +80,6 @@ class _LearningHomeScreenState extends ConsumerState<LearningHomeScreen> {
   /// 스크롤 다운 시 플로팅 프로그레스 헤더가 완전히 사라지기까지의 거리.
   static const _floatingHeaderFadeDistance = 44.0;
 
-  static const _longDragThresholdPx = 96.0;
   /// 헤더·하단 네비를 고려한 포커스 위치 (가용 영역 상단 기준).
   static const _focusBandFraction = 0.40;
 
@@ -107,8 +104,7 @@ class _LearningHomeScreenState extends ConsumerState<LearningHomeScreen> {
   /// 자연스럽게 페이드아웃.
   double _floatingHeaderOpacityFor(double scrollOffset) {
     if (scrollOffset <= 0) return 1;
-    final t =
-        (scrollOffset / _floatingHeaderFadeDistance).clamp(0.0, 1.0);
+    final t = (scrollOffset / _floatingHeaderFadeDistance).clamp(0.0, 1.0);
     return Curves.easeOut.transform(1.0 - t);
   }
 
@@ -120,8 +116,7 @@ class _LearningHomeScreenState extends ConsumerState<LearningHomeScreen> {
 
   double _safeScrollOffset() => _scrollPositionOrNull?.pixels ?? 0.0;
 
-  double get _listPaddingTop =>
-      _floatingHeaderHeight + 10 - AppHeader.bodyGap;
+  double get _listPaddingTop => _floatingHeaderHeight + 10 - AppHeader.bodyGap;
 
   void _onChapterHeightChanged(int chapterNo, double height) {
     if (height <= 0) return;
@@ -135,9 +130,9 @@ class _LearningHomeScreenState extends ConsumerState<LearningHomeScreen> {
     if (measured != null && measured > 0) return measured;
 
     final index = _orderedChapterNos.indexOf(chapterNo);
-    final isLast =
-        index >= 0 && index == _orderedChapterNos.length - 1;
-    final isExpanded = chapterNo == _expandedChapterNo ||
+    final isLast = index >= 0 && index == _orderedChapterNos.length - 1;
+    final isExpanded =
+        chapterNo == _expandedChapterNo ||
         chapterNo == _outgoingExpandedChapterNo;
     if (isExpanded) {
       return _estimateExpandedHeightFor(chapterNo, context);
@@ -284,8 +279,9 @@ class _LearningHomeScreenState extends ConsumerState<LearningHomeScreen> {
     final targetIndex = _orderedChapterNos.indexOf(chapterNo);
     final targetIsLast =
         targetIndex >= 0 && targetIndex == _orderedChapterNos.length - 1;
-    final targetCompact =
-        LearningHubChapterCard.compactBlockHeight(isLast: targetIsLast);
+    final targetCompact = LearningHubChapterCard.compactBlockHeight(
+      isLast: targetIsLast,
+    );
     final targetStart = _measuredCardHeight(chapterNo) ?? targetCompact;
     final targetExpanded = _estimateExpandedHeightFor(chapterNo, context);
 
@@ -294,13 +290,14 @@ class _LearningHomeScreenState extends ConsumerState<LearningHomeScreen> {
     if (outgoingChapterNo != null && outgoingChapterNo != chapterNo) {
       final outgoingIndex = _orderedChapterNos.indexOf(outgoingChapterNo);
       if (outgoingIndex >= 0) {
-        final outgoingIsLast =
-            outgoingIndex == _orderedChapterNos.length - 1;
+        final outgoingIsLast = outgoingIndex == _orderedChapterNos.length - 1;
         final outgoingCompact = LearningHubChapterCard.compactBlockHeight(
           isLast: outgoingIsLast,
         );
-        final outgoingExpanded =
-            _estimateExpandedHeightFor(outgoingChapterNo, context);
+        final outgoingExpanded = _estimateExpandedHeightFor(
+          outgoingChapterNo,
+          context,
+        );
         final outgoingStart =
             _measuredCardHeight(outgoingChapterNo) ?? outgoingExpanded;
         delta -= outgoingStart - outgoingCompact;
@@ -421,7 +418,10 @@ class _LearningHomeScreenState extends ConsumerState<LearningHomeScreen> {
     checkFrame(maxFrames);
   }
 
-  void _scheduleExpandedScrollFinalize(int chapterNo, {required int generation}) {
+  void _scheduleExpandedScrollFinalize(
+    int chapterNo, {
+    required int generation,
+  }) {
     final token = Object();
     _scrollFinalizeToken = token;
     Future.delayed(
@@ -506,13 +506,22 @@ class _LearningHomeScreenState extends ConsumerState<LearningHomeScreen> {
   ) {
     if (_precachedImagesLanguage == language) return;
     _precachedImagesLanguage = language;
+    final cardWidth = _chapterCardWidth(context);
+    final dpr = MediaQuery.devicePixelRatioOf(context);
     for (final chapter in chapters) {
       final path = resolveHubChapterIcon(
         chapterImage: chapter.chapterImage,
         category: chapter.name,
       );
       if (path.isEmpty) continue;
-      precacheImage(AssetImage(path), context);
+      precacheImage(
+        ChapterHeroImage.heroProvider(
+          path,
+          displayWidth: cardWidth,
+          devicePixelRatio: dpr,
+        ),
+        context,
+      );
     }
   }
 
@@ -535,27 +544,26 @@ class _LearningHomeScreenState extends ConsumerState<LearningHomeScreen> {
 
   double _chapterCardWidth(BuildContext context) {
     final inset = Active5Layout.of(context).pagePadding.left;
-    return MediaQuery.sizeOf(context).width - inset * 2;
+    final viewportBox =
+        _viewportKey.currentContext?.findRenderObject() as RenderBox?;
+    if (viewportBox != null && viewportBox.hasSize) {
+      return math.max(0, viewportBox.size.width - inset * 2);
+    }
+
+    // DeviceScaffold가 Fold의 넓은 화면을 600dp로 제한하므로 MediaQuery
+    // 전체 폭을 사용하면 실제 카드보다 큰 높이를 예측해 스크롤이 과도해진다.
+    final mediaWidth = MediaQuery.sizeOf(context).width;
+    final maxDeviceWidth = Active5Layout.of(context).isLandscape
+        ? Active5Layout.logicalWidthLandscape
+        : Active5Layout.logicalWidthPortrait;
+    return math.max(0, math.min(mediaWidth, maxDeviceWidth) - inset * 2);
   }
 
-  /// 카드가 4:3 fallback이 아닌 실제 히어로 이미지 비율로 펼쳐질 최종
-  /// 높이를 추정한다. fallback만 쓰면 실제 이미지 비율과 어긋나
-  /// "추정 후 나중에 실측값으로 보정"할 때 큰 오차(그리고 튕김)가 생긴다.
-  double _estimateExpandedHeightFor(int chapterNo, BuildContext context) {
-    final chapter = _chaptersByNo[chapterNo];
-    final assetPath = chapter == null
-        ? ''
-        : resolveHubChapterIcon(
-            chapterImage: chapter.chapterImage,
-            category: chapter.name,
-          );
-    final cachedRatio = assetPath.isEmpty
-        ? null
-        : LearningHubChapterCard.aspectRatioCache[assetPath];
+  /// 모든 히어로 카드는 Canva 1920×1280 표준(3:2) 높이로 계산한다.
+  /// 원본 비율과 무관하게 실제 렌더 높이와 스크롤 예측값이 항상 동일하다.
+  double _estimateExpandedHeightFor(int _, BuildContext context) {
     return LearningHubChapterCard.estimateExpandedBlockHeight(
       _chapterCardWidth(context),
-      aspectRatio:
-          cachedRatio ?? LearningHubChapterCard.fallbackAspectRatio,
     );
   }
 
@@ -583,8 +591,7 @@ class _LearningHomeScreenState extends ConsumerState<LearningHomeScreen> {
     if (expandedHeight > maxCenterableHeight) {
       result = (current + (futureTop - bandTop)).clamp(min, max);
     } else {
-      final centerTarget =
-          current + (futureTop + expandedHeight / 2 - focusY);
+      final centerTarget = current + (futureTop + expandedHeight / 2 - focusY);
       if (centerTarget <= max + 0.5) {
         result = centerTarget.clamp(min, max);
       } else {
@@ -600,10 +607,7 @@ class _LearningHomeScreenState extends ConsumerState<LearningHomeScreen> {
   }
 
   /// 펼침·접힘 완료 레이아웃을 가정해, 펼침과 동시에 뷰포트 포커스 위치로 스크롤.
-  bool _animateChapterToViewportCenter(
-    int chapterNo, {
-    bool animate = true,
-  }) {
+  bool _animateChapterToViewportCenter(int chapterNo, {bool animate = true}) {
     if (_expandedChapterNo != chapterNo) return false;
     final position = _scrollPositionOrNull;
     if (position == null) return false;
@@ -612,10 +616,11 @@ class _LearningHomeScreenState extends ConsumerState<LearningHomeScreen> {
     final focusY = _viewportFocusY(context);
     final estimatedExpanded = _estimateExpandedHeightFor(chapterNo, context);
     final targetIndex = _orderedChapterNos.indexOf(chapterNo);
-    final targetIsLast = targetIndex >= 0 &&
-        targetIndex == _orderedChapterNos.length - 1;
-    final compactH =
-        LearningHubChapterCard.compactBlockHeight(isLast: targetIsLast);
+    final targetIsLast =
+        targetIndex >= 0 && targetIndex == _orderedChapterNos.length - 1;
+    final compactH = LearningHubChapterCard.compactBlockHeight(
+      isLast: targetIsLast,
+    );
     final measured = _measuredCardHeight(chapterNo);
     // 펼치는 중이면 최종 블록 높이(패딩 포함)로 한 번에 계산.
     final expandedHeight = measured != null && measured >= compactH + 24
@@ -627,12 +632,12 @@ class _LearningHomeScreenState extends ConsumerState<LearningHomeScreen> {
     if (outgoing != null && outgoing != chapterNo) {
       final outgoingIndex = _orderedChapterNos.indexOf(outgoing);
       if (outgoingIndex >= 0 && targetIndex > outgoingIndex) {
-        final outgoingIsLast =
-            outgoingIndex == _orderedChapterNos.length - 1;
+        final outgoingIsLast = outgoingIndex == _orderedChapterNos.length - 1;
         final outgoingCompact = LearningHubChapterCard.compactBlockHeight(
           isLast: outgoingIsLast,
         );
-        final outgoingHeight = _measuredCardHeight(outgoing) ??
+        final outgoingHeight =
+            _measuredCardHeight(outgoing) ??
             _estimateExpandedHeightFor(outgoing, context);
         futureTop -= math.max(0.0, outgoingHeight - outgoingCompact);
       }
@@ -695,41 +700,30 @@ class _LearningHomeScreenState extends ConsumerState<LearningHomeScreen> {
     });
   }
 
-  /// 스크롤 종료 시 판정 — 느린 긴 드래그면 컴팩트 리스트로 전환.
+  /// 스크롤 종료 시 위치만 정리한다.
+  ///
+  /// 스크롤 거리로 펼친 카드를 자동 접으면 Android의 touch slop/관성값
+  /// 차이 때문에 단순한 아래 스와이프도 close 제스처처럼 판정된다.
+  /// 카드의 펼침 상태는 챕터 탭으로만 변경한다.
   void _onUserScrollEnd(ScrollEndNotification notification) {
     if (_suppressScrollExpand || _initialFocusPending) return;
-
-    final dragDelta = _safeScrollOffset() - _scrollDragStartOffset;
-
-    if (dragDelta.abs() >= _longDragThresholdPx && !_compactScrollMode) {
-      _scrollGeneration++;
-      _scrollFinalizeToken = null;
-      setState(() {
-        _compactScrollMode = true;
-        _expandedChapterNo = null;
-        _outgoingExpandedChapterNo = null;
-        _transientBottomSlack = 0;
-      });
-    }
 
     _clampScrollToMax();
   }
 
   bool _handleScrollNotification(ScrollNotification notification) {
     if (!_hubListVisible) return false;
-    // 최종 보정을 기다리는 동안(우리가 스스로 애니메이션을 걸지 않는
-    // 구간)에 도착하는 스크롤 알림은 전부 사용자가 마우스 휠/드래그로
-    // 직접 스크롤을 시도한 것이다 — 이때는 뒤에 나올 강제 보정이 사용자
-    // 위치를 다시 덮어쓰지 않도록 표시만 해둔다.
-    if (_awaitingFinalize &&
-        (notification is ScrollStartNotification ||
-            notification is ScrollUpdateNotification)) {
-      _userInterruptedFinalize = true;
-    }
     if (notification is ScrollStartNotification &&
         notification.dragDetails != null) {
-      _scrollDragStartOffset = _safeScrollOffset();
       _isUserDragScroll = true;
+      if (_awaitingFinalize) _userInterruptedFinalize = true;
+    } else if (notification is ScrollUpdateNotification &&
+        _awaitingFinalize &&
+        _isUserDragScroll &&
+        notification.dragDetails != null) {
+      // Android에서는 레이아웃 클램프/animateTo도 ScrollUpdate를 만든다.
+      // dragDetails가 있는 실제 터치 드래그만 사용자 중단으로 판정한다.
+      _userInterruptedFinalize = true;
     } else if (notification is ScrollEndNotification && _isUserDragScroll) {
       _isUserDragScroll = false;
       _onUserScrollEnd(notification);
@@ -737,10 +731,7 @@ class _LearningHomeScreenState extends ConsumerState<LearningHomeScreen> {
     return false;
   }
 
-  void _focusChapter(
-    int chapterNo, {
-    bool animateScroll = true,
-  }) {
+  void _focusChapter(int chapterNo, {bool animateScroll = true}) {
     _scrollGeneration++;
     _scrollFinalizeToken = null;
     _stopScrollAnimation();
@@ -750,8 +741,9 @@ class _LearningHomeScreenState extends ConsumerState<LearningHomeScreen> {
     final slack = animateScroll ? _computeTransientSlack(chapterNo) : 0.0;
     setState(() {
       _compactScrollMode = false;
-      _outgoingExpandedChapterNo =
-          (previous != null && previous != chapterNo) ? previous : null;
+      _outgoingExpandedChapterNo = (previous != null && previous != chapterNo)
+          ? previous
+          : null;
       _expandedChapterNo = chapterNo;
       _transientBottomSlack = math.max(_transientBottomSlack, slack);
     });
@@ -773,8 +765,8 @@ class _LearningHomeScreenState extends ConsumerState<LearningHomeScreen> {
     final scenarioRepo = ref.watch(scenarioProgressRepositoryProvider);
 
     return contentAsync.when(
-          loading: () => const Center(child: CircularProgressIndicator()),
-          error: (e, _) => Center(child: Text('학습 화면 로드 실패: $e')),
+      loading: () => const Center(child: CircularProgressIndicator()),
+      error: (e, _) => Center(child: Text('학습 화면 로드 실패: $e')),
       data: (content) {
         final bundle = content.bundle;
         final chapters = bundle.learningHubChaptersFor(language);
@@ -798,7 +790,9 @@ class _LearningHomeScreenState extends ConsumerState<LearningHomeScreen> {
           scenarioProgress: scenarioProgress,
           sentenceRepo: sentenceRepo,
         );
-        if (chapters.isNotEmpty && _initialFocusPending && !_initialFocusQueued) {
+        if (chapters.isNotEmpty &&
+            _initialFocusPending &&
+            !_initialFocusQueued) {
           _initialFocusQueued = true;
           _expandedChapterNo ??= resume.firstIncompleteNo;
           _suppressScrollExpand = true;
@@ -806,24 +800,22 @@ class _LearningHomeScreenState extends ConsumerState<LearningHomeScreen> {
         final expandedChapterNo = _compactScrollMode
             ? null
             : (_expandedChapterNo ?? resume.firstIncompleteNo);
-        _orderedChapterNos =
-            chapters.map((chapter) => chapter.chapterNo).toList(growable: false);
-        _chaptersByNo = {
-          for (final chapter in chapters) chapter.chapterNo: chapter,
-        };
+        _orderedChapterNos = chapters
+            .map((chapter) => chapter.chapterNo)
+            .toList(growable: false);
 
-            return Stack(
-              clipBehavior: Clip.none,
-              children: [
-                // 카드 리스트 — 화면 최상단(메인 헤더 바로 아래)까지 꽉 채워
-                // 스크롤된다. 카드 자체는 손대지 않고, 화면 상단에 얹는
-                // 고정 스크림(아래)이 경계를 부드럽게 만든다.
-                Positioned.fill(
-                  child: NotificationListener<ScrollNotification>(
-                    key: _viewportKey,
-                    onNotification: _handleScrollNotification,
-                    child: _hubListVisible
-                        ? ListView(
+        return Stack(
+          clipBehavior: Clip.none,
+          children: [
+            // 카드 리스트 — 화면 최상단(메인 헤더 바로 아래)까지 꽉 채워
+            // 스크롤된다. 카드 자체는 손대지 않고, 화면 상단에 얹는
+            // 고정 스크림(아래)이 경계를 부드럽게 만든다.
+            Positioned.fill(
+              child: NotificationListener<ScrollNotification>(
+                key: _viewportKey,
+                onNotification: _handleScrollNotification,
+                child: _hubListVisible
+                    ? ListView(
                         key: ValueKey('hub_list_$_listEpoch'),
                         controller: _scrollController,
                         physics: const ClampingScrollPhysics(),
@@ -869,76 +861,76 @@ class _LearningHomeScreenState extends ConsumerState<LearningHomeScreen> {
                                 swipeProgress: swipeProgress,
                                 scenarioProgress: scenarioProgress,
                                 sentenceRepo: sentenceRepo,
-                                isExpanded: expandedChapterNo != null &&
+                                isExpanded:
+                                    expandedChapterNo != null &&
                                     chapters[i].chapterNo == expandedChapterNo,
                                 isLast: i == chapters.length - 1,
                                 onHeightChanged: _onChapterHeightChanged,
-                                onExpandRequested: () => _focusChapter(
-                                  chapters[i].chapterNo,
-                                ),
+                                onExpandRequested: () =>
+                                    _focusChapter(chapters[i].chapterNo),
                               ),
                             ],
                         ],
                       )
-                        : const SizedBox.shrink(),
-                    ),
+                    : const SizedBox.shrink(),
+              ),
+            ),
+            // 화면 맨 위 고정 스크림 — 카드나 리스트를 건드리지 않고,
+            // 화면 상단에만 옅게 얹어 그 아래로 스크롤되는 카드가
+            // 뚝 끊기지 않고 배경 쪽으로 자연스럽게 사라지도록 한다.
+            Positioned(
+              top: 0,
+              left: 0,
+              right: 0,
+              height: _topScrimHeight,
+              child: IgnorePointer(
+                child: DecoratedBox(
+                  decoration: BoxDecoration(
+                    gradient: _topScrimGradient(context),
                   ),
-                // 화면 맨 위 고정 스크림 — 카드나 리스트를 건드리지 않고,
-                // 화면 상단에만 옅게 얹어 그 아래로 스크롤되는 카드가
-                // 뚝 끊기지 않고 배경 쪽으로 자연스럽게 사라지도록 한다.
-                Positioned(
-                  top: 0,
-                  left: 0,
-                  right: 0,
-                  height: _topScrimHeight,
-                  child: IgnorePointer(
-                    child: DecoratedBox(
-                      decoration: BoxDecoration(
-                        gradient: _topScrimGradient(context),
-                      ),
+                ),
+              ),
+            ),
+            // 프로그레스 바 — 카드 위에 얹혀 화면 맨 위에 고정되는
+            // frosted glass 플로팅 헤더. 레이아웃 공간을 점유하지 않고
+            // Positioned로 카드 위에 떠 있으므로, 카드는 그 밑으로
+            // 계속 스크롤되어 메인 헤더까지 올라갈 수 있다.
+            Positioned(
+              top: -AppHeader.bodyGap,
+              left: 0,
+              right: 0,
+              child: AnimatedBuilder(
+                key: ValueKey('hub_header_scroll_$_listEpoch'),
+                animation: _scrollController,
+                builder: (context, child) {
+                  final offset = _safeScrollOffset();
+                  final opacity = _floatingHeaderOpacityFor(offset);
+                  return Opacity(
+                    opacity: opacity,
+                    child: IgnorePointer(
+                      ignoring: opacity < 0.05,
+                      child: child,
+                    ),
+                  );
+                },
+                child: Padding(
+                  padding: EdgeInsets.symmetric(
+                    horizontal: math.max(8.0, inset - 8),
+                  ),
+                  child: CascadeEntrance(
+                    child: _LearningHubSectionHeader(
+                      wordProgress: modeProgress.wordRatio,
+                      sentenceProgress: modeProgress.sentenceRatio,
+                      scenarioProgress: modeProgress.scenarioRatio,
                     ),
                   ),
                 ),
-                // 프로그레스 바 — 카드 위에 얹혀 화면 맨 위에 고정되는
-                // frosted glass 플로팅 헤더. 레이아웃 공간을 점유하지 않고
-                // Positioned로 카드 위에 떠 있으므로, 카드는 그 밑으로
-                // 계속 스크롤되어 메인 헤더까지 올라갈 수 있다.
-                Positioned(
-                  top: -AppHeader.bodyGap,
-                  left: 0,
-                  right: 0,
-                  child: AnimatedBuilder(
-                    key: ValueKey('hub_header_scroll_$_listEpoch'),
-                    animation: _scrollController,
-                    builder: (context, child) {
-                      final offset = _safeScrollOffset();
-                      final opacity = _floatingHeaderOpacityFor(offset);
-                      return Opacity(
-                        opacity: opacity,
-                        child: IgnorePointer(
-                          ignoring: opacity < 0.05,
-                          child: child,
-                        ),
-                      );
-                    },
-                    child: Padding(
-                      padding: EdgeInsets.symmetric(
-                        horizontal: math.max(8.0, inset - 8),
-                      ),
-                      child: CascadeEntrance(
-                        child: _LearningHubSectionHeader(
-                          wordProgress: modeProgress.wordRatio,
-                          sentenceProgress: modeProgress.sentenceRatio,
-                          scenarioProgress: modeProgress.scenarioRatio,
-                        ),
-                      ),
-                    ),
-                  ),
-                ),
-              ],
-            );
-          },
+              ),
+            ),
+          ],
         );
+      },
+    );
   }
 }
 
@@ -1012,7 +1004,8 @@ _HubTripleModeProgress _hubTripleModeProgress({
 
   return (
     completedCount: completedCount,
-    firstIncompleteNo: firstIncompleteNo ??
+    firstIncompleteNo:
+        firstIncompleteNo ??
         (chapters.isEmpty ? null : chapters.last.chapterNo),
   );
 }
@@ -1197,7 +1190,19 @@ class _HubChapterCardLoaderState extends State<_HubChapterCardLoader>
     final token = Object();
     _loadToken = token;
     try {
-      await precacheImage(AssetImage(path), context);
+      final metrics = Active5Layout.of(context);
+      final cardWidth = math.max(
+        0.0,
+        MediaQuery.sizeOf(context).width - metrics.pagePadding.horizontal,
+      );
+      await precacheImage(
+        ChapterHeroImage.heroProvider(
+          path,
+          displayWidth: cardWidth,
+          devicePixelRatio: MediaQuery.devicePixelRatioOf(context),
+        ),
+        context,
+      );
     } catch (_) {
       // errorBuilder 폴백으로 카드는 표시
     }
@@ -1220,10 +1225,14 @@ class _HubChapterCardLoaderState extends State<_HubChapterCardLoader>
     final category = widget.chapter.name;
     final words = widget.bundle.wordsFor(widget.language, category);
     final sentences = widget.bundle.sentencesFor(widget.language, category);
-    final scenarios =
-        widget.bundle.scenariosForHubChapter(widget.language, widget.chapter);
-    final swipeCat =
-        widget.swipeProgress.stats.forCategory(widget.language, category);
+    final scenarios = widget.bundle.scenariosForHubChapter(
+      widget.language,
+      widget.chapter,
+    );
+    final swipeCat = widget.swipeProgress.stats.forCategory(
+      widget.language,
+      category,
+    );
     final sentenceSummary = widget.sentenceRepo.categorySummary(
       sentences: sentences,
       stats: widget.sentenceProgress.stats,
@@ -1255,25 +1264,25 @@ class _HubChapterCardLoaderState extends State<_HubChapterCardLoader>
             onWordPlay: words.isEmpty
                 ? null
                 : () => openWordSwipeFromHub(
-                      context,
-                      language: widget.language,
-                      category: category,
-                    ),
+                    context,
+                    language: widget.language,
+                    category: category,
+                  ),
             onWordReview: !swipeCat.played || swipeCat.unknownCount == 0
                 ? null
                 : () => openWordSwipeFromHub(
-                      context,
-                      language: widget.language,
-                      category: category,
-                      reviewOnly: true,
-                    ),
+                    context,
+                    language: widget.language,
+                    category: category,
+                    reviewOnly: true,
+                  ),
             onSentencePlay: sentences.isEmpty
                 ? null
                 : () => openSentenceTrainingFromHub(
-                      context,
-                      language: widget.language,
-                      category: category,
-                    ),
+                    context,
+                    language: widget.language,
+                    category: category,
+                  ),
           ),
         ),
       ),
