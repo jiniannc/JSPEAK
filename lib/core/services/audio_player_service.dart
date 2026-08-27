@@ -19,6 +19,8 @@ class AudioPlayerService {
   Duration? get duration => _player.duration;
   bool get isPlaying => _player.playing;
 
+  ProcessingState get processingState => _player.processingState;
+
   Future<void> playFile(String path) async {
     await _player.stop();
     await _player.setFilePath(path);
@@ -48,6 +50,26 @@ class AudioPlayerService {
   Future<void> seek(Duration position) => _player.seek(position);
 
   Future<void> stop() => _player.stop();
+
+  /// [setFilePath]/[setUrl] 직후에는 durationStream이 재방출되지 않을 수 있어
+  /// 플레이어에 이미 올라온 길이를 우선 읽고, 없으면 스트림 1회를 기다린다.
+  Future<Duration> resolveDuration({
+    Duration timeout = const Duration(seconds: 4),
+  }) async {
+    final immediate = _player.duration;
+    if (immediate != null && immediate.inMilliseconds > 0) {
+      return immediate;
+    }
+
+    try {
+      return await _player.durationStream
+          .map((d) => d ?? Duration.zero)
+          .firstWhere((d) => d.inMilliseconds > 0)
+          .timeout(timeout);
+    } catch (_) {
+      return immediate ?? Duration.zero;
+    }
+  }
 
   Future<void> dispose() => _player.dispose();
 }

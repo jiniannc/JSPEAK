@@ -32,6 +32,8 @@ class DashboardScreen extends ConsumerWidget {
     final language = ref.watch(learningHubLanguageProvider);
     final dashboardAsync = ref.watch(dashboardProvider);
     final entranceEpoch = ref.watch(homeEntranceEpochProvider);
+    final recommended = ref.watch(homeDailySentenceProvider);
+    ref.watch(homeDailySentenceAudioPrefetchProvider);
 
     return DeviceScaffold(
       safeAreaBottom: false,
@@ -49,7 +51,6 @@ class DashboardScreen extends ConsumerWidget {
                       const Center(child: CircularProgressIndicator()),
                   error: (e, _) => Center(child: Text('대시보드 로드 실패: $e')),
                   data: (data) {
-                    final recommended = ref.watch(homeDailySentenceProvider);
                     final flightNumber = recommended == null
                         ? '—'
                         : DashboardData.flightNumberFor(recommended);

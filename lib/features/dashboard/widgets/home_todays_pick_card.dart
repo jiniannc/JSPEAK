@@ -6,6 +6,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_svg/flutter_svg.dart';
 
+import '../../../app/providers.dart';
 import '../../../app/speech_providers.dart';
 import '../../../data/models/sentence.dart';
 import '../../../shared/widgets/pronunciation_practice_section.dart';
@@ -100,6 +101,25 @@ class HomeTodaysPickCard extends ConsumerStatefulWidget {
 
 class _HomeTodaysPickCardState extends ConsumerState<HomeTodaysPickCard> {
   bool _practiceOpen = false;
+
+  @override
+  void initState() {
+    super.initState();
+    _prefetchAudio();
+  }
+
+  @override
+  void didUpdateWidget(covariant HomeTodaysPickCard oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (oldWidget.sentence.id != widget.sentence.id) {
+      _prefetchAudio();
+    }
+  }
+
+  void _prefetchAudio() {
+    if (widget.sentence.audioUrl.isEmpty) return;
+    ref.read(audioProvider.notifier).prefetch(widget.sentence);
+  }
 
   void _openPractice() {
     setState(() => _practiceOpen = true);

@@ -3,9 +3,11 @@ import 'dart:ui' show ImageFilter;
 
 import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:flutter/material.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 import 'package:lottie/lottie.dart';
 
+import '../../../app/scenario_providers.dart';
 import '../../../core/constants/labels.dart';
 import '../../../core/utils/learning_hub_icon.dart';
 import '../../../data/datasources/local/swipe_progress_local_datasource.dart';
@@ -13,6 +15,8 @@ import '../../../data/models/learning_hub_chapter.dart';
 import '../../../data/models/scenario.dart';
 import '../../../data/repositories/sentence_progress_repository.dart';
 import '../../../shared/widgets/chapter_hero_image.dart';
+import '../../../shared/widgets/flight_progress_bar.dart';
+import '../../../shared/widgets/web_safe_backdrop_blur.dart';
 import '../../dashboard/dashboard_palette.dart';
 import '../../shell/floating_island_nav_bar.dart';
 import '../../word_swipe/word_swipe_training_screen.dart';
@@ -1763,7 +1767,7 @@ class _ChapterModeRow extends StatelessWidget {
                         completed: wordComplete,
                         onPlay: onWordPlay,
                         onReview: onWordReview,
-                        slotAlignment: const Alignment(-0.24, 1.0),
+                        slotAlignment: Alignment.bottomCenter,
                       ),
                     ),
                   ),
@@ -1789,7 +1793,7 @@ class _ChapterModeRow extends StatelessWidget {
                         scenarios: scenarios,
                         completed: scenarioComplete,
                         isCompleted: isScenarioCompleted,
-                        slotAlignment: const Alignment(0.24, 1.0),
+                        slotAlignment: Alignment.bottomCenter,
                       ),
                     ),
                   ),
@@ -2000,12 +2004,13 @@ class _UnifiedModeGlassPanel extends StatelessWidget {
       child: Stack(
         fit: StackFit.expand,
         children: [
-          if (blurSigma <= 0.5)
+          if (blurSigma <= 0.5 || kIsWeb)
             Positioned.fill(child: glassFill)
           else
             Positioned.fill(
-              child: BackdropFilter(
-                filter: ImageFilter.blur(sigmaX: blurSigma, sigmaY: blurSigma),
+              child: WebSafeBackdropBlur(
+                sigmaX: blurSigma,
+                sigmaY: blurSigma,
                 child: glassFill,
               ),
             ),
@@ -2096,106 +2101,6 @@ class _ModePanelSection extends StatelessWidget {
   }
 }
 
-/// 모드 칩 — Frosted Glass (BackdropFilter + 반투명 유리).
-class _LiquidGlassChip extends StatelessWidget {
-  final Widget child;
-  final Color accentColor;
-  final bool completed;
-  final VoidCallback? onTap;
-  final double revealProgress;
-  final Widget? howItWorks;
-
-  const _LiquidGlassChip({
-    required this.child,
-    required this.accentColor,
-    this.completed = false,
-    this.onTap,
-    this.revealProgress = 1.0,
-    this.howItWorks,
-  });
-
-  static const _radius = 16.0;
-
-  @override
-  Widget build(BuildContext context) {
-    final reveal = revealProgress.clamp(0.0, 1.0);
-    final glassReveal = Curves.easeOutCubic.transform(reveal);
-    final blurSigma = 12.0 * glassReveal;
-    final fillAlpha = 0.15 * glassReveal;
-    final borderAlpha = 0.28 * glassReveal;
-    final contentOpacity = (0.55 + 0.45 * glassReveal).clamp(0.0, 1.0);
-
-    final glassFill = DecoratedBox(
-      decoration: BoxDecoration(
-        color: Colors.white.withValues(alpha: fillAlpha),
-        borderRadius: BorderRadius.circular(_radius),
-        border: completed
-            ? null
-            : Border.all(
-                color: Colors.white.withValues(alpha: borderAlpha),
-                width: 1.2,
-              ),
-      ),
-    );
-
-    final glassBody = Stack(
-      fit: StackFit.expand,
-      children: [
-        if (blurSigma <= 0.5)
-          glassFill
-        else
-          BackdropFilter(
-            filter: ImageFilter.blur(sigmaX: blurSigma, sigmaY: blurSigma),
-            child: glassFill,
-          ),
-        if (completed)
-          const Positioned.fill(
-            child: IgnorePointer(child: ColoredBox(color: Color(0x14F59E0B))),
-          ),
-        Opacity(opacity: contentOpacity, child: child),
-        if (completed)
-          const Positioned.fill(
-            child: IgnorePointer(child: _ChampagneSparkleOverlay()),
-          ),
-        if (completed)
-          const Positioned(
-            top: 5,
-            left: 5,
-            child: IgnorePointer(child: _ModeClearTrophyBadge()),
-          ),
-        if (howItWorks != null)
-          Positioned(top: 5, right: 5, child: howItWorks!),
-        if (completed)
-          const Positioned.fill(
-            child: IgnorePointer(
-              child: CustomPaint(
-                painter: _ChampagneGoldBorderPainter(radius: _radius),
-              ),
-            ),
-          ),
-      ],
-    );
-
-    final panel = ClipRRect(
-      borderRadius: BorderRadius.circular(_radius),
-      child: glassBody,
-    );
-
-    if (onTap == null) return panel;
-
-    return Material(
-      color: Colors.transparent,
-      child: InkWell(
-        onTap: onTap,
-        borderRadius: BorderRadius.circular(_radius),
-        splashColor: accentColor.withValues(alpha: 0.1 * glassReveal),
-        highlightColor: Colors.white.withValues(alpha: 0.06 * glassReveal),
-        child: panel,
-      ),
-    );
-  }
-}
-
 class _ModeClearTrophyBadge extends StatelessWidget {
   const _ModeClearTrophyBadge();
 
@@ -2219,38 +2124,6 @@ class _ModeClearTrophyBadge extends StatelessWidget {
         color: _HubChapterGoldTheme.hairline.withValues(alpha: 0.88),
       ),
     );
-  }
-}
-
-class _ChampagneGoldBorderPainter extends CustomPainter {
-  const _ChampagneGoldBorderPainter({required this.radius});
-
-  final double radius;
-
-  @override
-  void paint(Canvas canvas, Size size) {
-    if (size.isEmpty) return;
-    final rrect = RRect.fromRectAndRadius(
-      Offset.zero & size,
-      Radius.circular(radius),
-    ).deflate(0.7);
-    final paint = Paint()
-      ..style = PaintingStyle.stroke
-      ..strokeWidth = 1.15
-      ..shader = LinearGradient(
-        begin: Alignment.topLeft,
-        end: Alignment.bottomRight,
-        colors: [
-          _HubChapterGoldTheme.hairline.withValues(alpha: 0.48),
-          _HubChapterGoldTheme.amber.withValues(alpha: 0.32),
-        ],
-      ).createShader(Offset.zero & size);
-    canvas.drawRRect(rrect, paint);
-  }
-
-  @override
-  bool shouldRepaint(covariant _ChampagneGoldBorderPainter oldDelegate) {
-    return oldDelegate.radius != radius;
   }
 }
 
@@ -3085,8 +2958,8 @@ class _WordModeCell extends StatelessWidget {
 }
 
 class _SentenceModeCell extends StatelessWidget {
-  static const _accent = Color(0xFF4A90D9);
-  static const _progressColor = Color(0xFF38BDF8);
+  static const _accent = HubTripleModeProgressTrack.sentenceRed;
+  static const _progressColor = HubTripleModeProgressTrack.sentencePink;
 
   final SentenceCategorySummary? summary;
   final bool completed;
@@ -3134,7 +3007,7 @@ class _SentenceModeCell extends StatelessWidget {
   }
 }
 
-class _ScenarioModeCell extends StatefulWidget {
+class _ScenarioModeCell extends ConsumerStatefulWidget {
   static const _accent = DashboardPalette.teal;
 
   final List<Scenario> scenarios;
@@ -3152,10 +3025,23 @@ class _ScenarioModeCell extends StatefulWidget {
   });
 
   @override
-  State<_ScenarioModeCell> createState() => _ScenarioModeCellState();
+  ConsumerState<_ScenarioModeCell> createState() => _ScenarioModeCellState();
 }
 
-class _ScenarioModeCellState extends State<_ScenarioModeCell> {
+class _ScenarioModeCellState extends ConsumerState<_ScenarioModeCell> {
+  OverlayEntry? _scenarioPickerEntry;
+
+  @override
+  void dispose() {
+    _removeScenarioPopup();
+    super.dispose();
+  }
+
+  void _removeScenarioPopup() {
+    _scenarioPickerEntry?.remove();
+    _scenarioPickerEntry = null;
+  }
+
   @override
   Widget build(BuildContext context) {
     final total = widget.scenarios.length;
@@ -3186,51 +3072,53 @@ class _ScenarioModeCellState extends State<_ScenarioModeCell> {
     );
   }
 
-  Future<void> _showScenarioPopup(BuildContext context) async {
-    final parent = context;
-    final selected = await showDialog<Scenario>(
-      context: context,
-      useRootNavigator: true,
-      barrierColor: Colors.black.withValues(alpha: 0.22),
-      builder: (dialogContext) {
-        final media = MediaQuery.of(dialogContext);
-        final safeHeight =
-            media.size.height -
-            media.padding.top -
-            media.padding.bottom -
-            media.viewInsets.bottom;
-        return SafeArea(
-          minimum: const EdgeInsets.all(16),
-          child: Dialog(
-            insetPadding: EdgeInsets.zero,
-            backgroundColor: Colors.transparent,
-            elevation: 0,
-            child: ConstrainedBox(
-              constraints: BoxConstraints(
-                maxWidth: 360,
-                maxHeight: math.max(120, safeHeight - 32),
-              ),
-              child: SingleChildScrollView(
-                child: _ScenarioPickerPanel(
-                  scenarios: widget.scenarios,
-                  isCompleted: widget.isCompleted,
-                  onSelect: (scenario) => Navigator.of(
-                    dialogContext,
-                    rootNavigator: true,
-                  ).pop(scenario),
-                ),
-              ),
-            ),
-          ),
-        );
-      },
-    );
+  void _showScenarioPopup(BuildContext context) {
+    if (_scenarioPickerEntry != null) {
+      _removeScenarioPopup();
+      return;
+    }
 
-    if (selected == null || !parent.mounted) return;
-    parent.push(
-      '/scenarios/train/${Uri.encodeComponent(selected.id)}',
-      extra: selected,
+    final resolved = _popupAnchorFor(context);
+    if (resolved == null) return;
+
+    final parent = context;
+    final language = widget.scenarios.isEmpty
+        ? 'English'
+        : widget.scenarios.first.language;
+    late final OverlayEntry entry;
+    entry = OverlayEntry(
+      builder: (overlayContext) => Consumer(
+        builder: (context, ref, _) {
+          final stats = ref.watch(scenarioProgressProvider).stats;
+          return _ScenarioPickerOverlay(
+            anchor: resolved.anchor,
+            anchorSize: resolved.size,
+            scenarios: widget.scenarios,
+            isCompleted: widget.isCompleted,
+            lastPerformance: (id) => stats.lastPerformance(language, id),
+            onDismiss: () {
+              if (entry.mounted) entry.remove();
+              if (_scenarioPickerEntry == entry) {
+                _scenarioPickerEntry = null;
+              }
+            },
+            onSelect: (scenario) {
+              if (entry.mounted) entry.remove();
+              if (_scenarioPickerEntry == entry) {
+                _scenarioPickerEntry = null;
+              }
+              if (!parent.mounted) return;
+              parent.push(
+                '/scenarios/train/${Uri.encodeComponent(scenario.id)}',
+                extra: scenario,
+              );
+            },
+          );
+        },
+      ),
     );
+    _scenarioPickerEntry = entry;
+    resolved.overlay.insert(entry);
   }
 }
 
@@ -3478,6 +3366,7 @@ class _ScenarioPickerOverlay extends StatefulWidget {
   final Size anchorSize;
   final List<Scenario> scenarios;
   final bool Function(String scenarioId) isCompleted;
+  final int? Function(String scenarioId) lastPerformance;
   final VoidCallback onDismiss;
   final ValueChanged<Scenario> onSelect;
 
@@ -3486,6 +3375,7 @@ class _ScenarioPickerOverlay extends StatefulWidget {
     required this.anchorSize,
     required this.scenarios,
     required this.isCompleted,
+    required this.lastPerformance,
     required this.onDismiss,
     required this.onSelect,
   });
@@ -3498,7 +3388,9 @@ class _ScenarioPickerOverlayState extends State<_ScenarioPickerOverlay>
     with SingleTickerProviderStateMixin {
   late final AnimationController _entry;
 
-  static const _popupWidth = 268.0;
+  static const _preferredPopupWidth = 292.0;
+  static const _screenMargin = 14.0;
+  static const _anchorGap = 8.0;
 
   @override
   void initState() {
@@ -3526,31 +3418,51 @@ class _ScenarioPickerOverlayState extends State<_ScenarioPickerOverlay>
 
   @override
   Widget build(BuildContext context) {
-    final size = MediaQuery.sizeOf(context);
-    final pad = MediaQuery.paddingOf(context);
-    const popupWidth = _popupWidth;
+    final media = MediaQuery.of(context);
+    final size = media.size;
+    final pad = media.padding;
+    final popupWidth = math.min(
+      _preferredPopupWidth,
+      math.max(1.0, size.width - _screenMargin * 2),
+    );
     final estimatedHeight = math.min(
-      widget.scenarios.length * 48.0 + 56,
-      size.height * 0.45,
+      widget.scenarios.length * 46.0 + 62,
+      math.max(120.0, size.height * 0.52),
     );
     final bottomObstruction =
         pad.bottom + FloatingIslandNavBar.reservedHeight(context);
-    final spaceAbove = widget.anchor.dy - pad.top - 12;
-    final spaceBelow =
-        size.height -
-        bottomObstruction -
-        (widget.anchor.dy + widget.anchorSize.height) -
-        12;
+    final safeTop = pad.top + _screenMargin;
+    final safeBottom = math.max(
+      safeTop + 120,
+      size.height - bottomObstruction - _screenMargin,
+    );
+    final anchorTop = widget.anchor.dy.clamp(safeTop, safeBottom);
+    final anchorBottom = (widget.anchor.dy + widget.anchorSize.height).clamp(
+      safeTop,
+      safeBottom,
+    );
+    final spaceAbove = math.max(0.0, anchorTop - safeTop - _anchorGap);
+    final spaceBelow = math.max(0.0, safeBottom - anchorBottom - _anchorGap);
     // 아래 공간이 충분할 때만 아래로 — 네비·하단 근처면 위로 연다.
-    final nearBottom =
-        widget.anchor.dy + widget.anchorSize.height >
-        size.height - bottomObstruction - estimatedHeight * 0.4;
     final showBelow =
-        !nearBottom &&
+        spaceBelow >= 120 &&
         (spaceBelow >= estimatedHeight || spaceBelow >= spaceAbove);
+    final availableHeight = math.max(
+      120.0,
+      math.min(
+        showBelow ? spaceBelow : spaceAbove,
+        math.max(120.0, safeBottom - safeTop),
+      ),
+    );
 
     var left = widget.anchor.dx + widget.anchorSize.width - popupWidth;
-    left = left.clamp(14.0, size.width - popupWidth - 14.0);
+    left = left.clamp(
+      _screenMargin,
+      math.max(_screenMargin, size.width - popupWidth - _screenMargin),
+    );
+    final popupTop = showBelow
+        ? math.min(anchorBottom + _anchorGap, safeBottom - availableHeight)
+        : math.max(safeTop, anchorTop - _anchorGap - availableHeight);
 
     final curved = CurvedAnimation(
       parent: _entry,
@@ -3573,10 +3485,7 @@ class _ScenarioPickerOverlayState extends State<_ScenarioPickerOverlay>
         Positioned(
           left: left,
           width: popupWidth,
-          top: showBelow
-              ? widget.anchor.dy + widget.anchorSize.height + 8
-              : null,
-          bottom: showBelow ? null : size.height - widget.anchor.dy + 8,
+          top: popupTop,
           child: FadeTransition(
             opacity: _entry,
             child: ScaleTransition(
@@ -3585,16 +3494,12 @@ class _ScenarioPickerOverlayState extends State<_ScenarioPickerOverlay>
               child: Material(
                 color: Colors.transparent,
                 child: ConstrainedBox(
-                  constraints: BoxConstraints(
-                    maxHeight: math.min(
-                      showBelow ? spaceBelow - 8 : spaceAbove - 8,
-                      size.height * 0.52,
-                    ),
-                  ),
+                  constraints: BoxConstraints(maxHeight: availableHeight),
                   child: SingleChildScrollView(
                     child: _ScenarioPickerPanel(
                       scenarios: widget.scenarios,
                       isCompleted: widget.isCompleted,
+                      lastPerformance: widget.lastPerformance,
                       onSelect: widget.onSelect,
                     ),
                   ),
@@ -3611,139 +3516,106 @@ class _ScenarioPickerOverlayState extends State<_ScenarioPickerOverlay>
 class _ScenarioPickerPanel extends StatelessWidget {
   final List<Scenario> scenarios;
   final bool Function(String scenarioId) isCompleted;
+  final int? Function(String scenarioId) lastPerformance;
   final ValueChanged<Scenario> onSelect;
 
   const _ScenarioPickerPanel({
     required this.scenarios,
     required this.isCompleted,
+    required this.lastPerformance,
     required this.onSelect,
   });
 
+  static const _dividerColor = Color(0x120F172A);
+  static const _dividerInset = 12.0;
+
   @override
   Widget build(BuildContext context) {
-    final panelBody = Padding(
-      padding: const EdgeInsets.fromLTRB(12, 12, 12, 10),
-      child: Column(
-        mainAxisSize: MainAxisSize.min,
-        crossAxisAlignment: CrossAxisAlignment.stretch,
-        children: [
-          const Text(
-            '시나리오 선택',
-            style: TextStyle(
-              fontSize: 12,
-              fontWeight: FontWeight.w800,
-              color: DashboardPalette.navy,
-            ),
-          ),
-          const SizedBox(height: 8),
-          for (var i = 0; i < scenarios.length; i++) ...[
-            if (i > 0) const SizedBox(height: 4),
-            _ScenarioPickerRow(
-              index: i + 1,
-              scenario: scenarios[i],
-              completed: isCompleted(scenarios[i].id),
-              onTap: () => onSelect(scenarios[i]),
-            ),
-          ],
-        ],
-      ),
-    );
-
-    if (kIsWeb) {
-      return Material(
-        color: Colors.transparent,
-        child: DecoratedBox(
+    final panelBody = Column(
+      mainAxisSize: MainAxisSize.min,
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        DecoratedBox(
           decoration: BoxDecoration(
-            color: Colors.white.withValues(alpha: 0.94),
-            borderRadius: BorderRadius.circular(16),
-            border: Border.all(
-              color: Colors.white.withValues(alpha: 0.55),
-              width: 1.2,
-            ),
+            color: const Color(0xFF0F172A).withValues(alpha: 0.045),
             boxShadow: [
               BoxShadow(
-                color: Colors.black.withValues(alpha: 0.12),
-                blurRadius: 20,
-                offset: const Offset(0, 8),
+                color: Colors.black.withValues(alpha: 0.04),
+                blurRadius: 3,
+                offset: const Offset(0, 1),
+              ),
+              BoxShadow(
+                color: Colors.white.withValues(alpha: 0.55),
+                blurRadius: 0,
+                offset: const Offset(0, 1),
               ),
             ],
           ),
-          child: panelBody,
+          child: Padding(
+            padding: const EdgeInsets.fromLTRB(12, 11, 12, 10),
+            child: Row(
+              children: [
+                Icon(
+                  Icons.forum_rounded,
+                  size: 14,
+                  color: DashboardPalette.teal.withValues(alpha: 0.85),
+                ),
+                const SizedBox(width: 6),
+                const Text(
+                  '시나리오 선택',
+                  style: TextStyle(
+                    fontSize: 13,
+                    fontWeight: FontWeight.w800,
+                    color: DashboardPalette.navy,
+                  ),
+                ),
+              ],
+            ),
+          ),
         ),
-      );
-    }
+        for (var i = 0; i < scenarios.length; i++) ...[
+          _ScenarioPickerRow(
+            index: i + 1,
+            scenario: scenarios[i],
+            completed: isCompleted(scenarios[i].id),
+            lastScore: lastPerformance(scenarios[i].id),
+            onTap: () => onSelect(scenarios[i]),
+          ),
+          if (i < scenarios.length - 1)
+            const Padding(
+              padding: EdgeInsets.symmetric(horizontal: _dividerInset),
+              child: Divider(height: 1, thickness: 1, color: _dividerColor),
+            ),
+        ],
+      ],
+    );
 
     return Material(
       color: Colors.transparent,
-      child: _LiquidGlassChip(
-        accentColor: DashboardPalette.teal,
-        child: panelBody,
-      ),
-    );
-  }
-}
-
-class _ScenarioPickerIcon extends StatelessWidget {
-  const _ScenarioPickerIcon({required this.scenario, required this.completed});
-
-  final Scenario scenario;
-  final bool completed;
-
-  @override
-  Widget build(BuildContext context) {
-    final asset = resolveHubChapterIcon(
-      chapterImage: scenario.chapterImage,
-      category: scenario.flightStage.isNotEmpty
-          ? scenario.flightStage
-          : scenario.chapterName,
-    );
-
-    return SizedBox(
-      width: 28,
-      height: 28,
-      child: Stack(
-        clipBehavior: Clip.none,
-        children: [
-          ClipRRect(
-            borderRadius: BorderRadius.circular(8),
-            child: Image.asset(
-              asset,
-              width: 28,
-              height: 28,
-              fit: BoxFit.cover,
-              errorBuilder: (context, error, stackTrace) => Container(
-                width: 28,
-                height: 28,
-                color: Colors.white.withValues(alpha: 0.22),
-                alignment: Alignment.center,
-                child: Icon(
-                  categoryIcon(scenario.flightStage),
-                  size: 14,
-                  color: DashboardPalette.teal,
-                ),
-              ),
+      child: DecoratedBox(
+        decoration: BoxDecoration(
+          borderRadius: BorderRadius.circular(16),
+          boxShadow: [
+            BoxShadow(
+              color: Colors.black.withValues(alpha: 0.16),
+              blurRadius: 24,
+              offset: const Offset(0, 10),
             ),
+          ],
+        ),
+        child: ClipRRect(
+          borderRadius: BorderRadius.circular(16),
+          child: DecoratedBox(
+            decoration: BoxDecoration(
+              // 팝업은 Android/Fold에서도 반드시 보이는 독립 표면으로 렌더링.
+              // 배경 블러 대신 반투명 채움·림·그림자로 glass 톤을 유지한다.
+              color: Colors.white.withValues(alpha: 0.96),
+              borderRadius: BorderRadius.circular(16),
+              border: Border.all(color: Colors.white, width: 1.2),
+            ),
+            child: panelBody,
           ),
-          if (completed)
-            Positioned(
-              right: -2,
-              bottom: -2,
-              child: Container(
-                width: 14,
-                height: 14,
-                decoration: BoxDecoration(
-                  color: DashboardPalette.teal,
-                  shape: BoxShape.circle,
-                  border: Border.all(color: Colors.white, width: 1),
-                ),
-                child: const Icon(
-                  Icons.check_rounded,
-                  size: 9,
-                  color: Colors.white,
-                ),
-              ),
-            ),
-        ],
+        ),
       ),
     );
   }
@@ -3753,12 +3625,14 @@ class _ScenarioPickerRow extends StatelessWidget {
   final int index;
   final Scenario scenario;
   final bool completed;
+  final int? lastScore;
   final VoidCallback onTap;
 
   const _ScenarioPickerRow({
     required this.index,
     required this.scenario,
     required this.completed,
+    required this.lastScore,
     required this.onTap,
   });
 
@@ -3766,13 +3640,10 @@ class _ScenarioPickerRow extends StatelessWidget {
   Widget build(BuildContext context) {
     return InkWell(
       onTap: onTap,
-      borderRadius: BorderRadius.circular(12),
       child: Padding(
-        padding: const EdgeInsets.symmetric(vertical: 7, horizontal: 4),
+        padding: const EdgeInsets.fromLTRB(12, 7, 10, 7),
         child: Row(
           children: [
-            _ScenarioPickerIcon(scenario: scenario, completed: completed),
-            const SizedBox(width: 8),
             Expanded(
               child: Text(
                 '$index. ${scenario.title.isNotEmpty ? scenario.title : scenario.flightStage}',
@@ -3782,15 +3653,13 @@ class _ScenarioPickerRow extends StatelessWidget {
                   fontSize: 12,
                   fontWeight: FontWeight.w700,
                   height: 1.25,
-                  color: completed
-                      ? DashboardPalette.navy.withValues(alpha: 0.55)
-                      : DashboardPalette.navy,
+                  color: DashboardPalette.navy,
                 ),
               ),
             ),
             if (scenario.isNewContent && !completed)
               const Padding(
-                padding: EdgeInsets.only(left: 4),
+                padding: EdgeInsets.only(left: 6, right: 4),
                 child: Text(
                   'NEW',
                   style: TextStyle(
@@ -3800,10 +3669,149 @@ class _ScenarioPickerRow extends StatelessWidget {
                   ),
                 ),
               ),
+            if (completed)
+              Padding(
+                padding: const EdgeInsets.only(left: 6, right: 6),
+                child: Icon(
+                  Icons.check_circle_rounded,
+                  size: 17,
+                  color: DashboardPalette.teal.withValues(alpha: 0.88),
+                ),
+              ),
+            if (lastScore != null)
+              _ScenarioLastScoreRing(score: lastScore!)
+            else
+              const _ScenarioLastScoreRing.empty(),
           ],
         ),
       ),
     );
+  }
+}
+
+/// 최근 performance 기록 — 롤플레이 진척도와 무관.
+class _ScenarioLastScoreRing extends StatelessWidget {
+  final int? score;
+
+  const _ScenarioLastScoreRing({required this.score});
+
+  const _ScenarioLastScoreRing.empty() : score = null;
+
+  @override
+  Widget build(BuildContext context) {
+    const size = 34.0;
+    const stroke = 3.5;
+    const track = Color(0xFFE2E8F0);
+
+    if (score == null) {
+      return SizedBox(
+        width: size,
+        height: size,
+        child: CustomPaint(
+          painter: _MiniScoreRingPainter(
+            ratio: 0,
+            fillColors: const [track, track],
+            trackColor: track,
+            strokeWidth: stroke,
+          ),
+        ),
+      );
+    }
+
+    final ratio = (score! / 100).clamp(0.0, 1.0);
+    final fillColors = switch (score!) {
+      >= 85 => const [Color(0xFF10B981), Color(0xFF06B6D4)],
+      >= 55 => const [Color(0xFF0284C7), Color(0xFF38BDF8)],
+      _ => const [Color(0xFFF43F5E), Color(0xFFFB7185)],
+    };
+
+    return SizedBox(
+      width: size,
+      height: size,
+      child: Stack(
+        alignment: Alignment.center,
+        children: [
+          CustomPaint(
+            size: const Size(size, size),
+            painter: _MiniScoreRingPainter(
+              ratio: ratio,
+              fillColors: fillColors,
+              trackColor: track,
+              strokeWidth: stroke,
+            ),
+          ),
+          Text(
+            '$score',
+            style: TextStyle(
+              fontSize: 9.5,
+              fontWeight: FontWeight.w800,
+              height: 1,
+              color: DashboardPalette.navy.withValues(alpha: 0.72),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _MiniScoreRingPainter extends CustomPainter {
+  final double ratio;
+  final List<Color> fillColors;
+  final Color trackColor;
+  final double strokeWidth;
+
+  const _MiniScoreRingPainter({
+    required this.ratio,
+    required this.fillColors,
+    required this.trackColor,
+    required this.strokeWidth,
+  });
+
+  @override
+  void paint(Canvas canvas, Size size) {
+    final center = Offset(size.width / 2, size.height / 2);
+    final radius = math.min(size.width, size.height) / 2 - strokeWidth;
+    final rect = Rect.fromCircle(center: center, radius: radius);
+    const startAngle = -math.pi / 2;
+    const fullSweep = 2 * math.pi;
+    final fillSweep = fullSweep * ratio.clamp(0.0, 1.0);
+
+    canvas.drawArc(
+      rect,
+      0,
+      fullSweep,
+      false,
+      Paint()
+        ..color = trackColor
+        ..style = PaintingStyle.stroke
+        ..strokeWidth = strokeWidth,
+    );
+
+    if (fillSweep <= 0.001) return;
+
+    final gradient = SweepGradient(
+      colors: fillColors,
+      startAngle: startAngle,
+      endAngle: startAngle + math.max(fillSweep, 0.001),
+    );
+
+    canvas.drawArc(
+      rect,
+      startAngle,
+      fillSweep,
+      false,
+      Paint()
+        ..shader = gradient.createShader(rect)
+        ..style = PaintingStyle.stroke
+        ..strokeWidth = strokeWidth
+        ..strokeCap = StrokeCap.round,
+    );
+  }
+
+  @override
+  bool shouldRepaint(covariant _MiniScoreRingPainter oldDelegate) {
+    return oldDelegate.ratio != ratio || oldDelegate.fillColors != fillColors;
   }
 }
 

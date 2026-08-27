@@ -228,8 +228,17 @@ class AudioController extends Notifier<AudioState> {
     await play(sentence);
   }
 
-  /// 화면 진입 시 미리 받기.
-  void prefetch(Sentence sentence) => AudioPrefetch.sentence(sentence);
+  /// 화면 진입 시 미리 받기 — 메모리 캐시 + (모바일) 디스크 캐시.
+  void prefetch(Sentence sentence) {
+    if (sentence.audioUrl.isEmpty) return;
+    AudioPrefetch.sentence(sentence);
+    if (kIsWeb) return;
+    final playbackUrl = AudioPlaybackUrl.resolve(sentence.audioUrl);
+    if (playbackUrl.isEmpty) return;
+    unawaited(
+      ref.read(contentRepositoryProvider).cacheAudioInBackground(playbackUrl),
+    );
+  }
 
   /// 학습 모드 — 재생 시작.
   Future<void> play(Sentence sentence) async {
@@ -265,7 +274,15 @@ class AudioController extends Notifier<AudioState> {
           unawaited(repo.cacheAudioInBackground(playbackUrl));
         }
       }
-      state = state.copyWith(loading: false, isPlaying: true);
+      if (state.playingSentenceId != sentence.id) return;
+
+      final duration = await service.resolveDuration();
+      state = state.copyWith(
+        loading: false,
+        isPlaying: true,
+        duration: duration,
+        position: Duration.zero,
+      );
     } catch (e, st) {
       debugPrint('오디오 재생 실패: $playbackUrl');
       debugPrint('$e\n$st');
@@ -284,8 +301,18 @@ class AudioController extends Notifier<AudioState> {
       await service.pause();
       state = state.copyWith(isPlaying: false);
     } else {
+      if (service.processingState == ProcessingState.completed) {
+        await play(sentence);
+        return;
+      }
       await service.resume();
-      state = state.copyWith(isPlaying: true);
+      final duration = state.duration.inMilliseconds > 0
+          ? state.duration
+          : await service.resolveDuration();
+      state = state.copyWith(
+        isPlaying: true,
+        duration: duration,
+      );
     }
   }
 

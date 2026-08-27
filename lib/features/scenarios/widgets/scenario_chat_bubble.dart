@@ -508,6 +508,7 @@ class _CrewTurnBody extends StatelessWidget {
                       line: line,
                       accent: accent,
                       showPronunciation: showPronunciation,
+                      revealedByAnswer: message.resolvedByAnswerReveal,
                     ),
                   )
                 : KeyedSubtree(
@@ -648,16 +649,18 @@ class _SpeakingContentState extends State<_SpeakingContent> {
   }
 }
 
-/// 정답 공개 — 'Correct' 배지 + 바운스·샤인 연출.
+/// 정답 공개 — 맞춘 경우 'Correct', 정답 확인은 별도 뱃지.
 class _ResolvedContent extends StatefulWidget {
   final ScenarioLine line;
   final Color accent;
   final bool showPronunciation;
+  final bool revealedByAnswer;
 
   const _ResolvedContent({
     required this.line,
     required this.accent,
     required this.showPronunciation,
+    this.revealedByAnswer = false,
   });
 
   @override
@@ -719,9 +722,13 @@ class _ResolvedContentState extends State<_ResolvedContent>
       }
     });
     _ctrl.forward();
-    Future<void>.delayed(const Duration(milliseconds: 180), () {
-      if (mounted) _shineCtrl.forward();
-    });
+    if (!widget.revealedByAnswer) {
+      Future<void>.delayed(const Duration(milliseconds: 180), () {
+        if (mounted) _shineCtrl.forward();
+      });
+    } else {
+      _shineDone = true;
+    }
   }
 
   @override
@@ -772,11 +779,97 @@ class _ResolvedContentState extends State<_ResolvedContent>
     return text;
   }
 
+  Widget _statusBadge(Color accent) {
+    if (widget.revealedByAnswer) {
+      const reveal = Color(0xFFD97706);
+      return FadeTransition(
+        opacity: _badgeFade,
+        child: ScaleTransition(
+          scale: _badgeScale,
+          alignment: Alignment.centerLeft,
+          child: Container(
+            padding: const EdgeInsets.symmetric(horizontal: 11, vertical: 5),
+            decoration: BoxDecoration(
+              color: const Color(0xFFFFF7ED),
+              borderRadius: BorderRadius.circular(99),
+              border: Border.all(color: reveal.withValues(alpha: 0.35)),
+            ),
+            child: Row(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Icon(
+                  Icons.visibility_rounded,
+                  size: 13,
+                  color: reveal.withValues(alpha: 0.9),
+                ),
+                const SizedBox(width: 5),
+                Text(
+                  '정답 확인',
+                  style: TextStyle(
+                    fontSize: 11.5,
+                    fontWeight: FontWeight.w800,
+                    color: reveal.withValues(alpha: 0.92),
+                    letterSpacing: 0.1,
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ),
+      );
+    }
+
+    const success = Color(0xFF0C9E6E);
+    return FadeTransition(
+      opacity: _badgeFade,
+      child: ScaleTransition(
+        scale: _badgeScale,
+        alignment: Alignment.centerLeft,
+        child: Container(
+          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+          decoration: BoxDecoration(
+            gradient: LinearGradient(
+              colors: [success, Color.lerp(success, accent, 0.25)!],
+            ),
+            borderRadius: BorderRadius.circular(99),
+            boxShadow: [
+              BoxShadow(
+                color: success.withValues(alpha: 0.25),
+                blurRadius: 12,
+                offset: const Offset(0, 4),
+              ),
+            ],
+          ),
+          child: const Row(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Icon(
+                Icons.check_circle_rounded,
+                size: 14,
+                color: Colors.white,
+              ),
+              SizedBox(width: 5),
+              Text(
+                'Correct',
+                style: TextStyle(
+                  fontSize: 12,
+                  fontWeight: FontWeight.w800,
+                  color: Colors.white,
+                  letterSpacing: 0.3,
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     final line = widget.line;
     final accent = widget.accent;
-    const success = Color(0xFF0C9E6E); // 💡 살짝 청량한 초록으로 변경
+    final revealed = widget.revealedByAnswer;
 
     return FadeTransition(
       opacity: _fade,
@@ -792,57 +885,16 @@ class _ResolvedContentState extends State<_ResolvedContent>
               crossAxisAlignment: CrossAxisAlignment.center,
               children: [
                 _RoleChip(
-                  icon: Icons.badge_rounded,
-                  label: '정답',
-                  color: accent,
+                  icon: revealed
+                      ? Icons.menu_book_rounded
+                      : Icons.badge_rounded,
+                  label: revealed ? '참고' : '정답',
+                  color: revealed
+                      ? const Color(0xFFD97706)
+                      : accent,
                 ),
                 const SizedBox(width: 8),
-                FadeTransition(
-                  opacity: _badgeFade,
-                  child: ScaleTransition(
-                    scale: _badgeScale,
-                    alignment: Alignment.centerLeft,
-                    child: Container(
-                      padding: const EdgeInsets.symmetric(
-                        horizontal: 12,
-                        vertical: 6,
-                      ),
-                      decoration: BoxDecoration(
-                        gradient: LinearGradient(
-                          colors: [success, Color.lerp(success, accent, 0.25)!],
-                        ),
-                        borderRadius: BorderRadius.circular(99),
-                        boxShadow: [
-                          BoxShadow(
-                            color: success.withValues(alpha: 0.25),
-                            blurRadius: 12,
-                            offset: const Offset(0, 4),
-                          ),
-                        ],
-                      ),
-                      child: const Row(
-                        mainAxisSize: MainAxisSize.min,
-                        children: [
-                          Icon(
-                            Icons.check_circle_rounded,
-                            size: 14,
-                            color: Colors.white,
-                          ),
-                          SizedBox(width: 5),
-                          Text(
-                            'Correct',
-                            style: TextStyle(
-                              fontSize: 12,
-                              fontWeight: FontWeight.w800,
-                              color: Colors.white,
-                              letterSpacing: 0.3,
-                            ),
-                          ),
-                        ],
-                      ),
-                    ),
-                  ),
-                ),
+                _statusBadge(accent),
               ],
             ),
             const SizedBox(height: 12),

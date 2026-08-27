@@ -1,26 +1,27 @@
 import 'dart:math' as math;
-import 'dart:ui';
 
 import 'package:flutter/material.dart';
-import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
 import '../../app/dashboard_providers.dart';
 import '../../data/datasources/local/learning_tour_local_datasource.dart';
 import '../../app/learning_tour_providers.dart';
+import '../../app/providers.dart';
 import '../../app/scenario_providers.dart';
 import '../../app/vocabulary_providers.dart';
 import '../../core/config/active5_layout.dart';
 import '../../core/theme/language_palette.dart';
 import '../../core/widgets/device_scaffold.dart';
 import '../../data/models/scenario.dart';
+import '../../data/models/scenario_training_result.dart';
 import '../../features/dashboard/dashboard_palette.dart';
-import '../../shared/widgets/score_celebration_overlay.dart';
+import '../../shared/widgets/web_safe_backdrop_blur.dart';
 import 'scenario_tour.dart';
 import 'scenario_word_hints.dart';
 import 'widgets/scenario_chat_bubble.dart';
 import 'widgets/scenario_glass_header.dart';
+import 'widgets/scenario_result_modal.dart';
 
 /// 대화식 실전 훈련 — 미니멀 채팅 + 플로팅 컨트롤.
 class ScenarioTrainingScreen extends ConsumerStatefulWidget {
@@ -50,6 +51,7 @@ class _ScenarioTrainingScreenState extends ConsumerState<ScenarioTrainingScreen>
   /// 아무 말풍선에도 주지 않아, 승객 말풍선 subtree가 GlobalKey 부착/해제로
   /// 불필요하게 재생성(타이핑 애니메이션 리플레이)되는 것을 막는다.
   bool _tourActive = false;
+  bool _resultSheetShowing = false;
   late final LearningTourLocalDataSource _tourLocalDataSource;
   double _lastKeyboardInset = 0;
 
@@ -127,7 +129,7 @@ class _ScenarioTrainingScreenState extends ConsumerState<ScenarioTrainingScreen>
     await Future<void>.delayed(const Duration(milliseconds: 80));
     if (!mounted) return;
     final ctx = _tourKeys.opponentBubbleKey.currentContext;
-    if (ctx == null) return;
+    if (ctx == null || !ctx.mounted) return;
     await Scrollable.ensureVisible(
       ctx,
       alignment: 0.18,
@@ -217,6 +219,64 @@ class _ScenarioTrainingScreenState extends ConsumerState<ScenarioTrainingScreen>
     context.go('/scenarios');
   }
 
+  List<Scenario> get _orderedScenarios {
+    final content = ref.read(contentProvider).value;
+    if (content == null) return [];
+    return content.bundle
+        .scenariosFor(widget.scenario.language)
+        .where((scenario) => !scenario.isSheetHeaderRow)
+        .toList();
+  }
+
+  int get _currentScenarioIndex =>
+      _orderedScenarios.indexWhere((scenario) => scenario.id == widget.scenario.id);
+
+  Scenario? get _previousScenario {
+    final index = _currentScenarioIndex;
+    if (index <= 0) return null;
+    return _orderedScenarios[index - 1];
+  }
+
+  Scenario? get _nextScenario {
+    final index = _currentScenarioIndex;
+    if (index < 0 || index + 1 >= _orderedScenarios.length) return null;
+    return _orderedScenarios[index + 1];
+  }
+
+  void _retryScenario() {
+    _typingController.clear();
+    _typingFocus.unfocus();
+    ref.read(scenarioTrainingProvider.notifier).init(widget.scenario);
+    if (_scrollController.hasClients) {
+      _scrollController.jumpTo(0);
+    }
+  }
+
+  Future<void> _openScenario(Scenario scenario) async {
+    await ref.read(scenarioTrainingProvider.notifier).stopAll();
+    if (!mounted) return;
+    context.go('/scenarios/train/${scenario.id}', extra: scenario);
+  }
+
+  Future<void> _showResultSheet(ScenarioTrainingResult result) async {
+    if (_resultSheetShowing || !mounted) return;
+    _resultSheetShowing = true;
+    final previous = _previousScenario;
+    final next = _nextScenario;
+    await ScenarioResultModal.show(
+      context: context,
+      result: result,
+      scenarioTitle: widget.scenario.title,
+      onRetry: _retryScenario,
+      onExit: _leaveScreen,
+      previousScenario: previous,
+      nextScenario: next,
+      onPrevious: previous == null ? null : () => _openScenario(previous),
+      onNext: next == null ? null : () => _openScenario(next),
+    );
+    if (mounted) _resultSheetShowing = false;
+  }
+
   @override
   void dispose() {
     WidgetsBinding.instance.removeObserver(this);
@@ -294,9 +354,10 @@ class _ScenarioTrainingScreenState extends ConsumerState<ScenarioTrainingScreen>
       if (next.isCompleted && !(prev?.isCompleted ?? false)) {
         ref.invalidate(dashboardProvider);
         WidgetsBinding.instance.addPostFrameCallback((_) {
-          HapticFeedback.heavyImpact();
+          if (mounted && next.result != null) {
+            _showResultSheet(next.result!);
+          }
         });
-        _showCompletionSnackBar(context, palette);
       }
       if (!_initialTourFinished &&
           !(prev?.isCompleted ?? false) &&
@@ -482,14 +543,6 @@ class _ScenarioTrainingScreenState extends ConsumerState<ScenarioTrainingScreen>
                       ),
                     ),
                   ),
-                if (training.isCompleted)
-                  const Positioned.fill(
-                    child: IgnorePointer(
-                      child: ScoreCelebrationOverlay(
-                        tier: ScoreCelebrationTier.perfect,
-                      ),
-                    ),
-                  ),
               ],
             ),
           ),
@@ -539,20 +592,6 @@ class _ScenarioTrainingScreenState extends ConsumerState<ScenarioTrainingScreen>
     );
   }
 
-  void _showCompletionSnackBar(BuildContext context, LanguagePalette palette) {
-    ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(
-        behavior: SnackBarBehavior.floating,
-        backgroundColor: palette.primary,
-        content: const Text('시나리오를 완료했습니다! 학습 진도에 반영되었어요.'),
-        action: SnackBarAction(
-          label: '목록',
-          textColor: Colors.white,
-          onPressed: _leaveScreen,
-        ),
-      ),
-    );
-  }
 }
 
 // ---------------------------------------------------------------------------
@@ -594,8 +633,9 @@ class _FloatingControlBar extends StatelessWidget {
   Widget build(BuildContext context) {
     return ClipRRect(
       borderRadius: BorderRadius.circular(28),
-      child: BackdropFilter(
-        filter: ImageFilter.blur(sigmaX: 18, sigmaY: 18),
+      child: WebSafeBackdropBlur(
+        sigmaX: 18,
+        sigmaY: 18,
         child: Container(
           padding: const EdgeInsets.fromLTRB(14, 14, 14, 16),
           decoration: BoxDecoration(

@@ -1,6 +1,6 @@
-import 'dart:ui';
 import 'package:flutter/material.dart';
 import '../../dashboard/dashboard_palette.dart';
+import '../../../shared/widgets/web_safe_backdrop_blur.dart';
 
 class ScenarioGlassHeader extends StatelessWidget {
   final double progress;
@@ -34,8 +34,9 @@ class ScenarioGlassHeader extends StatelessWidget {
       ),
       child: ClipRRect(
         borderRadius: BorderRadius.circular(borderRadius),
-        child: BackdropFilter(
-          filter: ImageFilter.blur(sigmaX: 12, sigmaY: 12), // 💡 블러 강도를 살짝 높임
+        child: WebSafeBackdropBlur(
+          sigmaX: 12,
+          sigmaY: 12,
           child: Container(
             constraints: const BoxConstraints(minHeight: 60), // 💡 높이 밸런스 조정
             padding: const EdgeInsets.fromLTRB(8, 12, 8, 14), // 💡 내부 여백 최적화

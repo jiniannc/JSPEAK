@@ -23,13 +23,18 @@ class HubTripleModeProgressTrack extends StatelessWidget {
   static const double trackHeight = HubGrooveProgressTrack.trackHeight;
   static const double indicatorWidth = 48.0;
   static const double indicatorHeight = 28.0;
+
   /// 비행기 하단이 트랙 위쪽과 겹치는 정도.
   static const double indicatorTrackOverlap = 8.0;
+
   /// 상하 비행 애니메이션 여유.
   static const double indicatorFloatClearance = 3.0;
   static const double indicatorLeftNudge = -8.0;
   static const double trackBandHeight =
-      indicatorHeight + trackHeight - indicatorTrackOverlap + indicatorFloatClearance;
+      indicatorHeight +
+      trackHeight -
+      indicatorTrackOverlap +
+      indicatorFloatClearance;
   static const double countGap = 10.0;
   static const double countHeight = HubGrooveProgressTrack.countHeight;
   static const double legendGap = 5.0;
@@ -37,7 +42,9 @@ class HubTripleModeProgressTrack extends StatelessWidget {
 
   /// 단어 스와이프 결과 도넛 링과 같은 네온 그라데이션 팔레트.
   static const wordGradient = [Color(0xFFFBBF24), Color(0xFFF59E0B)];
-  static const sentenceGradient = [Color(0xFF38BDF8), Color(0xFF0284C7)];
+  static const sentenceRed = Color(0xFFFF4D6D);
+  static const sentencePink = Color(0xFFEC4899);
+  static const sentenceGradient = [sentenceRed, sentencePink];
   static const scenarioGradient = [Color(0xFF10B981), Color(0xFF06B6D4)];
 
   static Color get wordColor => wordGradient.last;
@@ -48,7 +55,10 @@ class HubTripleModeProgressTrack extends StatelessWidget {
       trackBandHeight + countGap + countHeight + legendGap + legendHeight;
 
   double get _overallProgress =>
-      ((wordProgress + sentenceProgress + scenarioProgress) / 3).clamp(0.0, 1.0);
+      ((wordProgress + sentenceProgress + scenarioProgress) / 3).clamp(
+        0.0,
+        1.0,
+      );
 
   @override
   Widget build(BuildContext context) {
@@ -78,11 +88,13 @@ class HubTripleModeProgressTrack extends StatelessWidget {
                   final wordW = width * word / 3;
                   final sentenceW = width * sentence / 3;
                   final scenarioW = width * scenario / 3;
+                  final totalFillW = wordW + sentenceW + scenarioW;
                   // 전체 진행률(0~1)에 따라 트랙 위를 선형 이동 — clamp 구간 없이 일관.
                   final travel = math.max(0.0, width - indicatorWidth);
-                  final indicatorLeft = (animatedOverall * travel + indicatorLeftNudge)
-                      .clamp(indicatorLeftNudge, travel)
-                      .toDouble();
+                  final indicatorLeft =
+                      (animatedOverall * travel + indicatorLeftNudge)
+                          .clamp(indicatorLeftNudge, travel)
+                          .toDouble();
 
                   return Stack(
                     clipBehavior: Clip.none,
@@ -105,22 +117,35 @@ class HubTripleModeProgressTrack extends StatelessWidget {
                                   color: groove,
                                   boxShadow: [
                                     BoxShadow(
-                                      color:
-                                          Colors.black.withValues(alpha: 0.10),
+                                      color: Colors.black.withValues(
+                                        alpha: 0.10,
+                                      ),
                                       blurRadius: 3,
                                       offset: const Offset(0, 1),
                                     ),
                                   ],
                                 ),
                               ),
-                              _UnifiedModeFill(
-                                wordWidth: wordW,
-                                sentenceWidth: sentenceW,
-                                scenarioWidth: scenarioW,
-                                wordGradient: wordGradient,
-                                sentenceGradient: sentenceGradient,
-                                scenarioGradient: scenarioGradient,
-                              ),
+                              if (totalFillW > 0.5)
+                                Positioned(
+                                  left: 0,
+                                  bottom: 0,
+                                  width: totalFillW,
+                                  height: trackHeight,
+                                  child: ClipRRect(
+                                    borderRadius: BorderRadius.circular(
+                                      HubGrooveProgressTrack._trackRadius,
+                                    ),
+                                    child: _UnifiedModeFill(
+                                      wordWidth: wordW,
+                                      sentenceWidth: sentenceW,
+                                      scenarioWidth: scenarioW,
+                                      wordGradient: wordGradient,
+                                      sentenceGradient: sentenceGradient,
+                                      scenarioGradient: scenarioGradient,
+                                    ),
+                                  ),
+                                ),
                               Positioned(
                                 left: 0,
                                 right: 0,
@@ -150,9 +175,7 @@ class HubTripleModeProgressTrack extends StatelessWidget {
                         bottom: trackHeight - indicatorTrackOverlap,
                         width: indicatorWidth,
                         height: indicatorHeight,
-                        child: const IgnorePointer(
-                          child: _PlaneSvgIndicator(),
-                        ),
+                        child: const IgnorePointer(child: _PlaneSvgIndicator()),
                       ),
                     ],
                   );
@@ -169,11 +192,7 @@ class HubTripleModeProgressTrack extends StatelessWidget {
               fontWeight: FontWeight.w600,
               letterSpacing: 0.1,
               height: 1.2,
-              color: Color.lerp(
-                palette.canvas,
-                const Color(0xFF64748B),
-                0.78,
-              )!,
+              color: Color.lerp(palette.canvas, const Color(0xFF64748B), 0.78)!,
             ),
             children: [
               const TextSpan(text: '학습 진도율'),
@@ -294,81 +313,229 @@ class _UnifiedModeFill extends StatelessWidget {
     required this.scenarioGradient,
   });
 
-  @override
-  Widget build(BuildContext context) {
-    var offset = 0.0;
-    final children = <Widget>[];
+  static const _boundaryBlendPx = 8.0;
 
-    void addSegment(double width, List<Color> gradientColors) {
-      if (width <= 0.5) return;
-      final start = offset;
-      offset += width;
-      final glow = gradientColors.last;
-      children.add(
-        Positioned(
-          left: start,
-          top: 0,
-          bottom: 0,
-          width: width,
-          child: Stack(
-            fit: StackFit.expand,
-            clipBehavior: Clip.hardEdge,
-            children: [
-              DecoratedBox(
-                decoration: BoxDecoration(
-                  boxShadow: [
-                    BoxShadow(
-                      color: glow.withValues(alpha: 0.42),
-                      blurRadius: 5,
-                      spreadRadius: -0.5,
-                    ),
-                  ],
-                ),
-              ),
-              DecoratedBox(
-                decoration: BoxDecoration(
-                  gradient: LinearGradient(
-                    begin: Alignment.centerLeft,
-                    end: Alignment.centerRight,
-                    colors: gradientColors,
-                  ),
-                ),
-              ),
-              Align(
-                alignment: Alignment.topCenter,
-                child: FractionallySizedBox(
-                  heightFactor: 0.45,
-                  widthFactor: 1,
-                  child: DecoratedBox(
-                    decoration: BoxDecoration(
-                      gradient: LinearGradient(
-                        begin: Alignment.topCenter,
-                        end: Alignment.bottomCenter,
-                        colors: [
-                          Colors.white.withValues(alpha: 0.38),
-                          Colors.white.withValues(alpha: 0.0),
-                        ],
-                      ),
-                    ),
-                  ),
-                ),
-              ),
-            ],
-          ),
-        ),
-      );
+  static _BlendedFillGradient _buildBlendedGradient({
+    required double wordWidth,
+    required double sentenceWidth,
+    required double scenarioWidth,
+    required List<Color> wordGradient,
+    required List<Color> sentenceGradient,
+    required List<Color> scenarioGradient,
+  }) {
+    final total = wordWidth + sentenceWidth + scenarioWidth;
+    if (total <= 0.5) {
+      return const _BlendedFillGradient(colors: [], stops: [], glowColor: Colors.transparent);
     }
 
-    addSegment(wordWidth, wordGradient);
-    addSegment(sentenceWidth, sentenceGradient);
-    addSegment(scenarioWidth, scenarioGradient);
+    final wordStart = wordGradient.first;
+    final wordEnd = wordGradient.last;
+    final sentenceStart = sentenceGradient.first;
+    final sentenceEnd = sentenceGradient.last;
+    final scenarioStart = scenarioGradient.first;
+    final scenarioEnd = scenarioGradient.last;
+
+    final wordBoundary = wordWidth / total;
+    final sentenceBoundary = (wordWidth + sentenceWidth) / total;
+
+    double blendHalf({
+      required double leftSegmentWidth,
+      required double rightSegmentWidth,
+    }) {
+      if (leftSegmentWidth <= 0.5 || rightSegmentWidth <= 0.5) return 0;
+      final pxBlend = _boundaryBlendPx / total;
+      final segmentCap =
+          math.min(leftSegmentWidth, rightSegmentWidth) / total * 0.42;
+      return math.min(pxBlend, segmentCap);
+    }
+
+    final wordSentenceBlend = blendHalf(
+      leftSegmentWidth: wordWidth,
+      rightSegmentWidth: sentenceWidth,
+    );
+    final sentenceScenarioBlend = blendHalf(
+      leftSegmentWidth: sentenceWidth,
+      rightSegmentWidth: scenarioWidth,
+    );
+
+    final colors = <Color>[];
+    final stops = <double>[];
+
+    void pushStop(double stop, Color color) {
+      final clamped = stop.clamp(0.0, 1.0);
+      if (stops.isNotEmpty && (clamped - stops.last).abs() < 0.0005) {
+        colors[colors.length - 1] = color;
+        return;
+      }
+      stops.add(clamped);
+      colors.add(color);
+    }
+
+    void pushBoundaryBlend({
+      required double boundary,
+      required double blendHalfWidth,
+      required Color leftColor,
+      required Color rightColor,
+    }) {
+      if (blendHalfWidth <= 0.001) {
+        pushStop(boundary, Color.lerp(leftColor, rightColor, 0.5)!);
+        return;
+      }
+
+      pushStop(boundary - blendHalfWidth, leftColor);
+      pushStop(boundary, Color.lerp(leftColor, rightColor, 0.5)!);
+      pushStop(boundary + blendHalfWidth, rightColor);
+    }
+
+    pushStop(0, wordStart);
+
+    if (wordWidth > 0.5) {
+      if (sentenceWidth > 0.5) {
+        pushStop(
+          (wordBoundary - wordSentenceBlend).clamp(0.0, 1.0),
+          wordEnd,
+        );
+        pushBoundaryBlend(
+          boundary: wordBoundary,
+          blendHalfWidth: wordSentenceBlend,
+          leftColor: wordEnd,
+          rightColor: sentenceStart,
+        );
+      } else if (scenarioWidth > 0.5) {
+        final directBlend = blendHalf(
+          leftSegmentWidth: wordWidth,
+          rightSegmentWidth: scenarioWidth,
+        );
+        pushStop((wordBoundary - directBlend).clamp(0.0, 1.0), wordEnd);
+        pushBoundaryBlend(
+          boundary: wordBoundary,
+          blendHalfWidth: directBlend,
+          leftColor: wordEnd,
+          rightColor: scenarioStart,
+        );
+      } else {
+        pushStop(1, wordEnd);
+      }
+    }
+
+    if (sentenceWidth > 0.5) {
+      final sentenceCoreEnd =
+          (sentenceBoundary - sentenceScenarioBlend).clamp(0.0, 1.0);
+      if (sentenceCoreEnd > (stops.isEmpty ? -1 : stops.last) + 0.0005) {
+        pushStop(sentenceCoreEnd, sentenceEnd);
+      }
+
+      if (scenarioWidth > 0.5) {
+        pushBoundaryBlend(
+          boundary: sentenceBoundary,
+          blendHalfWidth: sentenceScenarioBlend,
+          leftColor: sentenceEnd,
+          rightColor: scenarioStart,
+        );
+      } else {
+        pushStop(1, sentenceEnd);
+      }
+    }
+
+    if (scenarioWidth > 0.5) {
+      pushStop(1, scenarioEnd);
+    }
+
+    if (stops.isEmpty) {
+      return const _BlendedFillGradient(colors: [], stops: [], glowColor: Colors.transparent);
+    }
+
+    if ((stops.last - 1).abs() > 0.0005) {
+      pushStop(1, colors.last);
+    }
+
+    final glowColor = Color.lerp(
+      Color.lerp(wordEnd, sentenceEnd, sentenceWidth / total),
+      scenarioEnd,
+      scenarioWidth / total,
+    )!;
+
+    return _BlendedFillGradient(
+      colors: colors,
+      stops: stops,
+      glowColor: glowColor,
+    );
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final gradient = _buildBlendedGradient(
+      wordWidth: wordWidth,
+      sentenceWidth: sentenceWidth,
+      scenarioWidth: scenarioWidth,
+      wordGradient: wordGradient,
+      sentenceGradient: sentenceGradient,
+      scenarioGradient: scenarioGradient,
+    );
+
+    if (gradient.colors.isEmpty) {
+      return const SizedBox.shrink();
+    }
 
     return Stack(
       fit: StackFit.expand,
       clipBehavior: Clip.hardEdge,
-      children: children,
+      children: [
+        DecoratedBox(
+          decoration: BoxDecoration(
+            boxShadow: [
+              BoxShadow(
+                color: gradient.glowColor.withValues(alpha: 0.42),
+                blurRadius: 5,
+                spreadRadius: -0.5,
+              ),
+            ],
+          ),
+        ),
+        DecoratedBox(
+          decoration: BoxDecoration(
+            gradient: LinearGradient(
+              begin: Alignment.centerLeft,
+              end: Alignment.centerRight,
+              colors: gradient.colors,
+              stops: gradient.stops,
+            ),
+          ),
+        ),
+        Align(
+          alignment: Alignment.topCenter,
+          child: FractionallySizedBox(
+            heightFactor: 0.45,
+            widthFactor: 1,
+            child: DecoratedBox(
+              decoration: BoxDecoration(
+                gradient: LinearGradient(
+                  begin: Alignment.topCenter,
+                  end: Alignment.bottomCenter,
+                  colors: [
+                    Colors.white.withValues(alpha: 0.38),
+                    Colors.white.withValues(alpha: 0.0),
+                  ],
+                ),
+              ),
+            ),
+          ),
+        ),
+      ],
     );
   }
+}
+
+class _BlendedFillGradient {
+  final List<Color> colors;
+  final List<double> stops;
+  final Color glowColor;
+
+  const _BlendedFillGradient({
+    required this.colors,
+    required this.stops,
+    required this.glowColor,
+  });
 }
 
 class _TripleModeLegend extends StatelessWidget {
@@ -429,10 +596,7 @@ class _LegendItem extends StatelessWidget {
             decoration: BoxDecoration(
               shape: BoxShape.circle,
               gradient: RadialGradient(
-                colors: [
-                  Colors.white.withValues(alpha: 0.85),
-                  color,
-                ],
+                colors: [Colors.white.withValues(alpha: 0.85), color],
               ),
               boxShadow: [
                 BoxShadow(
@@ -481,8 +645,7 @@ class HubGrooveProgressTrack extends StatelessWidget {
   static const Duration _animationDuration = Duration(milliseconds: 600);
 
   /// 프로그레스 바 + 카운트 텍스트까지 포함한 고정 블록 높이.
-  static const totalBlockHeight =
-      outerHeight + countGap + countHeight;
+  static const totalBlockHeight = outerHeight + countGap + countHeight;
 
   double get _progress {
     if (total <= 0) return 0;
@@ -600,10 +763,7 @@ class _LiquidGlassLens extends StatelessWidget {
   final Color accent;
   final double progress;
 
-  const _LiquidGlassLens({
-    required this.accent,
-    required this.progress,
-  });
+  const _LiquidGlassLens({required this.accent, required this.progress});
 
   @override
   Widget build(BuildContext context) {

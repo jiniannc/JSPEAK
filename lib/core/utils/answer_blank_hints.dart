@@ -1,3 +1,5 @@
+import 'dart:math' as math;
+
 import 'package:flutter/material.dart';
 
 import '../../shared/widgets/hint_run_badge.dart';
@@ -1236,7 +1238,7 @@ class AnswerBlankHintView extends StatefulWidget {
 }
 
 class _AnswerBlankHintViewState extends State<AnswerBlankHintView>
-    with SingleTickerProviderStateMixin {
+    with TickerProviderStateMixin {
   static const Color _runBorderColor = Color(0xFFFF8F00);
   /// 테두리를 레이아웃 안쪽에 두어 Clip/말풍선에 잘리지 않게 함.
   static const double _borderInset = 4.0;
@@ -1245,6 +1247,11 @@ class _AnswerBlankHintViewState extends State<AnswerBlankHintView>
   static const double _lineGap = 6.0;
 
   late final AnimationController _pulse;
+  late final AnimationController _revealController;
+  late final AnimationController _blankFlashController;
+
+  List<int>? _structureRevealOrder;
+  bool _structureRevealComplete = false;
 
   BlankLayoutSpec get _layout =>
       BlankLayoutSpec.forLanguage(widget.language, widget.fontSize);
@@ -1256,14 +1263,37 @@ class _AnswerBlankHintViewState extends State<AnswerBlankHintView>
       vsync: this,
       duration: const Duration(milliseconds: 1200),
     );
+    _revealController = AnimationController(vsync: this);
+    _revealController.addStatusListener((status) {
+      if (status == AnimationStatus.completed && mounted) {
+        setState(() => _structureRevealComplete = true);
+      }
+    });
+    _blankFlashController = AnimationController(
+      vsync: this,
+      duration: const Duration(milliseconds: 900),
+    );
     if (widget.structureRevealed) {
-      _pulse.repeat(reverse: true);
+      _beginStructureReveal();
     }
   }
 
   @override
   void didUpdateWidget(covariant AnswerBlankHintView oldWidget) {
     super.didUpdateWidget(oldWidget);
+    if (widget.structureRevealed && !oldWidget.structureRevealed) {
+      _beginStructureReveal();
+    } else if (!widget.structureRevealed && oldWidget.structureRevealed) {
+      _structureRevealOrder = null;
+      _structureRevealComplete = false;
+      _revealController
+        ..stop()
+        ..value = 0;
+      _blankFlashController
+        ..stop()
+        ..value = 0;
+    }
+
     if (widget.structureRevealed && !_pulse.isAnimating) {
       _pulse.repeat(reverse: true);
     } else if (!widget.structureRevealed && _pulse.isAnimating) {
@@ -1273,9 +1303,66 @@ class _AnswerBlankHintViewState extends State<AnswerBlankHintView>
     }
   }
 
+  void _beginStructureReveal() {
+    final layout = AnswerBlankHints.layout(
+      correct: widget.correctSentence,
+      spoken: widget.spokenText,
+      language: widget.language,
+      blankFrame: widget.blankFrame,
+      structureRevealed: true,
+      keyRuns: AnswerBlankHints.contiguousKeyRuns(
+        correct: widget.correctSentence,
+        blankFrame: widget.blankFrame,
+        language: widget.language,
+      ),
+      keyboardTyping: widget.keyboardTyping,
+    );
+
+    final order = <int>[];
+    for (var i = 0; i < layout.states.length; i++) {
+      if (layout.states[i].kind == BlankRevealKind.structure) {
+        order.add(i);
+      }
+    }
+    order.shuffle(math.Random());
+
+    _structureRevealOrder = order;
+    _structureRevealComplete = order.isEmpty;
+    _revealController.duration = Duration(
+      milliseconds: (380 + order.length * 62).clamp(380, 2600),
+    );
+    _revealController.forward(from: 0);
+    _blankFlashController.forward(from: 0);
+    _pulse.repeat(reverse: true);
+  }
+
+  double _letterRevealT(int letterIndex, BlankLetterState state) {
+    if (state.kind != BlankRevealKind.structure) return 1.0;
+    if (_structureRevealComplete) return 1.0;
+    final order = _structureRevealOrder;
+    if (order == null || order.isEmpty) return 1.0;
+
+    final pos = order.indexOf(letterIndex);
+    if (pos < 0) return 1.0;
+
+    const slot = 0.11;
+    final start = pos / order.length * (1.0 - slot);
+    final t = _revealController.value;
+    if (t <= start) return 0.0;
+    return ((t - start) / slot).clamp(0.0, 1.0);
+  }
+
+  bool _isDimmedKeyBlank(int keyWordIndex) {
+    final selected = widget.selectedBlankIndex;
+    if (selected == null || keyWordIndex < 0) return false;
+    return selected != keyWordIndex;
+  }
+
   @override
   void dispose() {
     _pulse.dispose();
+    _revealController.dispose();
+    _blankFlashController.dispose();
     super.dispose();
   }
 
@@ -1412,7 +1499,11 @@ class _AnswerBlankHintViewState extends State<AnswerBlankHintView>
     final lines = _packGroupsIntoLines(letters, states, groups, widget.maxWidth);
 
     return AnimatedBuilder(
-      animation: _pulse,
+      animation: Listenable.merge([
+        _pulse,
+        _revealController,
+        _blankFlashController,
+      ]),
       builder: (context, _) {
         return Column(
           mainAxisSize: MainAxisSize.min,
@@ -1487,6 +1578,14 @@ class _AnswerBlankHintViewState extends State<AnswerBlankHintView>
               slotWidth: _slotWidthFor(spanIndices[k], letters, states),
               letterStyle: _letterStyle,
               blankPlaceholder: _layout.blankPlaceholder,
+              revealT: _letterRevealT(
+                spanIndices[k],
+                spanIndices[k] < states.length
+                    ? states[spanIndices[k]]
+                    : const BlankLetterState.blank(),
+              ),
+              dimmed: letters[spanIndices[k]].isKey &&
+                  _isDimmedKeyBlank(letters[spanIndices[k]].keyWordIndex),
             ),
           ],
         ],
@@ -1510,6 +1609,9 @@ class _AnswerBlankHintViewState extends State<AnswerBlankHintView>
     final filled = keyIdx >= 0 &&
         keyIdx < widget.blankInputs.length &&
         widget.blankInputs[keyIdx].trim().isNotEmpty;
+    final selectionActive =
+        widget.selectedBlankIndex != null && widget.structureRevealed;
+    final dimmedBlank = group.isKeyRun && selectionActive && !selected;
 
     final row = Row(
       mainAxisSize: MainAxisSize.min,
@@ -1524,48 +1626,71 @@ class _AnswerBlankHintViewState extends State<AnswerBlankHintView>
         horizontal: group.isKeyRun ? _borderInset : 0,
         vertical: _borderInset,
       ),
-      child: row,
+      child: Opacity(
+        opacity: dimmedBlank
+            ? 0.34
+            : (selectionActive && !group.isKeyRun ? 0.62 : 1.0),
+        child: row,
+      ),
     );
 
     const borderWidth = 2.0;
     final Color borderColor;
+    Color? fillColor;
     List<BoxShadow>? glow;
     if (!group.isKeyRun) {
       borderColor = Colors.transparent;
     } else if (!widget.structureRevealed) {
       borderColor = Colors.transparent;
     } else if (filled && !selected) {
-      borderColor = _runBorderColor.withValues(alpha: 0.32);
+      borderColor = _runBorderColor.withValues(alpha: dimmedBlank ? 0.14 : 0.32);
     } else {
       // 레이아웃 불변: 두께 고정, 투명도·글로우만 살살 호흡
       final t = Curves.easeInOut.transform(_pulse.value);
+      final flash = math.sin(_blankFlashController.value * math.pi);
       if (selected) {
-        borderColor = _runBorderColor.withValues(alpha: 0.78 + t * 0.18);
+        borderColor = widget.accentColor.withValues(alpha: 0.92);
+        fillColor = widget.accentColor.withValues(alpha: 0.14 + t * 0.04);
         glow = [
           BoxShadow(
-            color: _runBorderColor.withValues(alpha: 0.18 + t * 0.16),
-            blurRadius: 5 + t * 3,
-            spreadRadius: 0,
+            color: widget.accentColor.withValues(alpha: 0.28 + t * 0.12),
+            blurRadius: 8 + t * 4,
+            spreadRadius: 0.5,
           ),
         ];
+      } else if (dimmedBlank) {
+        borderColor = _runBorderColor.withValues(alpha: 0.12);
       } else {
-        borderColor = _runBorderColor.withValues(alpha: 0.42 + t * 0.28);
-        glow = [
-          BoxShadow(
-            color: _runBorderColor.withValues(alpha: 0.10 + t * 0.14),
-            blurRadius: 4 + t * 4,
-            spreadRadius: 0,
-          ),
-        ];
+        borderColor =
+            _runBorderColor.withValues(alpha: 0.42 + t * 0.28 + flash * 0.22);
+        if (flash > 0.02) {
+          fillColor = _runBorderColor.withValues(alpha: 0.04 + flash * 0.10);
+          glow = [
+            BoxShadow(
+              color: _runBorderColor.withValues(alpha: 0.14 + flash * 0.22),
+              blurRadius: 6 + flash * 8,
+              spreadRadius: flash * 0.6,
+            ),
+          ];
+        } else {
+          glow = [
+            BoxShadow(
+              color: _runBorderColor.withValues(alpha: 0.10 + t * 0.14),
+              blurRadius: 4 + t * 4,
+              spreadRadius: 0,
+            ),
+          ];
+        }
       }
     }
 
     final boxed = DecoratedBox(
       decoration: BoxDecoration(
         borderRadius: BorderRadius.circular(8),
+        color: fillColor,
         border: Border.all(
           color: borderColor,
-          width: borderWidth,
+          width: selected ? 2.5 : borderWidth,
         ),
         boxShadow: glow,
       ),
@@ -1697,6 +1822,8 @@ class _LetterSlot extends StatelessWidget {
   final double slotWidth;
   final TextStyle letterStyle;
   final String blankPlaceholder;
+  final double revealT;
+  final bool dimmed;
 
   const _LetterSlot({
     required this.state,
@@ -1708,21 +1835,30 @@ class _LetterSlot extends StatelessWidget {
     required this.slotWidth,
     required this.letterStyle,
     required this.blankPlaceholder,
+    this.revealT = 1.0,
+    this.dimmed = false,
   });
 
   @override
   Widget build(BuildContext context) {
     const wrongColor = Color(0xFFE53935);
     final kind = state.kind;
-    final showAnswer = kind != BlankRevealKind.blank;
-    final display = kind == BlankRevealKind.wrong
+    final pendingStructure =
+        kind == BlankRevealKind.structure && revealT <= 0.001;
+    final effectiveKind =
+        pendingStructure ? BlankRevealKind.blank : kind;
+    final showAnswer = effectiveKind != BlankRevealKind.blank;
+    final display = effectiveKind == BlankRevealKind.wrong
         ? (state.shown ?? '')
         : correctChar;
-    final color = switch (kind) {
+    final pop = kind == BlankRevealKind.structure
+        ? Curves.easeOutBack.transform(revealT.clamp(0.0, 1.0))
+        : 1.0;
+    final color = switch (effectiveKind) {
       BlankRevealKind.correct => accent,
-      BlankRevealKind.structure => accent.withValues(alpha: 0.72),
+      BlankRevealKind.structure => accent.withValues(alpha: dimmed ? 0.38 : 0.72),
       BlankRevealKind.wrong => wrongColor,
-      BlankRevealKind.blank => accent,
+      BlankRevealKind.blank => dimmed ? muted.withValues(alpha: 0.45) : accent,
     };
 
     if (isPunctuation) {
@@ -1735,7 +1871,9 @@ class _LetterSlot extends StatelessWidget {
             padding: const EdgeInsets.only(bottom: 2),
             child: Text(
               correctChar,
-              style: letterStyle.copyWith(color: color),
+              style: letterStyle.copyWith(
+                color: dimmed ? color.withValues(alpha: 0.45) : color,
+              ),
             ),
           ),
         ),
@@ -1744,17 +1882,17 @@ class _LetterSlot extends StatelessWidget {
 
     late final Color barColor;
     var barHeight = 2.0;
-    if (kind == BlankRevealKind.correct) {
-      barColor = accent.withValues(alpha: 0.55);
-    } else if (kind == BlankRevealKind.structure) {
-      barColor = accent.withValues(alpha: 0.4);
-    } else if (kind == BlankRevealKind.wrong) {
+    if (effectiveKind == BlankRevealKind.correct) {
+      barColor = accent.withValues(alpha: dimmed ? 0.22 : 0.55);
+    } else if (effectiveKind == BlankRevealKind.structure) {
+      barColor = accent.withValues(alpha: dimmed ? 0.18 : 0.4);
+    } else if (effectiveKind == BlankRevealKind.wrong) {
       barColor = wrongColor.withValues(alpha: 0.7);
     } else {
-      barColor = muted;
+      barColor = dimmed ? muted.withValues(alpha: 0.28) : muted;
     }
 
-    final letterWidget = kind == BlankRevealKind.blank
+    final letterWidget = effectiveKind == BlankRevealKind.blank
         ? const SizedBox.shrink()
         : showAnswer
             ? Text(
@@ -1764,7 +1902,7 @@ class _LetterSlot extends StatelessWidget {
                 overflow: TextOverflow.clip,
                 style: letterStyle.copyWith(
                   color: color,
-                  decoration: kind == BlankRevealKind.wrong
+                  decoration: effectiveKind == BlankRevealKind.wrong
                       ? TextDecoration.lineThrough
                       : null,
                   decorationColor: wrongColor,
@@ -1772,24 +1910,41 @@ class _LetterSlot extends StatelessWidget {
               )
             : const SizedBox.shrink();
 
+    final body = Column(
+      children: [
+        Expanded(
+          child: Center(child: letterWidget),
+        ),
+        Container(
+          height: barHeight,
+          width: slotWidth,
+          decoration: BoxDecoration(
+            color: barColor,
+            borderRadius: BorderRadius.circular(1),
+          ),
+        ),
+      ],
+    );
+
+    if (kind == BlankRevealKind.structure && revealT < 1.0) {
+      return SizedBox(
+        width: slotWidth,
+        height: slotHeight,
+        child: Transform.translate(
+          offset: Offset(0, 12 * (1 - pop)),
+          child: Transform.scale(
+            scale: 0.55 + 0.45 * pop,
+            alignment: Alignment.bottomCenter,
+            child: Opacity(opacity: pop.clamp(0.0, 1.0), child: body),
+          ),
+        ),
+      );
+    }
+
     return SizedBox(
       width: slotWidth,
       height: slotHeight,
-      child: Column(
-        children: [
-          Expanded(
-            child: Center(child: letterWidget),
-          ),
-          Container(
-            height: barHeight,
-            width: slotWidth,
-            decoration: BoxDecoration(
-              color: barColor,
-              borderRadius: BorderRadius.circular(1),
-            ),
-          ),
-        ],
-      ),
+      child: body,
     );
   }
 }

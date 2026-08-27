@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:math' as math;
 
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
@@ -6,6 +7,7 @@ import '../data/datasources/local/scenario_progress_local_datasource.dart';
 import '../data/models/scenario.dart';
 import '../data/models/scenario_chapter.dart';
 import '../data/models/scenario_line.dart';
+import '../data/models/scenario_training_result.dart';
 import '../data/repositories/scenario_progress_repository.dart';
 import 'dictionary_providers.dart';
 import 'learning_hub_language_provider.dart';
@@ -89,6 +91,23 @@ class ScenarioProgressController extends Notifier<ScenarioProgressState> {
     final stats = await _repo.loadStats();
     state = ScenarioProgressState(stats: stats);
   }
+
+  Future<void> recordLastPerformance({
+    required String language,
+    required String scenarioId,
+    required int score,
+  }) async {
+    await _repo.saveLastPerformance(
+      language: language,
+      scenarioId: scenarioId,
+      score: score,
+    );
+    final stats = await _repo.loadStats();
+    state = ScenarioProgressState(stats: stats);
+  }
+
+  int? lastPerformance(String language, String scenarioId) =>
+      state.stats.lastPerformance(language, scenarioId);
 
   double progressPercent(String language, List<Scenario> scenarios) =>
       _repo.progressPercent(
@@ -215,6 +234,8 @@ class ChatMessage {
   final bool showWordHints;
   /// 정답으로 전환된 상태 (맞추거나 정답 보기).
   final bool isResolved;
+  /// 정답 확인 버튼으로 넘긴 경우 — Correct 뱃지와 구분.
+  final bool resolvedByAnswerReveal;
 
   const ChatMessage({
     required this.id,
@@ -224,6 +245,7 @@ class ChatMessage {
     this.showBlankFrame = false,
     this.showWordHints = false,
     this.isResolved = false,
+    this.resolvedByAnswerReveal = false,
   });
 
   bool get isUser => kind != ChatBubbleKind.passenger;
@@ -233,6 +255,7 @@ class ChatMessage {
     bool? showBlankFrame,
     bool? showWordHints,
     bool? isResolved,
+    bool? resolvedByAnswerReveal,
     bool clearSpokenText = false,
   }) {
     return ChatMessage(
@@ -243,6 +266,8 @@ class ChatMessage {
       showBlankFrame: showBlankFrame ?? this.showBlankFrame,
       showWordHints: showWordHints ?? this.showWordHints,
       isResolved: isResolved ?? this.isResolved,
+      resolvedByAnswerReveal:
+          resolvedByAnswerReveal ?? this.resolvedByAnswerReveal,
     );
   }
 }
@@ -272,6 +297,7 @@ class ScenarioTrainingState {
   final int? selectedBlankIndex;
   /// 힌트 빈칸별 입력값.
   final List<String> blankInputs;
+  final ScenarioTrainingResult? result;
   final String? error;
 
   const ScenarioTrainingState({
@@ -294,6 +320,7 @@ class ScenarioTrainingState {
     this.isTypingMode = false,
     this.selectedBlankIndex,
     this.blankInputs = const [],
+    this.result,
     this.error,
   });
 
@@ -316,6 +343,7 @@ class ScenarioTrainingState {
     bool? isTypingMode,
     int? selectedBlankIndex,
     List<String>? blankInputs,
+    ScenarioTrainingResult? result,
     String? error,
     bool clearSpokenText = false,
     bool clearError = false,
@@ -345,6 +373,7 @@ class ScenarioTrainingState {
           ? null
           : (selectedBlankIndex ?? this.selectedBlankIndex),
       blankInputs: blankInputs ?? this.blankInputs,
+      result: result ?? this.result,
       error: clearError ? null : (error ?? this.error),
     );
   }
@@ -419,6 +448,25 @@ class ScenarioTrainingState {
   }
 }
 
+class _ScenarioTurnAccumulator {
+  final int lineOrder;
+  int voiceAttempts = 0;
+  int keyboardAttempts = 0;
+  int hintLevel = 0;
+  ScenarioResolutionMethod? resolutionMethod;
+
+  _ScenarioTurnAccumulator(this.lineOrder);
+
+  ScenarioTurnPerformance build() => ScenarioTurnPerformance(
+        lineOrder: lineOrder,
+        voiceAttempts: voiceAttempts,
+        keyboardAttempts: keyboardAttempts,
+        hintLevel: hintLevel,
+        resolutionMethod:
+            resolutionMethod ?? ScenarioResolutionMethod.answerReveal,
+      );
+}
+
 class ScenarioTrainingController extends Notifier<ScenarioTrainingState> {
   static const _lowVolumeThreshold = -0.5;
   /// 문장 스피킹(SpeechPracticeController)과 동일한 VAD 파라미터.
@@ -447,6 +495,7 @@ class ScenarioTrainingController extends Notifier<ScenarioTrainingState> {
   bool _enginePauseForEnabled = false;
   ScenarioLine? _listeningLine;
   bool _gradingInProgress = false;
+  final Map<int, _ScenarioTurnAccumulator> _turnPerformance = {};
 
   List<ScenarioLine> get _lines => _scenario?.lines ?? [];
 
@@ -465,6 +514,7 @@ class ScenarioTrainingController extends Notifier<ScenarioTrainingState> {
   void init(Scenario scenario) {
     _sessionActive = true;
     _msgSeq = 0;
+    _turnPerformance.clear();
     _scenario = scenario;
     state = ScenarioTrainingState(
       scenarioId: scenario.id,
@@ -472,6 +522,12 @@ class ScenarioTrainingController extends Notifier<ScenarioTrainingState> {
     );
     _beginCurrentLine();
   }
+
+  _ScenarioTurnAccumulator _performanceFor(ScenarioLine line) =>
+      _turnPerformance.putIfAbsent(
+        line.order,
+        () => _ScenarioTurnAccumulator(line.order),
+      );
 
   ScenarioLine? get _currentLine {
     if (currentLineIndex >= _lines.length) return null;
@@ -1049,6 +1105,8 @@ class ScenarioTrainingController extends Notifier<ScenarioTrainingState> {
       return;
     }
 
+    final performance = _performanceFor(line);
+    performance.keyboardAttempts++;
     final ok = _isBlankWordCorrect(
       spoken: spoken,
       expected: expected,
@@ -1086,6 +1144,7 @@ class ScenarioTrainingController extends Notifier<ScenarioTrainingState> {
     final allKeys = _keyWordsFor(line);
 
     if (allDone) {
+      performance.resolutionMethod = ScenarioResolutionMethod.keyboard;
       state = state.copyWith(
         submitCount: nextSubmitCount,
         lastAttemptCorrect: true,
@@ -1147,6 +1206,8 @@ class ScenarioTrainingController extends Notifier<ScenarioTrainingState> {
     if (line == null || !line.isCrew) return;
 
     if (state.hintStage < 2) {
+      _performanceFor(line).hintLevel =
+          math.max(_performanceFor(line).hintLevel, 1);
       final runs = line.blankFrame.trim().isEmpty
           ? const <List<int>>[]
           : _keyRunsFor(line);
@@ -1167,6 +1228,8 @@ class ScenarioTrainingController extends Notifier<ScenarioTrainingState> {
       return;
     }
 
+    _performanceFor(line).hintLevel =
+        math.max(_performanceFor(line).hintLevel, 2);
     state = state.copyWith(
       hintStage: 3,
       messages: _updateActiveCrew(
@@ -1188,6 +1251,11 @@ class ScenarioTrainingController extends Notifier<ScenarioTrainingState> {
       await _stt.cancelListening();
     }
 
+    _performanceFor(line).resolutionMethod =
+        ScenarioResolutionMethod.answerReveal;
+    _performanceFor(line)
+      ..voiceAttempts = 0
+      ..keyboardAttempts = 0;
     state = state.copyWith(
       isListening: false,
       isTypingMode: false,
@@ -1195,9 +1263,13 @@ class ScenarioTrainingController extends Notifier<ScenarioTrainingState> {
       isVolumeLow: false,
       hintStage: 2,
       messages: _updateActiveCrew(
-        (m) => m.copyWith(isResolved: true, showBlankFrame: false),
+        (m) => m.copyWith(
+          isResolved: true,
+          showBlankFrame: false,
+          resolvedByAnswerReveal: true,
+        ),
       ),
-      feedback: TrainingFeedback.correct,
+      feedback: TrainingFeedback.hint,
       clearError: true,
     );
 
@@ -1229,6 +1301,12 @@ class ScenarioTrainingController extends Notifier<ScenarioTrainingState> {
       return;
     }
 
+    final performance = _performanceFor(line);
+    if (wasTyping) {
+      performance.keyboardAttempts++;
+    } else {
+      performance.voiceAttempts++;
+    }
     final nextSubmitCount = state.submitCount + 1;
     // 키보드 + 힌트: 주요 단어만 / 음성: 풀 문장
     final correct = ScenarioAnswerCompare.isCorrect(
@@ -1240,6 +1318,9 @@ class ScenarioTrainingController extends Notifier<ScenarioTrainingState> {
     );
 
     if (correct) {
+      performance.resolutionMethod = wasTyping
+          ? ScenarioResolutionMethod.keyboard
+          : ScenarioResolutionMethod.voice;
       state = state.copyWith(
         submitCount: nextSubmitCount,
         lastAttemptCorrect: true,
@@ -1285,7 +1366,18 @@ class ScenarioTrainingController extends Notifier<ScenarioTrainingState> {
   }
 
   Future<void> _completeScenario() async {
-    state = state.copyWith(isCompleted: true);
+    final result = ScenarioTrainingResult(
+      turns: [
+        for (final line in _lines.where((line) => line.isCrew))
+          _performanceFor(line).build(),
+      ],
+    );
+    state = state.copyWith(isCompleted: true, result: result);
+    await ref.read(scenarioProgressProvider.notifier).recordLastPerformance(
+          language: state.language,
+          scenarioId: state.scenarioId,
+          score: result.score,
+        );
     await ref.read(scenarioProgressProvider.notifier).markCompleted(
           language: state.language,
           scenarioId: state.scenarioId,

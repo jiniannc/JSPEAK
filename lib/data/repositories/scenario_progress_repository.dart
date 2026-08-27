@@ -24,6 +24,22 @@ class ScenarioProgressRepository {
     await _local.save(stats.copyWith(completedByLanguage: updated));
   }
 
+  /// 최근 performance 점수만 기록 — 완료 진척도와 별개.
+  Future<void> saveLastPerformance({
+    required String language,
+    required String scenarioId,
+    required int score,
+  }) async {
+    final stats = await _local.load();
+    final updated = stats.lastPerformanceByLanguage.map(
+      (lang, map) => MapEntry(lang, Map<String, int>.from(map)),
+    );
+    final scores = Map<String, int>.from(updated[language] ?? {});
+    scores[scenarioId] = score.clamp(0, 100);
+    updated[language] = scores;
+    await _local.save(stats.copyWith(lastPerformanceByLanguage: updated));
+  }
+
   /// 언어별 진도율 (0.0 ~ 100.0).
   double progressPercent({
     required String language,

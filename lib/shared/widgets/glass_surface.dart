@@ -2,6 +2,8 @@ import 'dart:ui';
 
 import 'package:flutter/material.dart';
 
+import 'web_safe_backdrop_blur.dart';
+
 /// HUB · 마이페이지 · 홈 공통 True Glassmorphism (시나리오 모드 동일 스펙).
 abstract final class GlassSurfaceStyle {
   static const shadowColor = Color(0x0C000000);
@@ -141,11 +143,9 @@ class FloatingIslandGlass extends StatelessWidget {
           fit: StackFit.passthrough,
           children: [
             Positioned.fill(
-              child: BackdropFilter(
-                filter: ImageFilter.blur(
-                  sigmaX: GlassSurfaceStyle.floatingIslandBlur,
-                  sigmaY: GlassSurfaceStyle.floatingIslandBlur,
-                ),
+              child: WebSafeBackdropBlur(
+                sigmaX: GlassSurfaceStyle.floatingIslandBlur,
+                sigmaY: GlassSurfaceStyle.floatingIslandBlur,
                 child: DecoratedBox(
                   decoration: BoxDecoration(
                     color: Colors.white.withValues(
@@ -199,8 +199,9 @@ class GlassSurface extends StatelessWidget {
       ),
       child: ClipRRect(
         borderRadius: BorderRadius.circular(radius),
-        child: BackdropFilter(
-          filter: ImageFilter.blur(sigmaX: sigma, sigmaY: sigma),
+        child: WebSafeBackdropBlur(
+          sigmaX: sigma,
+          sigmaY: sigma,
           child: DecoratedBox(
             decoration: GlassSurfaceStyle.surfaceDecoration(
               radius: radius,
@@ -262,11 +263,9 @@ class LuxuryGlassCard extends StatelessWidget {
           padding: const EdgeInsets.all(rimWidth),
           child: ClipRRect(
             borderRadius: BorderRadius.circular(innerRadius),
-            child: BackdropFilter(
-              filter: ImageFilter.blur(
-                sigmaX: blurSigma,
-                sigmaY: blurSigma,
-              ),
+            child: WebSafeBackdropBlur(
+              sigmaX: blurSigma,
+              sigmaY: blurSigma,
               child: DecoratedBox(
                 decoration: BoxDecoration(
                   gradient: LinearGradient(
@@ -347,8 +346,9 @@ class TicketWalletCard extends StatelessWidget {
       ),
       child: ClipRRect(
         borderRadius: BorderRadius.circular(radius),
-        child: BackdropFilter(
-          filter: ImageFilter.blur(sigmaX: blurSigma, sigmaY: blurSigma),
+        child: WebSafeBackdropBlur(
+          sigmaX: blurSigma,
+          sigmaY: blurSigma,
           child: DecoratedBox(
             decoration: BoxDecoration(
               borderRadius: BorderRadius.circular(radius),
@@ -456,8 +456,9 @@ class WatercolorGlassCard extends StatelessWidget {
       ),
       child: ClipRRect(
         borderRadius: BorderRadius.circular(radius),
-        child: BackdropFilter(
-          filter: ImageFilter.blur(sigmaX: blurSigma, sigmaY: blurSigma),
+        child: WebSafeBackdropBlur(
+          sigmaX: blurSigma,
+          sigmaY: blurSigma,
           child: DecoratedBox(
             decoration: BoxDecoration(
               color: Color.alphaBlend(tint, base),
@@ -508,8 +509,9 @@ class TintedGlassCard extends StatelessWidget {
       ),
       child: ClipRRect(
         borderRadius: BorderRadius.circular(radius),
-        child: BackdropFilter(
-          filter: ImageFilter.blur(sigmaX: blurSigma, sigmaY: blurSigma),
+        child: WebSafeBackdropBlur(
+          sigmaX: blurSigma,
+          sigmaY: blurSigma,
           child: DecoratedBox(
             decoration: BoxDecoration(
               gradient: LinearGradient(

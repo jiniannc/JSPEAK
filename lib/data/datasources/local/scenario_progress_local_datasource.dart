@@ -2,12 +2,15 @@ import 'dart:convert';
 
 import 'package:hive_flutter/hive_flutter.dart';
 
-/// 언어별 완료된 시나리오 ID 집합.
+/// 언어별 완료된 시나리오 ID 집합 + 최근 퍼포먼스 기록.
 class ScenarioProgressStats {
   final Map<String, Set<String>> completedByLanguage;
+  /// 언어 → 시나리오 ID → 최근 performance 점수 (0~100).
+  final Map<String, Map<String, int>> lastPerformanceByLanguage;
 
   const ScenarioProgressStats({
     this.completedByLanguage = const {},
+    this.lastPerformanceByLanguage = const {},
   });
 
   Set<String> completedFor(String language) =>
@@ -16,11 +19,17 @@ class ScenarioProgressStats {
   bool isCompleted(String language, String scenarioId) =>
       completedFor(language).contains(scenarioId);
 
+  int? lastPerformance(String language, String scenarioId) =>
+      lastPerformanceByLanguage[language]?[scenarioId];
+
   ScenarioProgressStats copyWith({
     Map<String, Set<String>>? completedByLanguage,
+    Map<String, Map<String, int>>? lastPerformanceByLanguage,
   }) {
     return ScenarioProgressStats(
       completedByLanguage: completedByLanguage ?? this.completedByLanguage,
+      lastPerformanceByLanguage:
+          lastPerformanceByLanguage ?? this.lastPerformanceByLanguage,
     );
   }
 
@@ -28,15 +37,28 @@ class ScenarioProgressStats {
         'completedByLanguage': completedByLanguage.map(
           (lang, ids) => MapEntry(lang, ids.toList()),
         ),
+        'lastPerformanceByLanguage': lastPerformanceByLanguage.map(
+          (lang, scores) => MapEntry(lang, scores),
+        ),
       };
 
   factory ScenarioProgressStats.fromJson(Map<String, dynamic> json) {
     final raw = json['completedByLanguage'] as Map<String, dynamic>? ?? {};
+    final perfRaw =
+        json['lastPerformanceByLanguage'] as Map<String, dynamic>? ?? {};
     return ScenarioProgressStats(
       completedByLanguage: raw.map(
         (lang, value) => MapEntry(
           lang,
           (value as List? ?? const []).map((e) => e.toString()).toSet(),
+        ),
+      ),
+      lastPerformanceByLanguage: perfRaw.map(
+        (lang, value) => MapEntry(
+          lang,
+          (value as Map<String, dynamic>).map(
+            (id, score) => MapEntry(id, (score as num).round()),
+          ),
         ),
       ),
     );

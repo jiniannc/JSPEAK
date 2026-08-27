@@ -75,7 +75,6 @@ const List<TitleBadgeCatalogEntry> kTitleBadgeCatalog = [
     title: '퍼스트 클래스 멀티 크루',
     description: '위 8개 칭호를 모두 획득하면 해제되는 최고 등급 칭호예요.',
     imagePath: 'assets/images/badge_firstclass.png',
-    aspectRatio: 1560 / 1024,
   ),
 ];
 
