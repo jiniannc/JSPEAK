@@ -178,15 +178,24 @@ class _MyPageScreenState extends ConsumerState<MyPageScreen> {
                     icon: Icons.badge_outlined,
                     koreanTitle: '나의 학습 여권',
                     englishTitle: 'Crew Learning Passport',
-                    description: '학습 미션 달성 스탬프 및 자격 칭호',
-                    trailing: const TitleBadgeDebugUnlockSwitch(),
+                    trailing: Row(
+                      mainAxisSize: MainAxisSize.min,
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        PassportLanguageToggle(
+                          selectedLanguage: language,
+                          onSelected: (lang) =>
+                              selectLearningLanguage(ref, lang),
+                        ),
+                        const SizedBox(width: 10),
+                        const TitleBadgeDebugUnlockSwitch(),
+                      ],
+                    ),
                     contentGap: 14,
                     child: InteractivePassportBooklet(
                       report: passportReport,
                       selectedLanguage: language,
                       accent: palette.primary,
-                      onLanguageSelected: (lang) =>
-                          selectLearningLanguage(ref, lang),
                     ),
                   ),
                 const SizedBox(height: 20),
@@ -194,7 +203,6 @@ class _MyPageScreenState extends ConsumerState<MyPageScreen> {
                   icon: Icons.inventory_2_outlined,
                   koreanTitle: '학습 보관함',
                   englishTitle: 'My Study Vault',
-                  description: '즐겨찾기 표현 및 복습 필요 문장',
                   contentGap: 14,
                   child: Row(
                     children: [
@@ -228,7 +236,6 @@ class _MyPageScreenState extends ConsumerState<MyPageScreen> {
                   icon: Icons.cloud_sync_outlined,
                   koreanTitle: '콘텐츠 업데이트 및 동기화',
                   englishTitle: 'Data Sync & Updates',
-                  description: '앱 버전 및 최신 표현 데이터',
                   contentGap: 0,
                   padding: const EdgeInsets.fromLTRB(16, 18, 16, 4),
                   child: _SyncActionList(

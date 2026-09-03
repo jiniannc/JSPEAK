@@ -8,8 +8,10 @@ import 'package:flutter_svg/flutter_svg.dart';
 
 import '../../../app/providers.dart';
 import '../../../app/speech_providers.dart';
+import '../../../core/utils/karaoke_word_index.dart';
 import '../../../data/models/sentence.dart';
 import '../../../shared/widgets/pronunciation_practice_section.dart';
+import '../../../shared/widgets/tappable_sentence_rich_text.dart';
 import '../dashboard_palette.dart';
 abstract final class _JinAirLogoAssets {
   /// 헤더 — JINAIR 워드마크
@@ -206,11 +208,8 @@ class _HomeTodaysPickCardState extends ConsumerState<HomeTodaysPickCard> {
                                   SizedBox(
                                     width: bodyWidth,
                                     child: _BoardingPassMainBody(
+                                      sentence: widget.sentence,
                                       category: category,
-                                      english: widget.sentence.sentence,
-                                      pronunciation: widget.sentence.pronunciation,
-                                      language: widget.sentence.language,
-                                      korean: widget.sentence.korean,
                                       onListen: widget.onListen,
                                       onPractice: _openPractice,
                                     ),
@@ -682,21 +681,15 @@ class _StartLearningLink extends StatelessWidget {
   }
 }
 
-class _BoardingPassMainBody extends StatelessWidget {
+class _BoardingPassMainBody extends ConsumerWidget {
+  final Sentence sentence;
   final String category;
-  final String english;
-  final String pronunciation;
-  final String language;
-  final String korean;
   final VoidCallback? onListen;
   final VoidCallback? onPractice;
 
   const _BoardingPassMainBody({
+    required this.sentence,
     required this.category,
-    required this.english,
-    required this.pronunciation,
-    required this.language,
-    required this.korean,
     this.onListen,
     this.onPractice,
   });
@@ -705,13 +698,31 @@ class _BoardingPassMainBody extends StatelessWidget {
   static const _pronunciationColor = Color(0xFF64748B);
   static const _koreanColor = Color(0xFF475569);
 
-  bool get _showPronunciation {
-    final isCjk = language == 'Japanese' || language == 'Chinese';
-    return isCjk && pronunciation.trim().isNotEmpty;
+  bool _showPronunciation(Sentence sentence) {
+    final isCjk = sentence.language == 'Japanese' || sentence.language == 'Chinese';
+    return isCjk && sentence.pronunciation.trim().isNotEmpty;
   }
 
   @override
-  Widget build(BuildContext context) {
+  Widget build(BuildContext context, WidgetRef ref) {
+    final audio = ref.watch(audioProvider);
+    final isThisAudio = audio.playingSentenceId == sentence.id;
+    final showPronunciation = _showPronunciation(sentence);
+    final englishStyle = const TextStyle(
+      fontSize: 17,
+      fontWeight: FontWeight.w800,
+      color: _slate,
+      height: 1.38,
+      letterSpacing: -0.35,
+    );
+    final karaokeWordIndex = KaraokeWordIndex.resolve(
+      isActive: isThisAudio && audio.isPlaying,
+      position: audio.position,
+      duration: audio.duration,
+      sentence: sentence.sentence,
+      language: sentence.language,
+    );
+
     return Padding(
       padding: const EdgeInsets.fromLTRB(0, 10, 4, 6),
       child: Row(
@@ -760,20 +771,16 @@ class _BoardingPassMainBody extends StatelessWidget {
                       mainAxisSize: MainAxisSize.min,
                       crossAxisAlignment: CrossAxisAlignment.stretch,
                       children: [
-                        Text(
-                          english,
-                          style: const TextStyle(
-                            fontSize: 17,
-                            fontWeight: FontWeight.w800,
-                            color: _slate,
-                            height: 1.38,
-                            letterSpacing: -0.35,
-                          ),
+                        TappableSentenceRichText(
+                          sentence: sentence.sentence,
+                          language: sentence.language,
+                          karaokeWordIndex: karaokeWordIndex,
+                          style: englishStyle,
                         ),
-                        if (_showPronunciation) ...[
+                        if (showPronunciation) ...[
                           const SizedBox(height: 6),
                           Text(
-                            pronunciation.trim(),
+                            sentence.pronunciation.trim(),
                             maxLines: 2,
                             overflow: TextOverflow.ellipsis,
                             style: const TextStyle(
@@ -785,10 +792,10 @@ class _BoardingPassMainBody extends StatelessWidget {
                             ),
                           ),
                         ],
-                        if (korean.trim().isNotEmpty) ...[
-                          SizedBox(height: _showPronunciation ? 6 : 10),
+                        if (sentence.korean.trim().isNotEmpty) ...[
+                          SizedBox(height: showPronunciation ? 6 : 10),
                           Text(
-                            korean,
+                            sentence.korean,
                             maxLines: 3,
                             overflow: TextOverflow.ellipsis,
                             style: const TextStyle(

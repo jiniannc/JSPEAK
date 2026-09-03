@@ -642,7 +642,7 @@ class _AdaptiveSplitSearchResults extends StatelessWidget {
   static const _sectionHeaderHeight = 34.0;
   static const _dividerBlockHeight = 13.0;
   static const _wordGridColumns = 3;
-  static const _wordGridRowHeight = 124.0;
+  static const _wordGridRowHeight = 110.0;
   static const _wordGridSpacing = 6.0;
 
   final List<VocabularyEntry> wordResults;
@@ -703,11 +703,11 @@ class _AdaptiveSplitSearchResults extends StatelessWidget {
         final bothAreLong = !wordIsShort && !sentenceIsShort;
 
         final divider = Padding(
-          padding: const EdgeInsets.symmetric(vertical: 6),
+          padding: const EdgeInsets.fromLTRB(12, 6, 12, 6),
           child: Divider(
             height: 1,
             thickness: 1,
-            color: accent.withValues(alpha: 0.08),
+            color: DictionaryItemKindColors.divider,
           ),
         );
 
@@ -1006,13 +1006,19 @@ class _SearchResultSectionHeader extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final accent = DictionaryItemKindColors.accent(kind);
     final labelColor = DictionaryItemKindColors.label(kind);
+    final accent = DictionaryItemKindColors.accent(kind);
 
     return Padding(
       padding: const EdgeInsets.only(bottom: 8, top: 2),
       child: Row(
         children: [
+          Icon(
+            DictionaryItemKindColors.icon(kind),
+            size: 14,
+            color: DictionaryItemKindColors.iconTint(kind),
+          ),
+          const SizedBox(width: 6),
           Text(
             label,
             style: TextStyle(
@@ -1025,21 +1031,7 @@ class _SearchResultSectionHeader extends StatelessWidget {
           const SizedBox(width: 8),
           Container(
             padding: const EdgeInsets.symmetric(horizontal: 9, vertical: 3),
-            decoration: BoxDecoration(
-              color: DictionaryItemKindColors.chipBackground(kind),
-              borderRadius: BorderRadius.circular(12),
-              border: Border.all(
-                color: DictionaryItemKindColors.chipBorder(kind),
-                width: 1.0,
-              ),
-              boxShadow: [
-                BoxShadow(
-                  color: Colors.black.withValues(alpha: 0.03),
-                  blurRadius: 6,
-                  offset: const Offset(0, 2),
-                ),
-              ],
-            ),
+            decoration: DictionaryItemKindColors.countPill(),
             child: Text(
               '$count',
               style: TextStyle(
@@ -1100,7 +1092,6 @@ class _LiveSearchPillBarState extends ConsumerState<_LiveSearchPillBar> {
     final t = widget.expandProgress.clamp(0.0, 1.0);
     final expanded = widget.engaged;
     final searchAccent = widget.palette.searchAccent;
-    final searchBorder = widget.palette.searchFieldBorder;
     final radius = lerpDouble(28, 22, t)!;
     final horizontalPadding = lerpDouble(16, 14, t)!;
     final iconSize = lerpDouble(20, 22, t)!;
@@ -1115,21 +1106,7 @@ class _LiveSearchPillBarState extends ConsumerState<_LiveSearchPillBar> {
         borderRadius: BorderRadius.circular(radius),
         onTap: expanded ? null : widget.onExpandTap,
         child: DecoratedBox(
-          decoration: BoxDecoration(
-            color: Colors.white,
-            borderRadius: BorderRadius.circular(radius),
-            border: Border.all(
-              color: searchBorder,
-              width: 0.5,
-            ),
-            boxShadow: [
-              BoxShadow(
-                color: Colors.black.withValues(alpha: 0.04),
-                blurRadius: 12,
-                offset: const Offset(0, 4),
-              ),
-            ],
-          ),
+          decoration: DictionaryItemKindColors.shadowField(radius: radius),
           child: Padding(
             padding: EdgeInsets.symmetric(horizontal: horizontalPadding),
             child: Row(
@@ -1366,7 +1343,6 @@ class _FavoriteChip extends StatelessWidget {
     final isWord = item is DictionaryFavoriteWordItem;
     final kind =
         isWord ? DictionaryItemKind.word : DictionaryItemKind.sentence;
-    final tagLabel = DictionaryItemKindColors.label(kind);
 
     return Material(
       color: Colors.transparent,
@@ -1376,34 +1352,41 @@ class _FavoriteChip extends StatelessWidget {
         child: Ink(
           padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 7),
           decoration: BoxDecoration(
-            color: Colors.white.withValues(alpha: 0.42),
+            color: Colors.white.withValues(alpha: 0.48),
             borderRadius: BorderRadius.circular(16),
-            border: Border.all(color: Colors.white.withValues(alpha: 0.55)),
+            boxShadow: [
+              BoxShadow(
+                color: Colors.black.withValues(alpha: 0.06),
+                blurRadius: 12,
+                offset: const Offset(0, 4),
+              ),
+            ],
           ),
           child: Row(
             mainAxisSize: MainAxisSize.min,
             children: [
               Icon(Icons.star_rounded, size: 13, color: Colors.amber.shade600),
               const SizedBox(width: 5),
-              Container(
-                padding: const EdgeInsets.symmetric(horizontal: 5, vertical: 1),
-                margin: const EdgeInsets.only(right: 5),
-                decoration: BoxDecoration(
-                  color: DictionaryItemKindColors.chipBackground(kind),
-                  borderRadius: BorderRadius.circular(5),
-                  border: Border.all(
-                    color: DictionaryItemKindColors.chipBorder(kind),
+              Row(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Icon(
+                    DictionaryItemKindColors.icon(kind),
+                    size: 10,
+                    color: DictionaryItemKindColors.iconTint(kind),
                   ),
-                ),
-                child: Text(
-                  isWord ? '단어' : '문장',
-                  style: TextStyle(
-                    fontSize: 9,
-                    fontWeight: FontWeight.w800,
-                    color: tagLabel,
+                  const SizedBox(width: 3),
+                  Text(
+                    isWord ? '단어' : '문장',
+                    style: TextStyle(
+                      fontSize: 9,
+                      fontWeight: FontWeight.w800,
+                      color: DictionaryItemKindColors.label(kind),
+                    ),
                   ),
-                ),
+                ],
               ),
+              const SizedBox(width: 5),
               ConstrainedBox(
                 constraints: const BoxConstraints(maxWidth: 130),
                 child: Text(

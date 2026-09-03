@@ -174,30 +174,34 @@ class SentenceProgressRepository {
     return (earned / possible * 100).clamp(0.0, 100.0);
   }
 
-  /// 언어 단위 스탬프 집계 — 주제(챕터)당 1개씩.
-  /// read/attempted/mastered = 해당 단계를 전부 채운 주제 수, total = 주제 수.
+  /// 언어 단위 스탬프 집계 — 허브와 동일한 주제(베이스 카테고리) 기준.
   SentenceCategorySummary languageStampSummary({
     required String language,
     required ContentBundle bundle,
     required SentenceProgressStats stats,
   }) {
-    final categories = bundle.categoriesFor(language);
+    final chapters = bundle.sentenceChaptersFor(language);
     var readChapters = 0;
     var attemptedChapters = 0;
     var masteredChapters = 0;
 
-    for (final category in categories) {
+    for (final chapter in chapters) {
       final summary = categorySummary(
-        sentences: bundle.sentencesFor(language, category),
+        sentences: bundle.sentencesForHubCategory(
+          language,
+          chapter.chapterNo,
+          chapter.name,
+        ),
         stats: stats,
       );
+      if (summary.total == 0) continue;
       if (summary.allRead) readChapters++;
       if (summary.allAttempted) attemptedChapters++;
       if (summary.allMastered) masteredChapters++;
     }
 
     return SentenceCategorySummary(
-      total: categories.length,
+      total: chapters.length,
       readCount: readChapters,
       attemptedCount: attemptedChapters,
       masteredCount: masteredChapters,

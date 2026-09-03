@@ -44,14 +44,12 @@ enum _InkStampShape { doubleCircle, doubleRect, circleSeal }
 class InteractivePassportBooklet extends StatefulWidget {
   final MyPagePassportReport report;
   final String selectedLanguage;
-  final ValueChanged<String> onLanguageSelected;
   final Color accent;
 
   const InteractivePassportBooklet({
     super.key,
     required this.report,
     required this.selectedLanguage,
-    required this.onLanguageSelected,
     required this.accent,
   });
 
@@ -94,7 +92,6 @@ class _InteractivePassportBookletState extends State<InteractivePassportBooklet>
       currentPage: _currentPage,
       pageController: _pageController,
       selectedLanguage: widget.selectedLanguage,
-      onLanguageSelected: widget.onLanguageSelected,
       onPageChanged: (i) => setState(() => _currentPage = i),
       onTabSelected: _goToPage,
     );
@@ -149,7 +146,6 @@ class _PassportBookletView extends StatelessWidget {
   final int currentPage;
   final PageController pageController;
   final String selectedLanguage;
-  final ValueChanged<String> onLanguageSelected;
   final ValueChanged<int> onPageChanged;
   final ValueChanged<int> onTabSelected;
 
@@ -159,7 +155,6 @@ class _PassportBookletView extends StatelessWidget {
     required this.currentPage,
     required this.pageController,
     required this.selectedLanguage,
-    required this.onLanguageSelected,
     required this.onPageChanged,
     required this.onTabSelected,
   });
@@ -216,22 +211,6 @@ class _PassportBookletView extends StatelessWidget {
                               child: Column(
                                 crossAxisAlignment: CrossAxisAlignment.stretch,
                                 children: [
-                                  DecoratedBox(
-                                    decoration: BoxDecoration(
-                                      color: _PassportPalette.paper,
-                                      border: Border(
-                                        bottom: BorderSide(
-                                          color: _PassportPalette.paperEdge
-                                              .withValues(alpha: 0.85),
-                                        ),
-                                      ),
-                                    ),
-                                    child: _PassportOfficialHeader(
-                                      currentPage: currentPage,
-                                      selectedLanguage: selectedLanguage,
-                                      onLanguageSelected: onLanguageSelected,
-                                    ),
-                                  ),
                                   Expanded(
                                     child: PageView(
                                       controller: pageController,
@@ -469,46 +448,60 @@ class _PassportPageDots extends StatelessWidget {
   }
 }
 
-class _PassportOfficialHeader extends StatelessWidget {
-  final int currentPage;
+/// 나의 학습 여권 섹션 헤더 — EN / JP / CN 언어 선택.
+class PassportLanguageToggle extends StatelessWidget {
   final String selectedLanguage;
-  final ValueChanged<String> onLanguageSelected;
+  final ValueChanged<String> onSelected;
 
-  const _PassportOfficialHeader({
-    required this.currentPage,
+  const PassportLanguageToggle({
+    super.key,
     required this.selectedLanguage,
-    required this.onLanguageSelected,
+    required this.onSelected,
   });
 
   @override
   Widget build(BuildContext context) {
-    final showLanguageToggle = currentPage != 0;
-
-    return Padding(
-      padding: const EdgeInsets.fromLTRB(18, 14, 14, 10),
-      child: Row(
-        children: [
-          const Flexible(
-            child: Text(
-              'PASSPORT / VISAS',
-              overflow: TextOverflow.ellipsis,
-              style: TextStyle(
-                fontSize: 11,
-                fontWeight: FontWeight.w600,
-                letterSpacing: 1.4,
-                color: _PassportPalette.slate,
+    return Row(
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        for (final lang in const ['English', 'Japanese', 'Chinese'])
+          Padding(
+            padding: const EdgeInsets.only(left: 3),
+            child: GestureDetector(
+              onTap: () => onSelected(lang),
+              child: AnimatedContainer(
+                duration: const Duration(milliseconds: 180),
+                padding:
+                    const EdgeInsets.symmetric(horizontal: 7, vertical: 3),
+                decoration: BoxDecoration(
+                  color: selectedLanguage == lang
+                      ? Colors.white.withValues(alpha: 0.92)
+                      : _PassportPalette.paperTabIdle.withValues(alpha: 0.55),
+                  borderRadius: BorderRadius.circular(10),
+                  border: Border.all(
+                    color: selectedLanguage == lang
+                        ? _PassportPalette.inkNavy.withValues(alpha: 0.35)
+                        : _PassportPalette.paperEdge.withValues(alpha: 0.8),
+                    width: selectedLanguage == lang ? 1.2 : 0.8,
+                  ),
+                ),
+                child: Text(
+                  _shortLangCode(lang),
+                  style: TextStyle(
+                    fontSize: 9,
+                    fontWeight: selectedLanguage == lang
+                        ? FontWeight.w900
+                        : FontWeight.w600,
+                    letterSpacing: 0.2,
+                    color: selectedLanguage == lang
+                        ? _PassportPalette.inkNavy
+                        : _PassportPalette.slate.withValues(alpha: 0.75),
+                  ),
+                ),
               ),
             ),
           ),
-          if (showLanguageToggle) ...[
-            const SizedBox(width: 8),
-            _LanguageToggle(
-              selectedLanguage: selectedLanguage,
-              onSelected: onLanguageSelected,
-            ),
-          ],
-        ],
-      ),
+      ],
     );
   }
 }
@@ -656,13 +649,16 @@ class _SentenceStampsPage extends ConsumerStatefulWidget {
 }
 
 class _SentenceStampsPageState extends ConsumerState<_SentenceStampsPage> {
-  int? _expandedChapterNo;
+  String? _expandedChapterKey;
+
+  static String _chapterKey(ContentChapter chapter) =>
+      '${chapter.chapterNo}|${chapter.name}';
 
   @override
   void didUpdateWidget(covariant _SentenceStampsPage oldWidget) {
     super.didUpdateWidget(oldWidget);
     if (oldWidget.language != widget.language) {
-      _expandedChapterNo = null;
+      _expandedChapterKey = null;
     }
   }
 
@@ -675,7 +671,11 @@ class _SentenceStampsPageState extends ConsumerState<_SentenceStampsPage> {
     final rows = <_SentenceChapterSnapshot>[];
     if (content != null) {
       for (final chapter in chapters) {
-        final sentences = content.sentencesFor(widget.language, chapter.name);
+        final sentences = content.sentencesForHubCategory(
+          widget.language,
+          chapter.chapterNo,
+          chapter.name,
+        );
         if (sentences.isEmpty) continue;
         rows.add(
           _SentenceChapterSnapshot.from(
@@ -737,13 +737,13 @@ class _SentenceStampsPageState extends ConsumerState<_SentenceStampsPage> {
                       final row = rows[index];
                       return _SentenceChapterProgressRow(
                         snapshot: row,
-                        expanded: _expandedChapterNo == row.chapter.chapterNo,
+                        expanded:
+                            _expandedChapterKey == _chapterKey(row.chapter),
                         onToggle: () {
                           setState(() {
-                            _expandedChapterNo =
-                                _expandedChapterNo == row.chapter.chapterNo
-                                    ? null
-                                    : row.chapter.chapterNo;
+                            final key = _chapterKey(row.chapter);
+                            _expandedChapterKey =
+                                _expandedChapterKey == key ? null : key;
                           });
                         },
                       );
@@ -1575,62 +1575,6 @@ void _drawDashedPath(
       canvas.drawPath(extract, paint);
       distance = next + gap;
     }
-  }
-}
-
-class _LanguageToggle extends StatelessWidget {
-  final String selectedLanguage;
-  final ValueChanged<String> onSelected;
-
-  const _LanguageToggle({
-    required this.selectedLanguage,
-    required this.onSelected,
-  });
-
-  @override
-  Widget build(BuildContext context) {
-    return Row(
-      mainAxisSize: MainAxisSize.min,
-      children: [
-        for (final lang in const ['English', 'Japanese', 'Chinese'])
-          Padding(
-            padding: const EdgeInsets.only(left: 3),
-            child: GestureDetector(
-              onTap: () => onSelected(lang),
-              child: AnimatedContainer(
-                duration: const Duration(milliseconds: 180),
-                padding:
-                    const EdgeInsets.symmetric(horizontal: 7, vertical: 3),
-                decoration: BoxDecoration(
-                  color: selectedLanguage == lang
-                      ? _PassportPalette.paper
-                      : _PassportPalette.paperTabIdle.withValues(alpha: 0.7),
-                  borderRadius: BorderRadius.circular(10),
-                  border: Border.all(
-                    color: selectedLanguage == lang
-                        ? _PassportPalette.inkNavy.withValues(alpha: 0.35)
-                        : _PassportPalette.paperEdge,
-                    width: selectedLanguage == lang ? 1.2 : 0.8,
-                  ),
-                ),
-                child: Text(
-                  _shortLangCode(lang),
-                  style: TextStyle(
-                    fontSize: 9,
-                    fontWeight: selectedLanguage == lang
-                        ? FontWeight.w900
-                        : FontWeight.w600,
-                    letterSpacing: 0.2,
-                    color: selectedLanguage == lang
-                        ? _PassportPalette.inkNavy
-                        : _PassportPalette.slate.withValues(alpha: 0.75),
-                  ),
-                ),
-              ),
-            ),
-          ),
-      ],
-    );
   }
 }
 

@@ -15,7 +15,7 @@
  * 시트 컬럼 (Sentences 시트, 1행은 헤더):
  *  A: language | B: chapter_no | C: category | D: chapter_image
  *  E: sentence | F: pronunciation | G: korean | H: audio (Google Drive 파일 ID)
- *  I: popular | J: important (Yes/No) | L: chapter_hook (챕터당 첫 행 1셀만)
+ *  I: popular | J: important (Yes/No) | K/L: chapter_hook (챕터당 첫 행 1셀만)
  *
  * Words 시트 (1행은 헤더):
  *  A: language | B: chapter_no | C: category | D: chapter_image
@@ -121,7 +121,7 @@ function getData() {
       audio: resolveAudioUrl(row[7]),
       popular: parseInt(row[8]) || 0,
       important: normalizeImportant(row[9]),
-      chapter_hook: String(row[11] || '').trim(),
+      chapter_hook: String(row[11] || row[10] || '').trim(),
     });
   }
 

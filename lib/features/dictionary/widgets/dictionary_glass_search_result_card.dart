@@ -1,5 +1,3 @@
-import 'dart:ui';
-
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
@@ -11,9 +9,10 @@ import '../../../data/models/sentence.dart';
 import '../dictionary_pronunciation_display.dart';
 import '../dictionary_item_kind_colors.dart';
 import '../../../shared/widgets/glass_surface.dart';
+import '../../../shared/widgets/web_safe_backdrop_blur.dart';
 import '../../dashboard/dashboard_palette.dart';
 
-/// 문장 검색 결과 — 프리미엄 글래스 사전 리스트 카드.
+/// 문장 검색 결과 — 그림자 elevation 글래스 리스트 카드.
 class DictionaryGlassSearchResultCard extends ConsumerWidget {
   static const _actionSize = 32.0;
 
@@ -48,112 +47,78 @@ class DictionaryGlassSearchResultCard extends ConsumerWidget {
       ref.read(audioProvider.notifier).prefetch(sentence);
     }
 
-    return Container(
-      margin: const EdgeInsets.only(bottom: 8),
-      decoration: BoxDecoration(
-        borderRadius: BorderRadius.circular(14),
-        boxShadow: GlassSurfaceStyle.cardShadow(radius: 14),
-      ),
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 8),
       child: ClipRRect(
         borderRadius: BorderRadius.circular(14),
-        child: BackdropFilter(
-          filter: ImageFilter.blur(sigmaX: 10, sigmaY: 10),
+        child: WebSafeBackdropBlur(
+          sigmaX: 10,
+          sigmaY: 10,
           child: Material(
             color: Colors.transparent,
             child: InkWell(
               onTap: () => _openLearningMode(context),
-              borderRadius: BorderRadius.circular(14),
-              splashColor:
-                  DictionaryItemKindColors.sentenceAccent.withValues(alpha: 0.06),
-              highlightColor:
-                  DictionaryItemKindColors.sentenceAccent.withValues(alpha: 0.04),
+              splashColor: DictionaryItemKindColors.rippleColor(
+                DictionaryItemKind.sentence,
+              ),
+              highlightColor: DictionaryItemKindColors.rippleColor(
+                DictionaryItemKind.sentence,
+              ).withValues(alpha: 0.75),
               child: Ink(
-                decoration: BoxDecoration(
-                  color: Colors.white.withValues(alpha: 0.85),
-                  borderRadius: BorderRadius.circular(14),
-                  border: Border.all(
-                    color: Colors.white.withValues(alpha: 0.9),
-                    width: 1.0,
-                  ),
-                ),
+                decoration: DictionaryItemKindColors.elevatedCard(radius: 14),
                 child: Padding(
-                  padding: const EdgeInsets.fromLTRB(12, 10, 10, 10),
-                  child: Row(
-                    crossAxisAlignment: CrossAxisAlignment.start,
+                  padding: const EdgeInsets.fromLTRB(12, 10, 10, 9),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.stretch,
+                    mainAxisSize: MainAxisSize.min,
                     children: [
-                      Expanded(
-                        child: Column(
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          mainAxisSize: MainAxisSize.min,
-                          children: [
-                            if (categoryLabel.isNotEmpty) ...[
-                              _CategoryChip(label: categoryLabel),
-                              const SizedBox(height: 8),
-                            ],
-                            _SentencePreview(
+                      Row(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Expanded(
+                            child: _SentencePreview(
                               sentence: sentence,
                               query: query,
                             ),
-                          ],
+                          ),
+                          const SizedBox(width: 8),
+                          _SentenceActionRail(
+                            isFavorite: isFavorite,
+                            isPlaying: isPlaying,
+                            hasAudio: hasAudio,
+                            onFavoriteTap: () async {
+                              final added = await ref
+                                  .read(dictionaryFavoritesProvider.notifier)
+                                  .toggleSentence(sentence);
+                              if (context.mounted) {
+                                showDictionaryFavoriteSnackBar(
+                                  context,
+                                  added: added,
+                                );
+                              }
+                            },
+                            onPlayTap: () => ref
+                                .read(audioProvider.notifier)
+                                .toggle(sentence),
+                          ),
+                        ],
+                      ),
+                      if (categoryLabel.isNotEmpty) ...[
+                        const SizedBox(height: 6),
+                        Align(
+                          alignment: Alignment.centerRight,
+                          child: DictionarySourceLabel(
+                            label: categoryLabel,
+                            textAlign: TextAlign.right,
+                          ),
                         ),
-                      ),
-                      const SizedBox(width: 8),
-                      _SentenceActionRail(
-                        isFavorite: isFavorite,
-                        isPlaying: isPlaying,
-                        hasAudio: hasAudio,
-                        onFavoriteTap: () async {
-                          final added = await ref
-                              .read(dictionaryFavoritesProvider.notifier)
-                              .toggleSentence(sentence);
-                          if (context.mounted) {
-                            showDictionaryFavoriteSnackBar(
-                              context,
-                              added: added,
-                            );
-                          }
-                        },
-                        onPlayTap: () =>
-                            ref.read(audioProvider.notifier).toggle(sentence),
-                      ),
+                      ],
                     ],
                   ),
                 ),
               ),
             ),
           ),
-        ),
-      ),
-    );
-  }
-}
-
-class _CategoryChip extends StatelessWidget {
-  final String label;
-
-  const _CategoryChip({required this.label});
-
-  @override
-  Widget build(BuildContext context) {
-    const kind = DictionaryItemKind.sentence;
-    return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
-      decoration: BoxDecoration(
-        color: DictionaryItemKindColors.chipBackground(kind),
-        borderRadius: BorderRadius.circular(8),
-        border: Border.all(
-          color: DictionaryItemKindColors.chipBorder(kind),
-          width: 1.0,
-        ),
-      ),
-      child: Text(
-        label,
-        style: TextStyle(
-          fontSize: 10,
-          fontWeight: FontWeight.w700,
-          color: DictionaryItemKindColors.label(kind),
-          letterSpacing: -0.1,
-          height: 1.1,
         ),
       ),
     );
@@ -279,7 +244,7 @@ class _LightGlassActionButton extends StatelessWidget {
         width: size,
         height: size,
         child: DecoratedBox(
-          decoration: GlassSurfaceStyle.lightGlassButton(radius: size / 2),
+          decoration: DictionaryItemKindColors.shadowIconButton(radius: size / 2),
           child: Icon(icon, size: 17, color: iconColor),
         ),
       ),
@@ -308,28 +273,11 @@ class _DeepGlassPlayButton extends StatelessWidget {
         width: size,
         height: size,
         child: DecoratedBox(
-          decoration: GlassSurfaceStyle.deepDarkGlassButton(radius: radius),
-          child: Stack(
-            alignment: Alignment.center,
-            children: [
-              Positioned(
-                top: 3,
-                left: 8,
-                right: 8,
-                child: Container(
-                  height: 0.5,
-                  decoration: BoxDecoration(
-                    color: Colors.white.withValues(alpha: 0.35),
-                    borderRadius: BorderRadius.circular(1),
-                  ),
-                ),
-              ),
-              Icon(
-                isPlaying ? Icons.stop_rounded : Icons.play_arrow_rounded,
-                size: 17,
-                color: Colors.white,
-              ),
-            ],
+          decoration: DictionaryItemKindColors.shadowPlayButton(radius: radius),
+          child: Icon(
+            isPlaying ? Icons.stop_rounded : Icons.play_arrow_rounded,
+            size: 17,
+            color: Colors.white,
           ),
         ),
       ),

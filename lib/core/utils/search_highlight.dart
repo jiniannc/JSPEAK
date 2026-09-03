@@ -17,6 +17,7 @@ class SearchHighlightText extends StatelessWidget {
   final Color highlightTextColor;
   final int? maxLines;
   final TextOverflow? overflow;
+  final TextAlign textAlign;
   final bool pillHighlight;
 
   const SearchHighlightText({
@@ -28,6 +29,7 @@ class SearchHighlightText extends StatelessWidget {
     this.highlightTextColor = const Color(0xFF1A1A1A),
     this.maxLines,
     this.overflow,
+    this.textAlign = TextAlign.start,
     this.pillHighlight = false,
   });
 
@@ -111,6 +113,7 @@ class SearchHighlightText extends StatelessWidget {
     return RichText(
       maxLines: maxLines,
       overflow: overflow ?? TextOverflow.clip,
+      textAlign: textAlign,
       text: TextSpan(
         children: buildSpans(
           text: text,

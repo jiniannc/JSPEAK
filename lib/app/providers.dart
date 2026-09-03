@@ -185,8 +185,10 @@ class AudioController extends Notifier<AudioState> {
 
     final playerSub = service.playerStateStream.listen((playerState) {
       if (playerState.processingState == ProcessingState.completed) {
+        // 재생 컨텍스트(문장 id·duration)는 유지 — 재재생 시 가라오케/플레이헤드가
+        // duration=0으로 리셋되거나 isThisAudio가 false가 되는 것을 방지한다.
+        if (!state.isActive || state.loading) return;
         state = state.copyWith(
-          clearPlaying: true,
           isPlaying: false,
           position: Duration.zero,
         );
@@ -198,7 +200,8 @@ class AudioController extends Notifier<AudioState> {
     });
 
     final positionSub = service.positionStream.listen((position) {
-      if (state.isActive) {
+      // paused/completed 상태의 stale position 이벤트가 UI만 움직이는 것을 방지.
+      if (state.isActive && (state.isPlaying || state.loading)) {
         state = state.copyWith(position: position);
       }
     });
@@ -249,10 +252,16 @@ class AudioController extends Notifier<AudioState> {
     final playbackUrl = AudioPlaybackUrl.resolve(sentence.audioUrl);
     if (playbackUrl.isEmpty) return;
 
+    final sameSentence = state.playingSentenceId == sentence.id;
+    final preservedDuration = sameSentence && state.duration.inMilliseconds > 0
+        ? state.duration
+        : Duration.zero;
+
     state = AudioState(
       playingSentenceId: sentence.id,
       loading: true,
       playbackSpeed: state.playbackSpeed,
+      duration: preservedDuration,
     );
 
     try {
@@ -276,10 +285,13 @@ class AudioController extends Notifier<AudioState> {
       }
       if (state.playingSentenceId != sentence.id) return;
 
-      final duration = await service.resolveDuration();
+      final resolved = await service.resolveDuration();
+      final duration = resolved.inMilliseconds > 0
+          ? resolved
+          : preservedDuration;
       state = state.copyWith(
         loading: false,
-        isPlaying: true,
+        isPlaying: service.isPlaying,
         duration: duration,
         position: Duration.zero,
       );
@@ -302,6 +314,8 @@ class AudioController extends Notifier<AudioState> {
       state = state.copyWith(isPlaying: false);
     } else {
       if (service.processingState == ProcessingState.completed) {
+        // completed 상태에서 seek+resume만 하면 Web 등에서 무음·유령 position
+        // 업데이트가 발생할 수 있어 소스를 다시 올린다.
         await play(sentence);
         return;
       }
@@ -327,16 +341,22 @@ class AudioController extends Notifier<AudioState> {
     state = state.copyWith(position: target);
   }
 
-  Future<void> restart() async {
-    if (!state.isActive) return;
+  Future<void> restart(Sentence sentence) async {
     final service = ref.read(audioPlayerServiceProvider);
-    await service.seek(Duration.zero);
-    if (!state.isPlaying) {
-      await service.resume();
-      state = state.copyWith(position: Duration.zero, isPlaying: true);
-    } else {
-      state = state.copyWith(position: Duration.zero);
+    if (state.playingSentenceId != sentence.id ||
+        !state.isActive ||
+        service.processingState == ProcessingState.completed) {
+      await play(sentence);
+      return;
     }
+    await service.seek(Duration.zero);
+    if (!service.isPlaying) {
+      await service.resume();
+    }
+    state = state.copyWith(
+      isPlaying: service.isPlaying,
+      position: Duration.zero,
+    );
   }
 
   Future<void> setSpeed(double speed) async {

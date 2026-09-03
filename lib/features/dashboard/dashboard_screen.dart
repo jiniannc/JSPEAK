@@ -84,7 +84,7 @@ class DashboardScreen extends ConsumerWidget {
                                 ? null
                                 : () => ref
                                       .read(audioProvider.notifier)
-                                      .toggle(recommended),
+                                      .togglePlayPause(recommended),
                           );
 
                     return SingleChildScrollView(

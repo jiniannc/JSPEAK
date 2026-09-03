@@ -1,8 +1,9 @@
+import 'dart:ui';
+
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 
 import '../../shared/widgets/glass_surface.dart';
-import '../../shared/widgets/web_safe_backdrop_blur.dart';
 
 /// 인스타그램식 플로팅 아일랜드 하단 네비게이션.
 /// 탭으로 이동하거나, 누르고 좌우로 드래그해 손가락을 따라 탭을 선택할 수 있다.
@@ -176,9 +177,8 @@ class _DeepGlassNavChip extends StatelessWidget {
     return ClipRRect(
       borderRadius: BorderRadius.circular(24),
       clipBehavior: Clip.antiAlias,
-      child: WebSafeBackdropBlur(
-        sigmaX: 8,
-        sigmaY: 8,
+      child: BackdropFilter(
+        filter: ImageFilter.blur(sigmaX: 8, sigmaY: 8),
         child: AnimatedContainer(
           duration: const Duration(milliseconds: 200),
           curve: Curves.easeOutCubic,

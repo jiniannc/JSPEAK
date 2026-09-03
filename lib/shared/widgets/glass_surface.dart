@@ -143,9 +143,11 @@ class FloatingIslandGlass extends StatelessWidget {
           fit: StackFit.passthrough,
           children: [
             Positioned.fill(
-              child: WebSafeBackdropBlur(
-                sigmaX: GlassSurfaceStyle.floatingIslandBlur,
-                sigmaY: GlassSurfaceStyle.floatingIslandBlur,
+              child: BackdropFilter(
+                filter: ImageFilter.blur(
+                  sigmaX: GlassSurfaceStyle.floatingIslandBlur,
+                  sigmaY: GlassSurfaceStyle.floatingIslandBlur,
+                ),
                 child: DecoratedBox(
                   decoration: BoxDecoration(
                     color: Colors.white.withValues(

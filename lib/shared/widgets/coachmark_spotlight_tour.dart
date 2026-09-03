@@ -40,6 +40,7 @@ class CoachmarkSpotlightTour {
   static const spotlightMargin = 5.0;
 
   static OverlayEntry? _activeEntry;
+  static Future<void>? _showInFlight;
 
   static bool get isShowing => _activeEntry != null;
 
@@ -49,6 +50,29 @@ class CoachmarkSpotlightTour {
   }
 
   static Future<void> show({
+    required BuildContext context,
+    required List<CoachmarkTourStep> steps,
+    required VoidCallback onComplete,
+    required VoidCallback onSkip,
+  }) {
+    final inFlight = _showInFlight;
+    if (inFlight != null) return inFlight;
+
+    final future = _showInternal(
+      context: context,
+      steps: steps,
+      onComplete: onComplete,
+      onSkip: onSkip,
+    );
+    _showInFlight = future;
+    return future.whenComplete(() {
+      if (identical(_showInFlight, future)) {
+        _showInFlight = null;
+      }
+    });
+  }
+
+  static Future<void> _showInternal({
     required BuildContext context,
     required List<CoachmarkTourStep> steps,
     required VoidCallback onComplete,

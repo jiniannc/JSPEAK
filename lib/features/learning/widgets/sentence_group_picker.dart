@@ -1,0 +1,517 @@
+import 'dart:math' as math;
+
+import 'package:flutter/material.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:go_router/go_router.dart';
+
+import '../../../app/providers.dart';
+import '../../../app/sentence_progress_providers.dart';
+import '../../../core/utils/sentence_category_grouping.dart';
+import '../../dashboard/dashboard_palette.dart';
+import '../../shell/floating_island_nav_bar.dart';
+
+/// 문장 스피킹 진입 — 괄호 그룹이 2개 이상이면 시나리오와 동일한 오버레이 피커.
+void openSentenceTraining(
+  BuildContext context, {
+  required WidgetRef ref,
+  required String language,
+  required String category,
+  int? chapterNo,
+  GlobalKey? popupAnchorKey,
+}) {
+  final bundle = ref.read(contentProvider).value?.bundle;
+  if (bundle == null) return;
+
+  final groups = bundle.sentenceGroupsFor(
+    language,
+    category,
+    chapterNo: chapterNo,
+  );
+  if (groups.isEmpty) {
+    ScaffoldMessenger.of(context).showSnackBar(
+      const SnackBar(content: Text('이 주제에 학습할 문장이 없어요.')),
+    );
+    return;
+  }
+
+  void navigate(String fullCategory) {
+    if (!context.mounted) return;
+    context.push(
+      '/scenarios/sentences/play'
+      '?lang=${Uri.encodeComponent(language)}'
+      '&category=${Uri.encodeComponent(fullCategory)}',
+    );
+  }
+
+  if (groups.length == 1) {
+    navigate(groups.first.fullCategory);
+    return;
+  }
+
+  final resolved = popupAnchorKey == null
+      ? null
+      : _popupAnchorFor(context, anchorKey: popupAnchorKey);
+  if (resolved == null) {
+    navigate(groups.first.fullCategory);
+    return;
+  }
+
+  final parent = context;
+  late final OverlayEntry entry;
+  entry = OverlayEntry(
+    builder: (overlayContext) => Consumer(
+      builder: (context, ref, _) {
+        final stats = ref.watch(sentenceProgressProvider).stats;
+        final repo = ref.watch(sentenceProgressRepositoryProvider);
+        return _SentenceGroupPickerOverlay(
+          anchor: resolved.anchor,
+          anchorSize: resolved.size,
+          groups: groups,
+          groupProgress: (fullCategory) {
+            final sentences = bundle.sentencesFor(language, fullCategory);
+            final summary = repo.categorySummary(
+              sentences: sentences,
+              stats: stats,
+            );
+            return (
+              mastered: summary.masteredCount,
+              total: summary.total,
+              allMastered: summary.allMastered,
+            );
+          },
+          onDismiss: () {
+            if (entry.mounted) entry.remove();
+          },
+          onSelect: (group) {
+            if (entry.mounted) entry.remove();
+            if (!parent.mounted) return;
+            navigate(group.fullCategory);
+          },
+        );
+      },
+    ),
+  );
+  resolved.overlay.insert(entry);
+}
+
+({Offset anchor, Size size, OverlayState overlay})? _popupAnchorFor(
+  BuildContext context, {
+  GlobalKey? anchorKey,
+}) {
+  final ctx = anchorKey?.currentContext ?? context;
+  final box = ctx.findRenderObject() as RenderBox?;
+  if (box == null || !box.hasSize || !box.attached) return null;
+
+  final overlay = Overlay.of(context, rootOverlay: true);
+  final anchor = box.localToGlobal(Offset.zero);
+  return (anchor: anchor, size: box.size, overlay: overlay);
+}
+
+class _SentenceGroupPickerOverlay extends StatefulWidget {
+  final Offset anchor;
+  final Size anchorSize;
+  final List<SentenceCategoryGroupInfo> groups;
+  final ({int mastered, int total, bool allMastered}) Function(String fullCategory)
+      groupProgress;
+  final VoidCallback onDismiss;
+  final ValueChanged<SentenceCategoryGroupInfo> onSelect;
+
+  const _SentenceGroupPickerOverlay({
+    required this.anchor,
+    required this.anchorSize,
+    required this.groups,
+    required this.groupProgress,
+    required this.onDismiss,
+    required this.onSelect,
+  });
+
+  @override
+  State<_SentenceGroupPickerOverlay> createState() =>
+      _SentenceGroupPickerOverlayState();
+}
+
+class _SentenceGroupPickerOverlayState extends State<_SentenceGroupPickerOverlay>
+    with SingleTickerProviderStateMixin {
+  late final AnimationController _entry;
+  late final Animation<double> _dimOpacity;
+  late final Animation<double> _panelOpacity;
+  late final Animation<double> _scale;
+
+  bool? _opensBelow;
+  Animation<double>? _slideY;
+  Animation<double>? _tiltX;
+  Animation<double>? _liftShadow;
+
+  static const _preferredPopupWidth = 292.0;
+  static const _screenMargin = 14.0;
+  static const _anchorGap = 8.0;
+  static const _sentenceAccent = Color(0xFFE11D48);
+
+  @override
+  void initState() {
+    super.initState();
+    _entry = AnimationController(
+      vsync: this,
+      duration: const Duration(milliseconds: 460),
+      reverseDuration: const Duration(milliseconds: 320),
+    );
+
+    _dimOpacity = CurvedAnimation(
+      parent: _entry,
+      curve: const Interval(0, 0.85, curve: Curves.easeOut),
+      reverseCurve: Curves.easeIn,
+    );
+
+    _panelOpacity = CurvedAnimation(
+      parent: _entry,
+      curve: const Interval(0, 0.72, curve: Curves.easeOutCubic),
+      reverseCurve: const Interval(0.15, 1, curve: Curves.easeInCubic),
+    );
+
+    _scale = TweenSequence<double>([
+      TweenSequenceItem(
+        tween: Tween<double>(begin: 0.72, end: 1.08).chain(
+          CurveTween(curve: Curves.easeOutCubic),
+        ),
+        weight: 55,
+      ),
+      TweenSequenceItem(
+        tween: Tween<double>(begin: 1.08, end: 1.0).chain(
+          CurveTween(curve: Curves.easeOutBack),
+        ),
+        weight: 45,
+      ),
+    ]).animate(_entry);
+
+    _entry.forward();
+  }
+
+  void _ensureDirectionalMotion(bool opensBelow) {
+    if (_opensBelow == opensBelow && _slideY != null) return;
+    _opensBelow = opensBelow;
+
+    final slideBegin = opensBelow ? -28.0 : 28.0;
+    final tiltBegin = opensBelow ? 0.18 : -0.18;
+    final motion = CurvedAnimation(
+      parent: _entry,
+      curve: Curves.easeOutBack,
+      reverseCurve: Curves.easeInCubic,
+    );
+
+    _slideY = Tween<double>(begin: slideBegin, end: 0).animate(motion);
+    _tiltX = Tween<double>(begin: tiltBegin, end: 0).animate(motion);
+    _liftShadow = Tween<double>(begin: 0.28, end: 1).animate(
+      CurvedAnimation(
+        parent: _entry,
+        curve: Curves.easeOutCubic,
+        reverseCurve: Curves.easeIn,
+      ),
+    );
+  }
+
+  @override
+  void dispose() {
+    _entry.dispose();
+    super.dispose();
+  }
+
+  Future<void> _dismiss() async {
+    if (_entry.status == AnimationStatus.reverse ||
+        _entry.status == AnimationStatus.dismissed) {
+      return;
+    }
+    await _entry.reverse();
+    if (mounted) widget.onDismiss();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final media = MediaQuery.of(context);
+    final size = media.size;
+    final pad = media.padding;
+    final popupWidth = math.min(
+      _preferredPopupWidth,
+      math.max(1.0, size.width - _screenMargin * 2),
+    );
+    final estimatedHeight = math.min(
+      widget.groups.length * 46.0 + 62,
+      math.max(120.0, size.height * 0.52),
+    );
+    final bottomObstruction =
+        pad.bottom + FloatingIslandNavBar.reservedHeight(context);
+    final safeTop = pad.top + _screenMargin;
+    final safeBottom = math.max(
+      safeTop + 120,
+      size.height - bottomObstruction - _screenMargin,
+    );
+    final anchorTop = widget.anchor.dy;
+    final anchorBottom = widget.anchor.dy + widget.anchorSize.height;
+    final spaceAbove = math.max(0.0, anchorTop - safeTop - _anchorGap);
+    final spaceBelow = math.max(0.0, safeBottom - anchorBottom - _anchorGap);
+    final showBelow =
+        spaceBelow >= estimatedHeight * 0.55 ||
+        (spaceBelow >= 120 && spaceBelow >= spaceAbove);
+    final availableHeight = math.max(
+      120.0,
+      math.min(
+        showBelow ? spaceBelow : spaceAbove,
+        math.max(120.0, safeBottom - safeTop),
+      ),
+    );
+
+    var left = widget.anchor.dx + widget.anchorSize.width / 2 - popupWidth / 2;
+    left = left.clamp(
+      _screenMargin,
+      math.max(_screenMargin, size.width - popupWidth - _screenMargin),
+    );
+    final popupTop = showBelow
+        ? (anchorBottom + _anchorGap).clamp(safeTop, safeBottom - 80)
+        : (anchorTop - _anchorGap - availableHeight).clamp(
+            safeTop,
+            anchorTop - _anchorGap,
+          );
+
+    _ensureDirectionalMotion(showBelow);
+    final panelAlignment =
+        showBelow ? Alignment.topCenter : Alignment.bottomCenter;
+
+    return Stack(
+      children: [
+        Positioned.fill(
+          child: GestureDetector(
+            behavior: HitTestBehavior.opaque,
+            onTap: _dismiss,
+            child: FadeTransition(
+              opacity: _dimOpacity,
+              child: ColoredBox(color: Colors.black.withValues(alpha: 0.18)),
+            ),
+          ),
+        ),
+        Positioned(
+          left: left,
+          width: popupWidth,
+          top: popupTop,
+          child: AnimatedBuilder(
+            animation: _entry,
+            builder: (context, child) {
+              final lift = _liftShadow!.value;
+              return Transform(
+                alignment: panelAlignment,
+                transform: Matrix4.identity()
+                  ..setEntry(3, 2, 0.00115)
+                  ..translateByDouble(0, _slideY!.value, 0, 1)
+                  ..rotateX(_tiltX!.value)
+                  ..scaleByDouble(_scale.value, _scale.value, 1, 1),
+                child: Opacity(
+                  opacity: _panelOpacity.value,
+                  child: DecoratedBox(
+                    decoration: BoxDecoration(
+                      borderRadius: BorderRadius.circular(16),
+                      boxShadow: [
+                        BoxShadow(
+                          color: Colors.black.withValues(
+                            alpha: 0.06 + 0.14 * lift,
+                          ),
+                          blurRadius: 10 + 26 * lift,
+                          spreadRadius: -1,
+                          offset: Offset(0, 5 + 14 * lift),
+                        ),
+                        BoxShadow(
+                          color: _sentenceAccent.withValues(
+                            alpha: 0.04 + 0.08 * lift,
+                          ),
+                          blurRadius: 18 + 12 * lift,
+                          spreadRadius: -4,
+                          offset: Offset(0, 8 + 6 * lift),
+                        ),
+                      ],
+                    ),
+                    child: child,
+                  ),
+                ),
+              );
+            },
+            child: Material(
+              color: Colors.transparent,
+              child: ConstrainedBox(
+                constraints: BoxConstraints(maxHeight: availableHeight),
+                child: SingleChildScrollView(
+                  child: _SentenceGroupPickerPanel(
+                    groups: widget.groups,
+                    groupProgress: widget.groupProgress,
+                    onSelect: widget.onSelect,
+                  ),
+                ),
+              ),
+            ),
+          ),
+        ),
+      ],
+    );
+  }
+}
+
+class _SentenceGroupPickerPanel extends StatelessWidget {
+  final List<SentenceCategoryGroupInfo> groups;
+  final ({int mastered, int total, bool allMastered}) Function(String fullCategory)
+      groupProgress;
+  final ValueChanged<SentenceCategoryGroupInfo> onSelect;
+
+  const _SentenceGroupPickerPanel({
+    required this.groups,
+    required this.groupProgress,
+    required this.onSelect,
+  });
+
+  static const _dividerColor = Color(0x120F172A);
+  static const _dividerInset = 12.0;
+  static const _sentenceAccent = Color(0xFFE11D48);
+
+  @override
+  Widget build(BuildContext context) {
+    final panelBody = Column(
+      mainAxisSize: MainAxisSize.min,
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        DecoratedBox(
+          decoration: BoxDecoration(
+            color: const Color(0xFF0F172A).withValues(alpha: 0.045),
+            boxShadow: [
+              BoxShadow(
+                color: Colors.black.withValues(alpha: 0.04),
+                blurRadius: 3,
+                offset: const Offset(0, 1),
+              ),
+              BoxShadow(
+                color: Colors.white.withValues(alpha: 0.55),
+                blurRadius: 0,
+                offset: const Offset(0, 1),
+              ),
+            ],
+          ),
+          child: Padding(
+            padding: const EdgeInsets.fromLTRB(12, 11, 12, 10),
+            child: Row(
+              children: [
+                Icon(
+                  Icons.view_carousel_rounded,
+                  size: 14,
+                  color: _sentenceAccent.withValues(alpha: 0.88),
+                ),
+                const SizedBox(width: 6),
+                const Text(
+                  '문장 그룹 선택',
+                  style: TextStyle(
+                    fontSize: 13,
+                    fontWeight: FontWeight.w800,
+                    color: DashboardPalette.navy,
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ),
+        for (var i = 0; i < groups.length; i++) ...[
+          _SentenceGroupPickerRow(
+            index: i + 1,
+            group: groups[i],
+            progress: groupProgress(groups[i].fullCategory),
+            onTap: () => onSelect(groups[i]),
+          ),
+          if (i < groups.length - 1)
+            const Padding(
+              padding: EdgeInsets.symmetric(horizontal: _dividerInset),
+              child: Divider(height: 1, thickness: 1, color: _dividerColor),
+            ),
+        ],
+      ],
+    );
+
+    return Material(
+      color: Colors.transparent,
+      child: DecoratedBox(
+        decoration: BoxDecoration(
+          borderRadius: BorderRadius.circular(16),
+          boxShadow: [
+            BoxShadow(
+              color: Colors.black.withValues(alpha: 0.16),
+              blurRadius: 24,
+              offset: const Offset(0, 10),
+            ),
+          ],
+        ),
+        child: ClipRRect(
+          borderRadius: BorderRadius.circular(16),
+          child: DecoratedBox(
+            decoration: BoxDecoration(
+              color: Colors.white.withValues(alpha: 0.96),
+              borderRadius: BorderRadius.circular(16),
+              border: Border.all(color: Colors.white, width: 1.2),
+            ),
+            child: panelBody,
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+class _SentenceGroupPickerRow extends StatelessWidget {
+  final int index;
+  final SentenceCategoryGroupInfo group;
+  final ({int mastered, int total, bool allMastered}) progress;
+  final VoidCallback onTap;
+
+  const _SentenceGroupPickerRow({
+    required this.index,
+    required this.group,
+    required this.progress,
+    required this.onTap,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return InkWell(
+      onTap: onTap,
+      child: Padding(
+        padding: const EdgeInsets.fromLTRB(12, 7, 10, 7),
+        child: Row(
+          children: [
+            Expanded(
+              child: Text(
+                '$index. ${group.label}',
+                maxLines: 2,
+                overflow: TextOverflow.ellipsis,
+                style: const TextStyle(
+                  fontSize: 12,
+                  fontWeight: FontWeight.w700,
+                  height: 1.25,
+                  color: DashboardPalette.navy,
+                ),
+              ),
+            ),
+            if (progress.allMastered && progress.total > 0)
+              Padding(
+                padding: const EdgeInsets.only(left: 6, right: 6),
+                child: Icon(
+                  Icons.check_circle_rounded,
+                  size: 17,
+                  color: DashboardPalette.teal.withValues(alpha: 0.88),
+                ),
+              ),
+            Text(
+              progress.total == 0
+                  ? '0/0'
+                  : '${progress.mastered}/${progress.total}',
+              style: TextStyle(
+                fontSize: 11,
+                fontWeight: FontWeight.w700,
+                color: DashboardPalette.navy.withValues(alpha: 0.55),
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}

@@ -877,7 +877,11 @@ class _WheelSlotItem extends StatelessWidget {
     final isCenterSlot = index == currentIndex;
 
     return AnimatedBuilder(
-      animation: Listenable.merge([controller, centerExpand, shimmerAnimation]),
+      animation: Listenable.merge([
+        controller,
+        if (isCenterSlot) centerExpand,
+        if (isDragging) shimmerAnimation,
+      ]),
       builder: (context, _) {
         // 휠 중심 오프셋에 가장 가까운 인덱스를 실시간으로 계산 — 휠이
         // 굴러갈 때마다 스냅 타겟 카드가 '착착착' 지나가며 하이라이트된다.
@@ -1027,13 +1031,13 @@ class _CenterFocusCard extends StatelessWidget {
                             ),
                           ),
                           child: ClipRect(
-                            child: Align(
-                              alignment: Alignment.topCenter,
-                              heightFactor: t,
-                              child: ConstrainedBox(
-                                constraints: BoxConstraints(
-                                  maxHeight: fullHeight,
-                                ),
+                            child: SizedBox(
+                              height: fullHeight * t,
+                              width: double.infinity,
+                              child: OverflowBox(
+                                alignment: Alignment.topCenter,
+                                minHeight: fullHeight,
+                                maxHeight: fullHeight,
                                 child: learningPanel,
                               ),
                             ),
@@ -1047,13 +1051,15 @@ class _CenterFocusCard extends StatelessWidget {
             ),
           );
         },
-        child: WheelLearningPanel(
-          sentence: sentence,
-          accent: accent,
-          displayIndex: displayIndex,
-          totalCount: totalCount,
-          tourKeys: tourKeys,
-          onNextSentence: onNextSentence,
+        child: RepaintBoundary(
+          child: WheelLearningPanel(
+            sentence: sentence,
+            accent: accent,
+            displayIndex: displayIndex,
+            totalCount: totalCount,
+            tourKeys: tourKeys,
+            onNextSentence: onNextSentence,
+          ),
         ),
       ),
     );

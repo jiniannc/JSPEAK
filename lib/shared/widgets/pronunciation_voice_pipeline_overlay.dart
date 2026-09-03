@@ -153,7 +153,7 @@ class _SpeakLiquidGlassButtonState extends State<SpeakLiquidGlassButton>
     if (widget.tourKey != null) {
       return KeyedSubtree(key: widget.tourKey, child: content);
     }
-    return content;
+    return kIsWeb ? content : RepaintBoundary(child: content);
   }
 
   Widget _speakButtonInk({
@@ -506,19 +506,15 @@ class _LiveTranscriptCardState extends State<_LiveTranscriptCard>
                   Expanded(
                     child: Align(
                       alignment: Alignment.centerLeft,
-                      child: AnimatedSwitcher(
-                        duration: const Duration(milliseconds: 160),
-                        child: Text(
-                          displayText,
-                          key: ValueKey(displayText),
-                          maxLines: 2,
-                          overflow: TextOverflow.ellipsis,
-                          style: const TextStyle(
-                            fontSize: 15,
-                            fontWeight: FontWeight.w600,
-                            color: Color(0xFF0F172A),
-                            height: 1.3,
-                          ),
+                      child: Text(
+                        displayText,
+                        maxLines: 2,
+                        overflow: TextOverflow.ellipsis,
+                        style: const TextStyle(
+                          fontSize: 15,
+                          fontWeight: FontWeight.w600,
+                          color: Color(0xFF0F172A),
+                          height: 1.3,
                         ),
                       ),
                     ),

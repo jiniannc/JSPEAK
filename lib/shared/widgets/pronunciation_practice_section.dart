@@ -40,36 +40,27 @@ class _PronunciationPracticeSectionState
   bool _coachingDialogOpen = false;
   bool _resultPending = false;
   DateTime? _analyzingStartedAt;
-  PlayheadVoiceMode _localPlayheadMode = PlayheadVoiceMode.playback;
 
   static const _analyzingBridgeDuration = Duration(milliseconds: 700);
 
-  @override
-  void initState() {
-    super.initState();
-    WidgetsBinding.instance.addPostFrameCallback((_) => _syncPlayheadFromSpeech());
-  }
-
-  void _syncPlayheadFromSpeech() {
-    if (!mounted) return;
-    final speech = ref.read(speechPracticeProvider);
-    if (speech.activeSentenceId != widget.sentence.id) return;
-    if (speech.isListening) {
-      _setLocalMode(PlayheadVoiceMode.listening);
-    } else if (speech.isRecognizing) {
-      _analyzingStartedAt ??= DateTime.now();
-      _setLocalMode(PlayheadVoiceMode.analyzing);
-    }
-  }
-
-  void _setLocalMode(PlayheadVoiceMode mode) {
-    if (!mounted || _localPlayheadMode == mode) return;
-    setState(() => _localPlayheadMode = mode);
-  }
-
-  PlayheadVoiceMode _playheadMode({required bool isThisSpeech}) {
+  PlayheadVoiceMode _resolvePlayheadMode({
+    required bool isThisSpeech,
+    required SpeechPracticeState speech,
+  }) {
     if (!isThisSpeech) return PlayheadVoiceMode.playback;
-    return _localPlayheadMode;
+    if (speech.isListening) return PlayheadVoiceMode.listening;
+    if (speech.isRecognizing || _resultPending) {
+      return PlayheadVoiceMode.analyzing;
+    }
+    return PlayheadVoiceMode.playback;
+  }
+
+  void _clearAnalyzingBridge() {
+    if (!_resultPending && _analyzingStartedAt == null) return;
+    setState(() {
+      _resultPending = false;
+      _analyzingStartedAt = null;
+    });
   }
 
   Future<void> _completePipelineAndShowResult() async {
@@ -169,7 +160,7 @@ class _PronunciationPracticeSectionState
       final stillBusy = currentSpeech.activeSentenceId == widget.sentence.id &&
           (currentSpeech.isListening || currentSpeech.isRecognizing);
       if (!stillBusy) {
-        _setLocalMode(PlayheadVoiceMode.playback);
+        _clearAnalyzingBridge();
       }
     });
   }
@@ -185,25 +176,13 @@ class _PronunciationPracticeSectionState
       final isThis = next.activeSentenceId == sentence.id;
       if (!isThis) return;
 
-      if (next.isListening && !prev.isListening) {
-        _setLocalMode(PlayheadVoiceMode.listening);
-      }
-
-      if (next.isRecognizing && !prev.isRecognizing) {
-        _analyzingStartedAt = DateTime.now();
-        _setLocalMode(PlayheadVoiceMode.analyzing);
-      }
-
       if (next.error != null && next.error != prev.error) {
-        _analyzingStartedAt = null;
-        _setLocalMode(PlayheadVoiceMode.playback);
+        _clearAnalyzingBridge();
         return;
       }
 
       if (next.abortedNoSpeech && !prev.abortedNoSpeech) {
-        _analyzingStartedAt = null;
-        _resultPending = false;
-        _setLocalMode(PlayheadVoiceMode.playback);
+        _clearAnalyzingBridge();
         ref.read(speechPracticeProvider.notifier).acknowledgeAbort();
         return;
       }
@@ -211,7 +190,10 @@ class _PronunciationPracticeSectionState
       final wasBusy = prev.isListening || prev.isRecognizing;
       final isIdle = !next.isListening && !next.isRecognizing;
       if (wasBusy && isIdle && !_coachingDialogOpen && !next.abortedNoSpeech) {
-        _setLocalMode(PlayheadVoiceMode.analyzing);
+        _analyzingStartedAt = DateTime.now();
+        if (!_resultPending) {
+          setState(() => _resultPending = true);
+        }
         WidgetsBinding.instance.addPostFrameCallback((_) {
           if (!mounted) return;
           _completePipelineAndShowResult();
@@ -219,7 +201,10 @@ class _PronunciationPracticeSectionState
       }
     });
 
-    final playheadMode = _playheadMode(isThisSpeech: isThisSpeech);
+    final playheadMode = _resolvePlayheadMode(
+      isThisSpeech: isThisSpeech,
+      speech: speech,
+    );
     final isAnalyzingSpeech =
         isThisSpeech && playheadMode == PlayheadVoiceMode.analyzing;
     final initializing = isThisSpeech && speech.isInitializing;

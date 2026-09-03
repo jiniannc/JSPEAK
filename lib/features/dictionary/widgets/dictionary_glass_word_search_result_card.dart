@@ -1,5 +1,3 @@
-import 'dart:ui';
-
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
@@ -10,11 +8,11 @@ import '../../../data/models/vocabulary_entry.dart';
 import '../dictionary_pronunciation_display.dart';
 import '../dictionary_item_kind_colors.dart';
 import '../../../shared/widgets/glass_surface.dart';
+import '../../../shared/widgets/web_safe_backdrop_blur.dart';
 import '../../dashboard/dashboard_palette.dart';
 
-/// 단어 검색 결과 — 미니 러기지 택 스타일 글래스 카드.
+/// 단어 검색 결과 — 그림자 elevation 글래스 카드.
 class DictionaryGlassWordSearchResultCard extends ConsumerWidget {
-
   final VocabularyEntry entry;
   final String query;
   final bool gridCell;
@@ -32,49 +30,32 @@ class DictionaryGlassWordSearchResultCard extends ConsumerWidget {
     final favState = ref.watch(dictionaryFavoritesResolvedProvider);
     final isFavorite = favState.contains(entry.storageFavoriteKey);
     final pronunciation = entry.pronunciation?.trim() ?? '';
-    final showPronunciation =
-        DictionaryPronunciationDisplay.showsWordPronunciation(entry);
     final categoryLabel = entry.category?.trim() ?? '';
     final radius = gridCell ? 10.0 : 12.0;
 
-    return Container(
-      margin: EdgeInsets.only(bottom: gridCell ? 0 : 6),
-      decoration: BoxDecoration(
-        borderRadius: BorderRadius.circular(radius),
-        boxShadow: GlassSurfaceStyle.cardShadow(radius: radius),
-      ),
-      child: ClipRRect(
-        borderRadius: BorderRadius.circular(radius),
-        child: BackdropFilter(
-          filter: ImageFilter.blur(sigmaX: 10, sigmaY: 10),
-          child: DecoratedBox(
-            decoration: BoxDecoration(
-              color: Colors.white.withValues(alpha: 0.85),
-              borderRadius: BorderRadius.circular(radius),
-              border: Border.all(
-                color: Colors.white.withValues(alpha: 0.9),
-                width: 1.0,
-              ),
-            ),
-            child: gridCell
-                ? _buildGridCell(
-                    context,
-                    ref,
-                    isSpeaking,
-                    isFavorite,
-                    categoryLabel,
-                    showPronunciation: showPronunciation,
-                    pronunciation: pronunciation,
-                  )
-                : _buildListCell(
-                    context,
-                    ref,
-                    isSpeaking,
-                    isFavorite,
-                    pronunciation,
-                    categoryLabel: categoryLabel,
-                  ),
-          ),
+    return ClipRRect(
+      borderRadius: BorderRadius.circular(radius),
+      child: WebSafeBackdropBlur(
+        sigmaX: 10,
+        sigmaY: 10,
+        child: DecoratedBox(
+          decoration: DictionaryItemKindColors.elevatedCard(radius: radius),
+          child: gridCell
+              ? _buildGridCell(
+                  context,
+                  ref,
+                  isSpeaking,
+                  isFavorite,
+                  categoryLabel,
+                )
+              : _buildListCell(
+                  context,
+                  ref,
+                  isSpeaking,
+                  isFavorite,
+                  pronunciation,
+                  categoryLabel: categoryLabel,
+                ),
         ),
       ),
     );
@@ -85,84 +66,102 @@ class DictionaryGlassWordSearchResultCard extends ConsumerWidget {
     WidgetRef ref,
     bool isSpeaking,
     bool isFavorite,
-    String categoryLabel, {
-    required bool showPronunciation,
-    required String pronunciation,
-  }) {
+    String categoryLabel,
+  ) {
+    final pronunciation = DictionaryPronunciationDisplay.wordPronunciation(entry);
+    final showsPronunciation =
+        DictionaryPronunciationDisplay.showsWordPronunciation(entry);
+    final meaning = entry.meaning.trim();
+
     return Padding(
-      padding: const EdgeInsets.fromLTRB(8, 8, 6, 8),
+      padding: const EdgeInsets.fromLTRB(6, 5, 4, 5),
       child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        mainAxisSize: MainAxisSize.min,
+        crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
-          if (categoryLabel.isNotEmpty) ...[
-            _MiniTypeTag(
-              label: categoryLabel,
-              compact: true,
-            ),
-            const SizedBox(height: 5),
-          ],
-          SearchHighlightText(
-            text: entry.term,
-            query: query,
-            maxLines: 2,
-            overflow: TextOverflow.ellipsis,
-            style: const TextStyle(
-              fontSize: 12.5,
-              fontWeight: FontWeight.w800,
-              color: DashboardPalette.navy,
-              height: 1.15,
-            ),
-            highlightColor: SearchHighlightStyle.fill,
-            highlightTextColor: SearchHighlightStyle.text,
-          ),
-          if (showPronunciation) ...[
-            const SizedBox(height: 2),
-            Text(
-              pronunciation,
-              maxLines: 1,
-              overflow: TextOverflow.ellipsis,
-              style: TextStyle(
-                fontSize: 9.5,
-                fontWeight: FontWeight.w500,
-                color: DashboardPalette.textMuted.withValues(alpha: 0.9),
-                height: 1.15,
-              ),
-            ),
-          ],
-          const SizedBox(height: 3),
           Expanded(
-            child: SearchHighlightText(
-              text: entry.meaning,
-              query: query,
-              maxLines: 2,
-              overflow: TextOverflow.ellipsis,
-              style: TextStyle(
-                fontSize: 10.5,
-                fontWeight: FontWeight.w500,
-                color: DashboardPalette.navy.withValues(alpha: 0.68),
-                height: 1.2,
-              ),
-              highlightColor: SearchHighlightStyle.fill,
-              highlightTextColor: SearchHighlightStyle.text,
+            child: Column(
+              mainAxisAlignment: MainAxisAlignment.center,
+              children: [
+                SearchHighlightText(
+                  text: entry.term,
+                  query: query,
+                  maxLines: 2,
+                  overflow: TextOverflow.ellipsis,
+                  textAlign: TextAlign.center,
+                  style: const TextStyle(
+                    fontSize: 14,
+                    fontWeight: FontWeight.w800,
+                    color: DashboardPalette.navy,
+                    height: 1.12,
+                  ),
+                  highlightColor: SearchHighlightStyle.fill,
+                  highlightTextColor: SearchHighlightStyle.text,
+                ),
+                if (showsPronunciation) ...[
+                  const SizedBox(height: 2),
+                  SearchHighlightText(
+                    text: pronunciation,
+                    query: query,
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    textAlign: TextAlign.center,
+                    style: TextStyle(
+                      fontSize: 9,
+                      fontWeight: FontWeight.w500,
+                      color: DictionaryPronunciationDisplay.pronunciationColor,
+                      height: 1.1,
+                    ),
+                    highlightColor: SearchHighlightStyle.fill,
+                    highlightTextColor: SearchHighlightStyle.text,
+                  ),
+                ],
+                if (meaning.isNotEmpty) ...[
+                  const SizedBox(height: 2),
+                  SearchHighlightText(
+                    text: meaning,
+                    query: query,
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    textAlign: TextAlign.center,
+                    style: TextStyle(
+                      fontSize: 9.5,
+                      fontWeight: FontWeight.w500,
+                      color: DashboardPalette.navy.withValues(alpha: 0.55),
+                      height: 1.15,
+                    ),
+                    highlightColor: SearchHighlightStyle.fill,
+                    highlightTextColor: SearchHighlightStyle.text,
+                  ),
+                ],
+              ],
             ),
           ),
-          const SizedBox(height: 6),
+          const SizedBox(height: 4),
           Row(
-            mainAxisAlignment: MainAxisAlignment.end,
+            crossAxisAlignment: CrossAxisAlignment.end,
             children: [
+              Expanded(
+                child: Align(
+                  alignment: Alignment.bottomLeft,
+                  child: DictionarySourceLabel(
+                    label: categoryLabel,
+                    compact: true,
+                    textAlign: TextAlign.left,
+                  ),
+                ),
+              ),
               _LightGlassIconButton(
                 icon: isSpeaking
                     ? Icons.volume_up_rounded
                     : Icons.volume_up_outlined,
-                size: 26,
-                iconSize: 14,
+                size: 24,
+                iconSize: 13,
                 onTap: () => ref.read(ttsSpeakingProvider.notifier).speakWord(
                       word: entry.term,
                       language: entry.language,
                     ),
               ),
-              const SizedBox(width: 4),
+              const SizedBox(width: 3),
               _LightGlassIconButton(
                 icon: isFavorite
                     ? Icons.star_rounded
@@ -170,8 +169,8 @@ class DictionaryGlassWordSearchResultCard extends ConsumerWidget {
                 iconColor: isFavorite
                     ? Colors.amber.shade700
                     : GlassSurfaceStyle.iconColor,
-                size: 26,
-                iconSize: 14,
+                size: 24,
+                iconSize: 13,
                 onTap: () async {
                   final added = await ref
                       .read(dictionaryFavoritesProvider.notifier)
@@ -197,7 +196,7 @@ class DictionaryGlassWordSearchResultCard extends ConsumerWidget {
     required String categoryLabel,
   }) {
     return Padding(
-      padding: const EdgeInsets.fromLTRB(12, 10, 10, 10),
+      padding: const EdgeInsets.fromLTRB(12, 10, 10, 9),
       child: Row(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
@@ -206,10 +205,6 @@ class DictionaryGlassWordSearchResultCard extends ConsumerWidget {
               crossAxisAlignment: CrossAxisAlignment.start,
               mainAxisSize: MainAxisSize.min,
               children: [
-                if (categoryLabel.isNotEmpty) ...[
-                  _MiniTypeTag(label: categoryLabel),
-                  const SizedBox(height: 6),
-                ],
                 SearchHighlightText(
                   text: entry.term,
                   query: query,
@@ -259,6 +254,13 @@ class DictionaryGlassWordSearchResultCard extends ConsumerWidget {
                   highlightColor: SearchHighlightStyle.fill,
                   highlightTextColor: SearchHighlightStyle.text,
                 ),
+                if (categoryLabel.isNotEmpty) ...[
+                  const SizedBox(height: 6),
+                  DictionarySourceLabel(
+                    label: categoryLabel,
+                    textAlign: TextAlign.left,
+                  ),
+                ],
               ],
             ),
           ),
@@ -300,44 +302,6 @@ class DictionaryGlassWordSearchResultCard extends ConsumerWidget {
   }
 }
 
-class _MiniTypeTag extends StatelessWidget {
-  final String label;
-  final bool compact;
-
-  const _MiniTypeTag({
-    required this.label,
-    this.compact = false,
-  });
-
-  @override
-  Widget build(BuildContext context) {
-    const kind = DictionaryItemKind.word;
-    return Container(
-      padding: EdgeInsets.symmetric(
-        horizontal: compact ? 5 : 7,
-        vertical: compact ? 1 : 2,
-      ),
-      decoration: BoxDecoration(
-        color: DictionaryItemKindColors.chipBackground(kind),
-        borderRadius: BorderRadius.circular(compact ? 5 : 8),
-        border: Border.all(
-          color: DictionaryItemKindColors.chipBorder(kind),
-          width: 1.0,
-        ),
-      ),
-      child: Text(
-        label,
-        style: TextStyle(
-          fontSize: compact ? 8.5 : 9.5,
-          fontWeight: FontWeight.w800,
-          color: DictionaryItemKindColors.label(kind),
-          letterSpacing: -0.1,
-        ),
-      ),
-    );
-  }
-}
-
 class _LightGlassIconButton extends StatelessWidget {
   final IconData icon;
   final VoidCallback onTap;
@@ -364,7 +328,9 @@ class _LightGlassIconButton extends StatelessWidget {
         width: size,
         height: size,
         child: DecoratedBox(
-          decoration: GlassSurfaceStyle.lightGlassButton(radius: size / 2),
+          decoration: DictionaryItemKindColors.shadowIconButton(
+            radius: size / 2,
+          ),
           child: Icon(icon, size: iconSize, color: color),
         ),
       ),

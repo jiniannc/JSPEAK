@@ -2,7 +2,6 @@ import 'dart:ui';
 
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
-import 'package:go_router/go_router.dart';
 
 import '../../app/guide_dismiss_providers.dart';
 import '../../app/providers.dart';
@@ -15,6 +14,7 @@ import '../../data/repositories/sentence_progress_repository.dart';
 import '../../features/dashboard/dashboard_palette.dart';
 import '../shell/floating_island_nav_bar.dart';
 import '../../features/learning/widgets/mode_guide_cards.dart';
+import '../../features/learning/widgets/sentence_group_picker.dart';
 import '../../shared/widgets/learning_chapter_card_shell.dart';
 import 'widgets/achievement_stamps.dart';
 
@@ -142,8 +142,11 @@ class BasicSentenceHomeScreen extends ConsumerWidget {
                               }
                               final chapter = chapters[index - 1];
                               final category = chapter.name;
-                              final sentences =
-                                  bundle.sentencesFor(language, category);
+                              final sentences = bundle.sentencesForHubCategory(
+                                language,
+                                chapter.chapterNo,
+                                category,
+                              );
                               final summary = repo.categorySummary(
                                 sentences: sentences,
                                 stats: progressState.stats,
@@ -151,24 +154,9 @@ class BasicSentenceHomeScreen extends ConsumerWidget {
                               return _SentenceCategoryCard(
                                 chapter: chapter,
                                 summary: summary,
-                                onTap: () {
-                                  if (sentences.isEmpty) {
-                                    ScaffoldMessenger.of(context)
-                                        .showSnackBar(
-                                      const SnackBar(
-                                        content: Text(
-                                          '이 주제에 학습할 문장이 없어요.',
-                                        ),
-                                      ),
-                                    );
-                                    return;
-                                  }
-                                  context.push(
-                                    '/scenarios/sentences/play'
-                                    '?lang=${Uri.encodeComponent(language)}'
-                                    '&category=${Uri.encodeComponent(category)}',
-                                  );
-                                },
+                                language: language,
+                                category: category,
+                                chapterNo: chapter.chapterNo,
                               );
                             },
                           ),
@@ -466,28 +454,50 @@ class _StampCountChip extends StatelessWidget {
   }
 }
 
-class _SentenceCategoryCard extends StatelessWidget {
+class _SentenceCategoryCard extends ConsumerStatefulWidget {
   final ContentChapter chapter;
   final SentenceCategorySummary summary;
-  final VoidCallback onTap;
+  final String language;
+  final String category;
+  final int chapterNo;
 
   const _SentenceCategoryCard({
     required this.chapter,
     required this.summary,
-    required this.onTap,
+    required this.language,
+    required this.category,
+    required this.chapterNo,
   });
 
   @override
+  ConsumerState<_SentenceCategoryCard> createState() =>
+      _SentenceCategoryCardState();
+}
+
+class _SentenceCategoryCardState extends ConsumerState<_SentenceCategoryCard> {
+  final GlobalKey _popupAnchorKey = GlobalKey();
+
+  @override
   Widget build(BuildContext context) {
+    final summary = widget.summary;
     final mastered = summary.allMastered;
     final started = summary.readCount > 0 ||
         summary.attemptedCount > 0 ||
         summary.masteredCount > 0;
     final total = summary.total;
 
-    return LearningChapterCardShell(
-      chapter: chapter,
-      onTap: onTap,
+    return KeyedSubtree(
+      key: _popupAnchorKey,
+      child: LearningChapterCardShell(
+        chapter: widget.chapter,
+        onTap: () => openSentenceTraining(
+          context,
+          ref: ref,
+          language: widget.language,
+          category: widget.category,
+          chapterNo: widget.chapterNo,
+          popupAnchorKey: _popupAnchorKey,
+        ),
       thumbnailFallback: Icons.record_voice_over_rounded,
       headerTrailing: mastered
           ? const LearningChapterMasterBadge()
@@ -537,6 +547,7 @@ class _SentenceCategoryCard extends StatelessWidget {
             ),
           ],
         ],
+      ),
       ),
     );
   }

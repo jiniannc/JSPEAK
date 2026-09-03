@@ -5,6 +5,7 @@ import 'vocabulary_entry.dart';
 import 'content_chapter.dart';
 import 'learning_hub_chapter.dart';
 import '../../core/utils/search_text_match.dart';
+import '../../core/utils/sentence_category_grouping.dart';
 
 /// 동기화된 전체 콘텐츠. 앱 시작 시 로컬 저장소에서 읽어 메모리에 올린다.
 class ContentBundle {
@@ -55,12 +56,145 @@ class ContentBundle {
         .toList();
   }
 
+  /// 학습 허브 챕터 — 같은 [chapterNo]·베이스 카테고리의 문장 전체.
+  List<Sentence> sentencesForHubCategory(
+    String language,
+    int chapterNo,
+    String hubCategoryName,
+  ) {
+    final base = SentenceCategoryGrouping.baseName(hubCategoryName);
+    return sentences
+        .where(
+          (s) =>
+              s.language == language &&
+              s.chapterNo == chapterNo &&
+              SentenceCategoryGrouping.baseName(s.category) == base,
+        )
+        .toList();
+  }
+
+  /// 학습 허브 챕터 — [LearningHubChapter] 기준 문장.
+  List<Sentence> sentencesForHubChapter(
+    String language,
+    LearningHubChapter chapter,
+  ) {
+    return sentencesForHubCategory(
+      language,
+      chapter.chapterNo,
+      chapter.name,
+    );
+  }
+
+  /// 같은 [chapter_no]·베이스 카테고리 안의 `(세부)` 그룹 목록.
+  /// 괄호가 없으면 단일 항목(바로 진입).
+  List<SentenceCategoryGroupInfo> sentenceGroupsFor(
+    String language,
+    String category, {
+    int? chapterNo,
+  }) {
+    final base = SentenceCategoryGrouping.baseName(category);
+
+    var seed = sentencesFor(language, category);
+    if (seed.isEmpty) {
+      seed = sentences
+          .where(
+            (s) =>
+                s.language == language &&
+                SentenceCategoryGrouping.baseName(s.category) == base &&
+                (chapterNo == null || s.chapterNo == chapterNo),
+          )
+          .toList();
+    } else if (chapterNo != null) {
+      seed = seed.where((s) => s.chapterNo == chapterNo).toList();
+    }
+    if (seed.isEmpty) return const [];
+
+    final resolvedChapterNo = chapterNo ??
+        seed.map((row) => row.chapterNo).reduce((a, b) => a < b ? a : b);
+
+    final scoped = sentences
+        .where(
+          (s) =>
+              s.language == language &&
+              s.chapterNo == resolvedChapterNo &&
+              SentenceCategoryGrouping.baseName(s.category) == base,
+        )
+        .toList();
+    if (scoped.isEmpty) return const [];
+
+    final hasAnyParen =
+        scoped.any((s) => SentenceCategoryGrouping.hasParenthetical(s.category));
+    if (!hasAnyParen) {
+      final flatCategory = scoped.first.category;
+      return [
+        SentenceCategoryGroupInfo(
+          label: '',
+          fullCategory: flatCategory,
+          sentenceCount: scoped.length,
+        ),
+      ];
+    }
+
+    final groupOrder = <String>[];
+    final groupFullCategory = <String, String>{};
+
+    for (final row in sentences) {
+      if (row.language != language) continue;
+      if (row.chapterNo != resolvedChapterNo) continue;
+      if (SentenceCategoryGrouping.baseName(row.category) != base) continue;
+
+      final parsed = SentenceCategoryGrouping.parse(row.category);
+      if (parsed == null) continue;
+
+      groupFullCategory.putIfAbsent(parsed.group, () => row.category);
+      if (!groupOrder.contains(parsed.group)) {
+        groupOrder.add(parsed.group);
+      }
+    }
+
+    return [
+      for (final label in groupOrder)
+        SentenceCategoryGroupInfo(
+          label: label,
+          fullCategory: groupFullCategory[label]!,
+          sentenceCount: scoped
+              .where((s) => s.category == groupFullCategory[label])
+              .length,
+        ),
+    ];
+  }
+
   /// 언어별 문장 챕터 메타 ([chapter_no] 순).
+  /// 해당 언어 문장 주제 — [chapter_no] + 베이스 카테고리 기준 (허브·문장 홈).
   List<ContentChapter> sentenceChaptersFor(String language) {
-    final chapters = [
-      for (final category in categoriesFor(language))
-        chapterForSentenceCategory(language, category),
-    ]..sort((a, b) => _compareChapters(a, b));
+    final merged = <String, ContentChapter>{};
+
+    for (final sentence in sentences) {
+      if (sentence.language != language) continue;
+      final hubName = SentenceCategoryGrouping.baseName(sentence.category);
+      final key = '${sentence.chapterNo}|$hubName';
+      final existing = merged[key];
+      if (existing == null) {
+        merged[key] = ContentChapter(
+          chapterNo: sentence.chapterNo,
+          name: hubName,
+          chapterImage: sentence.chapterImage,
+          language: language,
+        );
+        continue;
+      }
+      if (existing.chapterImage.isEmpty && sentence.chapterImage.isNotEmpty) {
+        merged[key] = ContentChapter(
+          chapterNo: existing.chapterNo,
+          name: existing.name,
+          chapterImage: sentence.chapterImage,
+          language: language,
+        );
+      }
+    }
+
+    final chapters = merged.values.toList()
+      ..sort((a, b) => _compareChapters(a, b));
     return chapters;
   }
 
@@ -133,7 +267,7 @@ class ContentBundle {
     );
   }
 
-  /// 학습 허브 — 비행 단계별 통합 챕터 ([chapter_no] 순).
+  /// 학습 허브 — 비행 단계별 통합 챕터 ([chapter_no] + 베이스 카테고리).
   List<LearningHubChapter> learningHubChaptersFor(String language) {
     final merged = <String, LearningHubChapter>{};
 
@@ -145,12 +279,13 @@ class ContentBundle {
     }) {
       final trimmed = name.trim();
       if (trimmed.isEmpty) return;
-      final key = '$chapterNo|$trimmed';
+      final hubName = SentenceCategoryGrouping.baseName(trimmed);
+      final key = '$chapterNo|$hubName';
       final existing = merged[key];
       if (existing == null) {
         merged[key] = LearningHubChapter(
           chapterNo: chapterNo,
-          name: trimmed,
+          name: hubName,
           language: language,
           hook: hook,
           chapterImage: chapterImage,
@@ -202,8 +337,12 @@ class ContentBundle {
     }
 
     for (final category in categoriesFor(language)) {
-      final hook = chapterHookFor(language, category);
       final meta = chapterForSentenceCategory(language, category);
+      final hook = chapterHookFor(
+        language,
+        category,
+        chapterNo: meta.chapterNo,
+      );
       if (hook.isEmpty && meta.chapterImage.isEmpty) continue;
       note(
         chapterNo: meta.chapterNo,
@@ -213,7 +352,25 @@ class ContentBundle {
       );
     }
 
-    final chapters = merged.values.toList()
+    final chapters = merged.entries
+        .map((entry) {
+          final chapter = entry.value;
+          if (chapter.hook.isNotEmpty) return chapter;
+          final hook = chapterHookForHubChapter(
+            language,
+            chapter.chapterNo,
+            chapter.name,
+          );
+          if (hook.isEmpty) return chapter;
+          return LearningHubChapter(
+            chapterNo: chapter.chapterNo,
+            name: chapter.name,
+            language: chapter.language,
+            hook: hook,
+            chapterImage: chapter.chapterImage,
+          );
+        })
+        .toList()
       ..sort((a, b) {
         final byNo = a.chapterNo.compareTo(b.chapterNo);
         if (byNo != 0) return byNo;
@@ -222,11 +379,30 @@ class ContentBundle {
     return chapters;
   }
 
-  /// 챕터 카드용 hook — 카테고리 첫 non-empty [chapter_hook].
-  String chapterHookFor(String language, String category) {
+  /// 챕터 카드용 hook — [chapter_no]·베이스 카테고리 기준 첫 non-empty [chapter_hook].
+  String chapterHookFor(
+    String language,
+    String category, {
+    int? chapterNo,
+  }) {
+    return chapterHookForHubChapter(
+      language,
+      chapterNo ??
+          chapterForSentenceCategory(language, category).chapterNo,
+      SentenceCategoryGrouping.baseName(category),
+    );
+  }
+
+  String chapterHookForHubChapter(
+    String language,
+    int chapterNo,
+    String hubCategoryName,
+  ) {
+    final base = SentenceCategoryGrouping.baseName(hubCategoryName);
     for (final sentence in sentences) {
       if (sentence.language != language) continue;
-      if (sentence.category != category) continue;
+      if (sentence.chapterNo != chapterNo) continue;
+      if (SentenceCategoryGrouping.baseName(sentence.category) != base) continue;
       if (sentence.chapterHook.trim().isNotEmpty) {
         return sentence.chapterHook.trim();
       }

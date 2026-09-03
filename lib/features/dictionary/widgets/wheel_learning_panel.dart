@@ -56,18 +56,27 @@ class _WheelLearningPanelState extends ConsumerState<WheelLearningPanel> {
   bool _coachingDialogOpen = false;
   bool _resultPending = false;
   DateTime? _analyzingStartedAt;
-  PlayheadVoiceMode _localPlayheadMode = PlayheadVoiceMode.playback;
 
   static const _analyzingBridgeDuration = Duration(milliseconds: 700);
 
-  void _setLocalMode(PlayheadVoiceMode mode) {
-    if (!mounted || _localPlayheadMode == mode) return;
-    setState(() => _localPlayheadMode = mode);
+  PlayheadVoiceMode _resolvePlayheadMode({
+    required bool isThisSpeech,
+    required SpeechPracticeState speech,
+  }) {
+    if (!isThisSpeech) return PlayheadVoiceMode.playback;
+    if (speech.isListening) return PlayheadVoiceMode.listening;
+    if (speech.isRecognizing || _resultPending) {
+      return PlayheadVoiceMode.analyzing;
+    }
+    return PlayheadVoiceMode.playback;
   }
 
-  PlayheadVoiceMode _playheadMode({required bool isThisSpeech}) {
-    if (!isThisSpeech) return PlayheadVoiceMode.playback;
-    return _localPlayheadMode;
+  void _clearAnalyzingBridge() {
+    if (!_resultPending && _analyzingStartedAt == null) return;
+    setState(() {
+      _resultPending = false;
+      _analyzingStartedAt = null;
+    });
   }
 
   Future<void> _completePipelineAndShowResult() async {
@@ -166,7 +175,7 @@ class _WheelLearningPanelState extends ConsumerState<WheelLearningPanel> {
       final stillBusy = currentSpeech.activeSentenceId == widget.sentence.id &&
           (currentSpeech.isListening || currentSpeech.isRecognizing);
       if (!stillBusy) {
-        _setLocalMode(PlayheadVoiceMode.playback);
+        _clearAnalyzingBridge();
       }
     });
   }
@@ -193,25 +202,13 @@ class _WheelLearningPanelState extends ConsumerState<WheelLearningPanel> {
       final isThis = next.activeSentenceId == sentence.id;
       if (!isThis) return;
 
-      if (next.isListening && !prev.isListening) {
-        _setLocalMode(PlayheadVoiceMode.listening);
-      }
-
-      if (next.isRecognizing && !prev.isRecognizing) {
-        _analyzingStartedAt = DateTime.now();
-        _setLocalMode(PlayheadVoiceMode.analyzing);
-      }
-
       if (next.error != null && next.error != prev.error) {
-        _analyzingStartedAt = null;
-        _setLocalMode(PlayheadVoiceMode.playback);
+        _clearAnalyzingBridge();
         return;
       }
 
       if (next.abortedNoSpeech && !prev.abortedNoSpeech) {
-        _analyzingStartedAt = null;
-        _resultPending = false;
-        _setLocalMode(PlayheadVoiceMode.playback);
+        _clearAnalyzingBridge();
         ref.read(speechPracticeProvider.notifier).acknowledgeAbort();
         return;
       }
@@ -219,9 +216,10 @@ class _WheelLearningPanelState extends ConsumerState<WheelLearningPanel> {
       final wasBusy = prev.isListening || prev.isRecognizing;
       final isIdle = !next.isListening && !next.isRecognizing;
       if (wasBusy && isIdle && !_coachingDialogOpen && !next.abortedNoSpeech) {
-        // STT 엔진이 stop() 경유 없이 바로 최종 결과를 낼 수도 있으므로
-        // 브릿지 구간에는 항상 분석 카드가 보이도록 보정한다.
-        _setLocalMode(PlayheadVoiceMode.analyzing);
+        _analyzingStartedAt = DateTime.now();
+        if (!_resultPending) {
+          setState(() => _resultPending = true);
+        }
         WidgetsBinding.instance.addPostFrameCallback((_) {
           if (!mounted) return;
           _completePipelineAndShowResult();
@@ -229,7 +227,10 @@ class _WheelLearningPanelState extends ConsumerState<WheelLearningPanel> {
       }
     });
 
-    final playheadMode = _playheadMode(isThisSpeech: isThisSpeech);
+    final playheadMode = _resolvePlayheadMode(
+      isThisSpeech: isThisSpeech,
+      speech: speech,
+    );
     final isAnalyzingSpeech =
         isThisSpeech && playheadMode == PlayheadVoiceMode.analyzing;
 
@@ -237,7 +238,7 @@ class _WheelLearningPanelState extends ConsumerState<WheelLearningPanel> {
     const contentGap = 12.0;
 
     final karaokeWordIndex = KaraokeWordIndex.resolve(
-      isActive: isThisAudio,
+      isActive: isThisAudio && audio.isPlaying,
       position: audio.position,
       duration: audio.duration,
       sentence: sentence.sentence,
@@ -337,73 +338,82 @@ class _WheelLearningPanelState extends ConsumerState<WheelLearningPanel> {
           Expanded(
             child: LayoutBuilder(
               builder: (context, constraints) {
+                final decks = Column(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    if (hasAudio) ...[
+                      KeyedSubtree(
+                        key: widget.tourKeys?.playbackDeckKey,
+                        child: SizedBox(
+                          width: double.infinity,
+                          child: _GlassPlaybackDeck(
+                            accent: accent,
+                            isActive: isThisAudio,
+                            isPlaying: isThisAudio && audio.isPlaying,
+                            isLoading: isThisAudio && audio.loading,
+                            position:
+                                isThisAudio ? audio.position : Duration.zero,
+                            duration:
+                                isThisAudio ? audio.duration : Duration.zero,
+                            speed: audio.playbackSpeed,
+                            playheadMode: playheadMode,
+                            liveText: speech.spokenText,
+                            onPlayPause: () {
+                              ref
+                                  .read(sentenceProgressProvider.notifier)
+                                  .markListened(sentence.id);
+                              ref
+                                  .read(audioProvider.notifier)
+                                  .togglePlayPause(sentence);
+                            },
+                            onRestart: () => ref
+                                .read(audioProvider.notifier)
+                                .restart(sentence),
+                            onSeek: (v) => ref
+                                .read(audioProvider.notifier)
+                                .seekToProgress(v),
+                            onSpeed: (s) =>
+                                ref.read(audioProvider.notifier).setSpeed(s),
+                          ),
+                        ),
+                      ),
+                      const SizedBox(height: _kDeckGap),
+                    ],
+                    SizedBox(
+                      width: double.infinity,
+                      child: _GlassPracticeDeck(
+                        accent: accent,
+                        speech: speech,
+                        isActive: isThisSpeech,
+                        isAnalyzing: isAnalyzingSpeech,
+                        speakTourKey: widget.tourKeys?.speakKey,
+                        playheadMode: hasAudio
+                            ? PlayheadVoiceMode.playback
+                            : playheadMode,
+                        liveText: speech.spokenText,
+                        onCompleteRecording:
+                            isThisSpeech && speech.isListening
+                            ? () => ref
+                                  .read(speechPracticeProvider.notifier)
+                                  .autoStopRecording()
+                            : null,
+                        onMic: () {
+                          ref
+                              .read(speechPracticeProvider.notifier)
+                              .startPractice(sentence);
+                        },
+                      ),
+                    ),
+                  ],
+                );
+
                 return _CenteredScrollTextPane(
+                  footerGap: contentGap,
+                  footer: decks,
                   child: buildTextSection(constraints.maxWidth),
                 );
               },
             ),
-          ),
-          const SizedBox(height: contentGap),
-          Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              if (hasAudio) ...[
-                KeyedSubtree(
-                  key: widget.tourKeys?.playbackDeckKey,
-                  child: SizedBox(
-                    width: double.infinity,
-                    child: _GlassPlaybackDeck(
-                      accent: accent,
-                      isActive: isThisAudio,
-                      isPlaying: isThisAudio && audio.isPlaying,
-                      isLoading: isThisAudio && audio.loading,
-                      position: isThisAudio ? audio.position : Duration.zero,
-                      duration: isThisAudio ? audio.duration : Duration.zero,
-                      speed: audio.playbackSpeed,
-                      playheadMode: playheadMode,
-                  liveText: speech.spokenText,
-                  onPlayPause: () {
-                      ref
-                          .read(sentenceProgressProvider.notifier)
-                          .markListened(sentence.id);
-                      ref
-                          .read(audioProvider.notifier)
-                          .togglePlayPause(sentence);
-                    },
-                    onRestart: () => ref.read(audioProvider.notifier).restart(),
-                    onSeek: (v) =>
-                        ref.read(audioProvider.notifier).seekToProgress(v),
-                      onSpeed: (s) =>
-                          ref.read(audioProvider.notifier).setSpeed(s),
-                    ),
-                  ),
-                ),
-                const SizedBox(height: _kDeckGap),
-              ],
-              SizedBox(
-                width: double.infinity,
-                child: _GlassPracticeDeck(
-                  accent: accent,
-                  speech: speech,
-                  isActive: isThisSpeech,
-                  isAnalyzing: isAnalyzingSpeech,
-                  speakTourKey: widget.tourKeys?.speakKey,
-                  playheadMode:
-                      hasAudio ? PlayheadVoiceMode.playback : playheadMode,
-                  liveText: speech.spokenText,
-                  onCompleteRecording: isThisSpeech && speech.isListening
-                      ? () => ref
-                          .read(speechPracticeProvider.notifier)
-                          .autoStopRecording()
-                      : null,
-                  onMic: () {
-                    ref
-                        .read(speechPracticeProvider.notifier)
-                        .startPractice(sentence);
-                  },
-                ),
-              ),
-            ],
           ),
         ],
       ),
@@ -415,8 +425,14 @@ class _WheelLearningPanelState extends ConsumerState<WheelLearningPanel> {
 /// LayoutBuilder를 별도 위젯으로 분리해 부모 레이아웃 패스와 충돌하지 않게 한다.
 class _CenteredScrollTextPane extends StatefulWidget {
   final Widget child;
+  final Widget? footer;
+  final double footerGap;
 
-  const _CenteredScrollTextPane({required this.child});
+  const _CenteredScrollTextPane({
+    required this.child,
+    this.footer,
+    this.footerGap = 12,
+  });
 
   @override
   State<_CenteredScrollTextPane> createState() =>
@@ -439,44 +455,56 @@ class _CenteredScrollTextPaneState extends State<_CenteredScrollTextPane> {
   Widget build(BuildContext context) {
     return LayoutBuilder(
       builder: (context, constraints) {
-        final minH =
-            constraints.maxHeight.isFinite ? constraints.maxHeight : 0.0;
-        return Stack(
+        final textAreaHeight = constraints.maxHeight.isFinite
+            ? constraints.maxHeight
+            : 0.0;
+        return Column(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
-            NotificationListener<ScrollNotification>(
-              onNotification: (notification) {
-                _syncScrollable(notification.metrics.maxScrollExtent > 4);
-                return false;
-              },
-              child: SingleChildScrollView(
-                physics: const ClampingScrollPhysics(),
-                child: ConstrainedBox(
-                  constraints: BoxConstraints(minHeight: minH),
-                  child: Center(child: widget.child),
-                ),
-              ),
-            ),
-            if (_showBottomFade)
-              Positioned(
-                left: 0,
-                right: 0,
-                bottom: 0,
-                height: 18,
-                child: IgnorePointer(
-                  child: DecoratedBox(
-                    decoration: BoxDecoration(
-                      gradient: LinearGradient(
-                        begin: Alignment.topCenter,
-                        end: Alignment.bottomCenter,
-                        colors: [
-                          Colors.white.withValues(alpha: 0),
-                          Colors.white.withValues(alpha: 0.92),
-                        ],
+            Expanded(
+              child: Stack(
+                children: [
+                  NotificationListener<ScrollNotification>(
+                    onNotification: (notification) {
+                      _syncScrollable(notification.metrics.maxScrollExtent > 4);
+                      return false;
+                    },
+                    child: SingleChildScrollView(
+                      physics: const ClampingScrollPhysics(),
+                      child: ConstrainedBox(
+                        constraints: BoxConstraints(minHeight: textAreaHeight),
+                        child: Center(child: widget.child),
                       ),
                     ),
                   ),
-                ),
+                  if (_showBottomFade)
+                    Positioned(
+                      left: 0,
+                      right: 0,
+                      bottom: 0,
+                      height: 18,
+                      child: IgnorePointer(
+                        child: DecoratedBox(
+                          decoration: BoxDecoration(
+                            gradient: LinearGradient(
+                              begin: Alignment.topCenter,
+                              end: Alignment.bottomCenter,
+                              colors: [
+                                Colors.white.withValues(alpha: 0),
+                                Colors.white.withValues(alpha: 0.92),
+                              ],
+                            ),
+                          ),
+                        ),
+                      ),
+                    ),
+                ],
               ),
+            ),
+            if (widget.footer != null) ...[
+              SizedBox(height: widget.footerGap),
+              widget.footer!,
+            ],
           ],
         );
       },
@@ -970,11 +998,13 @@ class _PanelGlassShell extends StatelessWidget {
 
     return ClipRRect(
       borderRadius: borderRadius,
-      child: BackdropFilter(
-        filter: ImageFilter.blur(sigmaX: blurSigma, sigmaY: blurSigma),
-        child: DecoratedBox(
-          decoration: decoration,
-          child: child,
+      child: RepaintBoundary(
+        child: BackdropFilter(
+          filter: ImageFilter.blur(sigmaX: blurSigma, sigmaY: blurSigma),
+          child: DecoratedBox(
+            decoration: decoration,
+            child: child,
+          ),
         ),
       ),
     );

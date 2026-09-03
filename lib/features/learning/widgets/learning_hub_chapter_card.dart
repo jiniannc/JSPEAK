@@ -21,6 +21,7 @@ import '../../dashboard/dashboard_palette.dart';
 import '../../shell/floating_island_nav_bar.dart';
 import '../../word_swipe/word_swipe_training_screen.dart';
 import 'mode_guide_cards.dart';
+import 'sentence_group_picker.dart';
 
 enum _ChapterLearningStatus { notStarted, inProgress, completed }
 
@@ -89,7 +90,6 @@ class LearningHubChapterCard extends StatefulWidget {
   final bool Function(String scenarioId) isScenarioCompleted;
   final VoidCallback? onWordPlay;
   final VoidCallback? onWordReview;
-  final VoidCallback? onSentencePlay;
   final bool isExpanded;
   final bool isLast;
   final VoidCallback onExpandRequested;
@@ -135,7 +135,6 @@ class LearningHubChapterCard extends StatefulWidget {
     this.sentenceSummary,
     this.onWordPlay,
     this.onWordReview,
-    this.onSentencePlay,
   });
 
   static const _compactHeight = 88.0;
@@ -195,7 +194,7 @@ class LearningHubChapterCard extends StatefulWidget {
   static const _modePanelInnerBottomInset = 10.0;
   static const _heroTextBottomInset = 18.0;
   static const _heroTextAboveModesGap = 14.0;
-  static const _imageSlideMax = 26.0;
+  static const _imageSlideMax = 10.0;
   static const _modeRevealLift = 108.0;
 
   static bool isWordModeComplete(
@@ -554,7 +553,6 @@ class _LearningHubChapterCardState extends State<LearningHubChapterCard>
                                             widget.isScenarioCompleted,
                                         onWordPlay: widget.onWordPlay,
                                         onWordReview: widget.onWordReview,
-                                        onSentencePlay: widget.onSentencePlay,
                                         iconAsset: iconAsset,
                                         cardWidth: cardWidth,
                                         cardHeight: expandedHeight,
@@ -579,6 +577,10 @@ class _LearningHubChapterCardState extends State<LearningHubChapterCard>
                                               language: widget.language,
                                               iconAsset: iconAsset,
                                               status: chapterStatus,
+                                              imageAspectRatio:
+                                                  _imageAspectRatio ??
+                                                  LearningHubChapterCard
+                                                      .fallbackAspectRatio,
                                               onTap: widget.onExpandRequested,
                                             ),
                                           ),
@@ -665,6 +667,7 @@ class _ChapterCompactTile extends StatelessWidget {
     required this.language,
     required this.iconAsset,
     required this.status,
+    required this.imageAspectRatio,
     required this.onTap,
   });
 
@@ -672,9 +675,11 @@ class _ChapterCompactTile extends StatelessWidget {
   final String language;
   final String iconAsset;
   final _ChapterLearningStatus status;
+  final double imageAspectRatio;
   final VoidCallback onTap;
 
-  static const _thumbSize = 56.0;
+  /// 카드 내부(패딩 제외) 세로 공간에 맞춘 썸네일 높이 — 3:2 등 원본 비율로 가로 확장.
+  static const _maxThumbHeight = 64.0;
 
   @override
   Widget build(BuildContext context) {
@@ -692,6 +697,8 @@ class _ChapterCompactTile extends StatelessWidget {
         label: '완료',
       ),
     };
+    final thumbHeight = _maxThumbHeight;
+    final thumbWidth = thumbHeight * imageAspectRatio;
 
     return SizedBox(
       width: double.infinity,
@@ -755,8 +762,8 @@ class _ChapterCompactTile extends StatelessWidget {
                 ),
                 const SizedBox(width: 12),
                 Container(
-                  width: _thumbSize,
-                  height: _thumbSize,
+                  width: thumbWidth,
+                  height: thumbHeight,
                   decoration: BoxDecoration(
                     borderRadius: BorderRadius.circular(12),
                     border: Border.all(
@@ -773,25 +780,22 @@ class _ChapterCompactTile extends StatelessWidget {
                   ),
                   child: ClipRRect(
                     borderRadius: BorderRadius.circular(11),
-                    child: ColoredBox(
-                      color: const Color(0xFF1E293B),
-                      child: ChapterHeroImage(
-                        assetPath: iconAsset,
-                        width: _thumbSize,
-                        height: _thumbSize,
-                        fit: BoxFit.contain,
+                    child: ChapterHeroImage(
+                      assetPath: iconAsset,
+                      width: thumbWidth,
+                      height: thumbHeight,
+                      fit: BoxFit.cover,
+                      alignment: Alignment.center,
+                      profile: ChapterImageProfile.thumb,
+                      errorBuilder: (context, error, stackTrace) => Container(
+                        width: thumbWidth,
+                        height: thumbHeight,
+                        color: const Color(0xFF1E293B),
                         alignment: Alignment.center,
-                        profile: ChapterImageProfile.thumb,
-                        errorBuilder: (context, error, stackTrace) => Container(
-                          width: _thumbSize,
-                          height: _thumbSize,
-                          color: const Color(0xFF1E293B),
-                          alignment: Alignment.center,
-                          child: const Icon(
-                            Icons.flight_rounded,
-                            size: 22,
-                            color: Color(0xFF94A3B8),
-                          ),
+                        child: const Icon(
+                          Icons.flight_rounded,
+                          size: 22,
+                          color: Color(0xFF94A3B8),
                         ),
                       ),
                     ),
@@ -874,7 +878,6 @@ class _ExpandedChapterVisual extends StatefulWidget {
     required this.isScenarioCompleted,
     required this.onWordPlay,
     required this.onWordReview,
-    required this.onSentencePlay,
     required this.iconAsset,
     required this.cardWidth,
     required this.cardHeight,
@@ -891,7 +894,6 @@ class _ExpandedChapterVisual extends StatefulWidget {
   final bool Function(String scenarioId) isScenarioCompleted;
   final VoidCallback? onWordPlay;
   final VoidCallback? onWordReview;
-  final VoidCallback? onSentencePlay;
   final String iconAsset;
   final double cardWidth;
   final double cardHeight;
@@ -1193,7 +1195,9 @@ class _ExpandedChapterVisualState extends State<_ExpandedChapterVisual>
                       onWordReview: widget.onWordReview,
                       sentenceSummary: widget.sentenceSummary,
                       sentenceComplete: sentenceComplete,
-                      onSentencePlay: widget.onSentencePlay,
+                      language: widget.language,
+                      sentenceCategory: widget.chapter.name,
+                      sentenceChapterNo: widget.chapter.chapterNo,
                       scenarios: widget.scenarios,
                       scenarioComplete: scenarioComplete,
                       isScenarioCompleted: widget.isScenarioCompleted,
@@ -1310,8 +1314,8 @@ class _ChapterTapRevealHintState extends State<_ChapterTapRevealHint>
       mainAxisSize: MainAxisSize.min,
       children: [
         SizedBox(
-          width: 64,
-          height: 72,
+          width: 56,
+          height: 64,
           child: AnimatedBuilder(
             animation: _offsetY,
             child: ColorFiltered(
@@ -1321,8 +1325,8 @@ class _ChapterTapRevealHintState extends State<_ChapterTapRevealHint>
               ),
               child: Lottie.asset(
                 _ChapterTapRevealHint._assetPath,
-                width: 64,
-                height: 64,
+                width: 56,
+                height: 56,
                 fit: BoxFit.contain,
                 repeat: true,
               ),
@@ -1338,9 +1342,9 @@ class _ChapterTapRevealHintState extends State<_ChapterTapRevealHint>
             },
           ),
         ),
-        const SizedBox(height: 6),
+        const SizedBox(height: 5),
         Container(
-          padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+          padding: const EdgeInsets.symmetric(horizontal: 9, vertical: 3),
           decoration: BoxDecoration(
             color: Colors.black.withValues(alpha: 0.32),
             borderRadius: BorderRadius.circular(999),
@@ -1348,7 +1352,7 @@ class _ChapterTapRevealHintState extends State<_ChapterTapRevealHint>
           child: const Text(
             'Touch to start',
             style: TextStyle(
-              fontSize: 12,
+              fontSize: 11,
               fontWeight: FontWeight.w700,
               color: Colors.white,
               letterSpacing: -0.2,
@@ -1582,10 +1586,11 @@ class _ChapterHeroHeaderTexts extends StatelessWidget {
   Widget build(BuildContext context) {
     final catchLine = hook.trim();
     final t = compactProgress.clamp(0.0, 1.0);
-    final hookHideT = Curves.easeInOutCubic.transform(
-      (modeRevealProgress / 0.4).clamp(0.0, 1.0),
+    // 모드 리빌 시 hook을 완전히 숨기지 않고 1줄 요약으로 유지한다.
+    final hookCompactT = Curves.easeInOutCubic.transform(
+      (modeRevealProgress / 0.65).clamp(0.0, 1.0),
     );
-    final hookVisible = (1.0 - hookHideT).clamp(0.0, 1.0);
+    final hookMaxLines = hookCompactT > 0.82 ? 1 : (t > 0.7 ? 2 : 3);
 
     final chapterSize = _lerp(14, 13, t);
     final titleSize = _lerp(26, 22, t);
@@ -1634,40 +1639,28 @@ class _ChapterHeroHeaderTexts extends StatelessWidget {
             ],
           ),
         ),
-        if (catchLine.isNotEmpty && hookVisible > 0.001) ...[
-          ClipRect(
-            child: Align(
-              alignment: Alignment.topLeft,
-              heightFactor: hookVisible,
-              child: Opacity(
-                opacity: hookVisible,
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    SizedBox(height: gapBeforeHook),
-                    Text(
-                      catchLine,
-                      maxLines: t > 0.7 ? 2 : 3,
-                      overflow: TextOverflow.ellipsis,
-                      style: TextStyle(
-                        fontSize: hookSize,
-                        height: hookLineHeight,
-                        fontWeight: FontWeight.w500,
-                        color: Colors.white.withValues(alpha: hookAlpha),
-                        shadows: [
-                          Shadow(
-                            color: Colors.black.withValues(
-                              alpha: _lerp(0.65, 0.72, t),
-                            ),
-                            blurRadius: _lerp(8, 9, t),
-                            offset: const Offset(0, 1),
-                          ),
-                        ],
-                      ),
-                    ),
-                  ],
-                ),
+        if (catchLine.isNotEmpty) ...[
+          SizedBox(height: gapBeforeHook),
+          Text(
+            catchLine,
+            maxLines: hookMaxLines,
+            overflow: TextOverflow.ellipsis,
+            style: TextStyle(
+              fontSize: hookSize,
+              height: hookLineHeight,
+              fontWeight: FontWeight.w500,
+              color: Colors.white.withValues(
+                alpha: hookAlpha * (1.0 - hookCompactT * 0.12),
               ),
+              shadows: [
+                Shadow(
+                  color: Colors.black.withValues(
+                    alpha: _lerp(0.65, 0.72, t),
+                  ),
+                  blurRadius: _lerp(8, 9, t),
+                  offset: const Offset(0, 1),
+                ),
+              ],
             ),
           ),
         ],
@@ -1687,7 +1680,9 @@ class _ChapterModeRow extends StatelessWidget {
   final VoidCallback? onWordReview;
   final SentenceCategorySummary? sentenceSummary;
   final bool sentenceComplete;
-  final VoidCallback? onSentencePlay;
+  final String language;
+  final String sentenceCategory;
+  final int sentenceChapterNo;
   final List<Scenario> scenarios;
   final bool scenarioComplete;
   final bool Function(String scenarioId) isScenarioCompleted;
@@ -1703,7 +1698,9 @@ class _ChapterModeRow extends StatelessWidget {
     required this.onWordReview,
     required this.sentenceSummary,
     required this.sentenceComplete,
-    required this.onSentencePlay,
+    required this.language,
+    required this.sentenceCategory,
+    required this.sentenceChapterNo,
     required this.scenarios,
     required this.scenarioComplete,
     required this.isScenarioCompleted,
@@ -1779,7 +1776,9 @@ class _ChapterModeRow extends StatelessWidget {
                         revealProgress: reveal,
                         summary: sentenceSummary,
                         completed: sentenceComplete,
-                        onPlay: onSentencePlay,
+                        language: language,
+                        category: sentenceCategory,
+                        chapterNo: sentenceChapterNo,
                         slotAlignment: Alignment.bottomCenter,
                       ),
                     ),
@@ -2957,13 +2956,15 @@ class _WordModeCell extends StatelessWidget {
   }
 }
 
-class _SentenceModeCell extends StatelessWidget {
+class _SentenceModeCell extends ConsumerStatefulWidget {
   static const _accent = HubTripleModeProgressTrack.sentenceRed;
   static const _progressColor = HubTripleModeProgressTrack.sentencePink;
 
   final SentenceCategorySummary? summary;
   final bool completed;
-  final VoidCallback? onPlay;
+  final String language;
+  final String category;
+  final int chapterNo;
   final double revealProgress;
   final Alignment slotAlignment;
 
@@ -2971,37 +2972,58 @@ class _SentenceModeCell extends StatelessWidget {
     required this.revealProgress,
     required this.summary,
     required this.completed,
-    required this.onPlay,
+    required this.language,
+    required this.category,
+    required this.chapterNo,
     this.slotAlignment = Alignment.bottomCenter,
   });
 
   @override
+  ConsumerState<_SentenceModeCell> createState() => _SentenceModeCellState();
+}
+
+class _SentenceModeCellState extends ConsumerState<_SentenceModeCell> {
+  final GlobalKey _popupAnchorKey = GlobalKey();
+
+  @override
   Widget build(BuildContext context) {
-    final total = summary?.total ?? 0;
-    final mastered = summary?.masteredCount ?? 0;
+    final total = widget.summary?.total ?? 0;
+    final mastered = widget.summary?.masteredCount ?? 0;
     final ratio = total <= 0 ? 0.0 : mastered / total;
 
     return _ModePanelSection(
-      accentColor: _accent,
-      completed: completed,
-      onTap: total > 0 ? onPlay : null,
+      accentColor: _SentenceModeCell._accent,
+      completed: widget.completed,
+      onTap: total > 0
+          ? () => openSentenceTraining(
+                context,
+                ref: ref,
+                language: widget.language,
+                category: widget.category,
+                chapterNo: widget.chapterNo,
+                popupAnchorKey: _popupAnchorKey,
+              )
+          : null,
       howItWorks: _ModeHowItWorksButton(
-        accent: _accent,
+        accent: _SentenceModeCell._accent,
         guideBuilder: (dismiss) =>
             BasicSentenceModeGuideCard(onDismiss: dismiss),
       ),
-      child: _ModeVerticalBody(
-        compact: true,
-        icon: Icons.view_carousel_rounded,
-        accentColor: _accent,
-        progressColor: _progressColor,
-        progress: completed ? 1 : ratio,
-        revealProgress: revealProgress,
-        title: '문장 스피킹',
-        progressLabel: total == 0 ? '0/0' : '$mastered/$total',
-        completed: completed,
-        idlePhase: 2.1,
-        slotAlignment: slotAlignment,
+      child: KeyedSubtree(
+        key: _popupAnchorKey,
+        child: _ModeVerticalBody(
+          compact: true,
+          icon: Icons.view_carousel_rounded,
+          accentColor: _SentenceModeCell._accent,
+          progressColor: _SentenceModeCell._progressColor,
+          progress: widget.completed ? 1 : ratio,
+          revealProgress: widget.revealProgress,
+          title: '문장 스피킹',
+          progressLabel: total == 0 ? '0/0' : '$mastered/$total',
+          completed: widget.completed,
+          idlePhase: 2.1,
+          slotAlignment: widget.slotAlignment,
+        ),
       ),
     );
   }
@@ -3030,6 +3052,7 @@ class _ScenarioModeCell extends ConsumerStatefulWidget {
 
 class _ScenarioModeCellState extends ConsumerState<_ScenarioModeCell> {
   OverlayEntry? _scenarioPickerEntry;
+  final GlobalKey _popupAnchorKey = GlobalKey();
 
   @override
   void dispose() {
@@ -3056,18 +3079,21 @@ class _ScenarioModeCellState extends ConsumerState<_ScenarioModeCell> {
         accent: _ScenarioModeCell._accent,
         guideBuilder: (dismiss) => ScenarioModeGuideCard(onDismiss: dismiss),
       ),
-      child: _ModeVerticalBody(
-        compact: true,
-        icon: Icons.forum_rounded,
-        accentColor: _ScenarioModeCell._accent,
-        progressColor: const Color(0xFF38BDF8),
-        progress: widget.completed ? 1 : ratio,
-        revealProgress: widget.revealProgress,
-        title: '시나리오 롤플레잉',
-        progressLabel: total == 0 ? '0/0' : '$done/$total',
-        completed: widget.completed,
-        idlePhase: 4.2,
-        slotAlignment: widget.slotAlignment,
+      child: KeyedSubtree(
+        key: _popupAnchorKey,
+        child: _ModeVerticalBody(
+          compact: true,
+          icon: Icons.forum_rounded,
+          accentColor: _ScenarioModeCell._accent,
+          progressColor: const Color(0xFF38BDF8),
+          progress: widget.completed ? 1 : ratio,
+          revealProgress: widget.revealProgress,
+          title: '시나리오 롤플레잉',
+          progressLabel: total == 0 ? '0/0' : '$done/$total',
+          completed: widget.completed,
+          idlePhase: 4.2,
+          slotAlignment: widget.slotAlignment,
+        ),
       ),
     );
   }
@@ -3078,7 +3104,7 @@ class _ScenarioModeCellState extends ConsumerState<_ScenarioModeCell> {
       return;
     }
 
-    final resolved = _popupAnchorFor(context);
+    final resolved = _popupAnchorFor(context, anchorKey: _popupAnchorKey);
     if (resolved == null) return;
 
     final parent = context;
@@ -3345,19 +3371,23 @@ class _ModeHowItWorksOverlayState extends State<_ModeHowItWorksOverlay>
 }
 
 /// 팝업 앵커 — root overlay 좌표계 기준.
-/// 학습 탭 ShellRoute 등 중첩 Navigator·크롬 웹에서 global/overlay 좌표가
-/// 어긋나 팝업이 화면 하단에 붙는 문제를 막는다.
+/// nested Navigator·Transform 구간에서는 ancestor 변환이 어긋날 수 있어
+/// 화면 전역 좌표를 그대로 사용한다.
 ({Offset anchor, Size size, OverlayState overlay})? _popupAnchorFor(
-  BuildContext context,
-) {
-  final box = context.findRenderObject() as RenderBox?;
-  if (box == null || !box.hasSize) return null;
+  BuildContext context, {
+  GlobalKey? anchorKey,
+}) {
+  RenderBox? box;
+  final anchorContext = anchorKey?.currentContext;
+  if (anchorContext != null) {
+    box = anchorContext.findRenderObject() as RenderBox?;
+  }
+  box ??= context.findRenderObject() as RenderBox?;
+  if (box == null || !box.hasSize || !box.attached) return null;
 
   final overlay = Overlay.of(context, rootOverlay: true);
-  final overlayBox = overlay.context.findRenderObject() as RenderBox?;
-  final anchor = overlayBox != null
-      ? box.localToGlobal(Offset.zero, ancestor: overlayBox)
-      : box.localToGlobal(Offset.zero);
+  // root overlay Positioned는 화면 좌표와 동일하므로 globalToLocal 변환은 생략한다.
+  final anchor = box.localToGlobal(Offset.zero);
   return (anchor: anchor, size: box.size, overlay: overlay);
 }
 
@@ -3387,6 +3417,14 @@ class _ScenarioPickerOverlay extends StatefulWidget {
 class _ScenarioPickerOverlayState extends State<_ScenarioPickerOverlay>
     with SingleTickerProviderStateMixin {
   late final AnimationController _entry;
+  late final Animation<double> _dimOpacity;
+  late final Animation<double> _panelOpacity;
+  late final Animation<double> _scale;
+
+  bool? _opensBelow;
+  Animation<double>? _slideY;
+  Animation<double>? _tiltX;
+  Animation<double>? _liftShadow;
 
   static const _preferredPopupWidth = 292.0;
   static const _screenMargin = 14.0;
@@ -3397,8 +3435,61 @@ class _ScenarioPickerOverlayState extends State<_ScenarioPickerOverlay>
     super.initState();
     _entry = AnimationController(
       vsync: this,
-      duration: const Duration(milliseconds: 240),
-    )..forward();
+      duration: const Duration(milliseconds: 460),
+      reverseDuration: const Duration(milliseconds: 320),
+    );
+
+    _dimOpacity = CurvedAnimation(
+      parent: _entry,
+      curve: const Interval(0, 0.85, curve: Curves.easeOut),
+      reverseCurve: Curves.easeIn,
+    );
+
+    _panelOpacity = CurvedAnimation(
+      parent: _entry,
+      curve: const Interval(0, 0.72, curve: Curves.easeOutCubic),
+      reverseCurve: const Interval(0.15, 1, curve: Curves.easeInCubic),
+    );
+
+    _scale = TweenSequence<double>([
+      TweenSequenceItem(
+        tween: Tween<double>(begin: 0.72, end: 1.08).chain(
+          CurveTween(curve: Curves.easeOutCubic),
+        ),
+        weight: 55,
+      ),
+      TweenSequenceItem(
+        tween: Tween<double>(begin: 1.08, end: 1.0).chain(
+          CurveTween(curve: Curves.easeOutBack),
+        ),
+        weight: 45,
+      ),
+    ]).animate(_entry);
+
+    _entry.forward();
+  }
+
+  void _ensureDirectionalMotion(bool opensBelow) {
+    if (_opensBelow == opensBelow && _slideY != null) return;
+    _opensBelow = opensBelow;
+
+    final slideBegin = opensBelow ? -28.0 : 28.0;
+    final tiltBegin = opensBelow ? 0.18 : -0.18;
+    final motion = CurvedAnimation(
+      parent: _entry,
+      curve: Curves.easeOutBack,
+      reverseCurve: Curves.easeInCubic,
+    );
+
+    _slideY = Tween<double>(begin: slideBegin, end: 0).animate(motion);
+    _tiltX = Tween<double>(begin: tiltBegin, end: 0).animate(motion);
+    _liftShadow = Tween<double>(begin: 0.28, end: 1).animate(
+      CurvedAnimation(
+        parent: _entry,
+        curve: Curves.easeOutCubic,
+        reverseCurve: Curves.easeIn,
+      ),
+    );
   }
 
   @override
@@ -3436,17 +3527,14 @@ class _ScenarioPickerOverlayState extends State<_ScenarioPickerOverlay>
       safeTop + 120,
       size.height - bottomObstruction - _screenMargin,
     );
-    final anchorTop = widget.anchor.dy.clamp(safeTop, safeBottom);
-    final anchorBottom = (widget.anchor.dy + widget.anchorSize.height).clamp(
-      safeTop,
-      safeBottom,
-    );
+    final anchorTop = widget.anchor.dy;
+    final anchorBottom = widget.anchor.dy + widget.anchorSize.height;
     final spaceAbove = math.max(0.0, anchorTop - safeTop - _anchorGap);
     final spaceBelow = math.max(0.0, safeBottom - anchorBottom - _anchorGap);
-    // 아래 공간이 충분할 때만 아래로 — 네비·하단 근처면 위로 연다.
+    // 칩/아이콘 근처 — 아래 공간이 충분하면 아래, 아니면 위.
     final showBelow =
-        spaceBelow >= 120 &&
-        (spaceBelow >= estimatedHeight || spaceBelow >= spaceAbove);
+        spaceBelow >= estimatedHeight * 0.55 ||
+        (spaceBelow >= 120 && spaceBelow >= spaceAbove);
     final availableHeight = math.max(
       120.0,
       math.min(
@@ -3455,20 +3543,21 @@ class _ScenarioPickerOverlayState extends State<_ScenarioPickerOverlay>
       ),
     );
 
-    var left = widget.anchor.dx + widget.anchorSize.width - popupWidth;
+    var left = widget.anchor.dx + widget.anchorSize.width / 2 - popupWidth / 2;
     left = left.clamp(
       _screenMargin,
       math.max(_screenMargin, size.width - popupWidth - _screenMargin),
     );
     final popupTop = showBelow
-        ? math.min(anchorBottom + _anchorGap, safeBottom - availableHeight)
-        : math.max(safeTop, anchorTop - _anchorGap - availableHeight);
+        ? (anchorBottom + _anchorGap).clamp(safeTop, safeBottom - 80)
+        : (anchorTop - _anchorGap - availableHeight).clamp(
+            safeTop,
+            anchorTop - _anchorGap,
+          );
 
-    final curved = CurvedAnimation(
-      parent: _entry,
-      curve: Curves.easeOutBack,
-      reverseCurve: Curves.easeInCubic,
-    );
+    _ensureDirectionalMotion(showBelow);
+    final panelAlignment =
+        showBelow ? Alignment.topCenter : Alignment.bottomCenter;
 
     return Stack(
       children: [
@@ -3477,7 +3566,7 @@ class _ScenarioPickerOverlayState extends State<_ScenarioPickerOverlay>
             behavior: HitTestBehavior.opaque,
             onTap: _dismiss,
             child: FadeTransition(
-              opacity: _entry,
+              opacity: _dimOpacity,
               child: ColoredBox(color: Colors.black.withValues(alpha: 0.18)),
             ),
           ),
@@ -3486,22 +3575,56 @@ class _ScenarioPickerOverlayState extends State<_ScenarioPickerOverlay>
           left: left,
           width: popupWidth,
           top: popupTop,
-          child: FadeTransition(
-            opacity: _entry,
-            child: ScaleTransition(
-              scale: Tween<double>(begin: 0.86, end: 1).animate(curved),
-              alignment: showBelow ? Alignment.topRight : Alignment.bottomRight,
-              child: Material(
-                color: Colors.transparent,
-                child: ConstrainedBox(
-                  constraints: BoxConstraints(maxHeight: availableHeight),
-                  child: SingleChildScrollView(
-                    child: _ScenarioPickerPanel(
-                      scenarios: widget.scenarios,
-                      isCompleted: widget.isCompleted,
-                      lastPerformance: widget.lastPerformance,
-                      onSelect: widget.onSelect,
+          child: AnimatedBuilder(
+            animation: _entry,
+            builder: (context, child) {
+              final lift = _liftShadow!.value;
+              return Transform(
+                alignment: panelAlignment,
+                transform: Matrix4.identity()
+                  ..setEntry(3, 2, 0.00115)
+                  ..translateByDouble(0, _slideY!.value, 0, 1)
+                  ..rotateX(_tiltX!.value)
+                  ..scaleByDouble(_scale.value, _scale.value, 1, 1),
+                child: Opacity(
+                  opacity: _panelOpacity.value,
+                  child: DecoratedBox(
+                    decoration: BoxDecoration(
+                      borderRadius: BorderRadius.circular(16),
+                      boxShadow: [
+                        BoxShadow(
+                          color: Colors.black.withValues(
+                            alpha: 0.06 + 0.14 * lift,
+                          ),
+                          blurRadius: 10 + 26 * lift,
+                          spreadRadius: -1,
+                          offset: Offset(0, 5 + 14 * lift),
+                        ),
+                        BoxShadow(
+                          color: DashboardPalette.teal.withValues(
+                            alpha: 0.04 + 0.08 * lift,
+                          ),
+                          blurRadius: 18 + 12 * lift,
+                          spreadRadius: -4,
+                          offset: Offset(0, 8 + 6 * lift),
+                        ),
+                      ],
                     ),
+                    child: child,
+                  ),
+                ),
+              );
+            },
+            child: Material(
+              color: Colors.transparent,
+              child: ConstrainedBox(
+                constraints: BoxConstraints(maxHeight: availableHeight),
+                child: SingleChildScrollView(
+                  child: _ScenarioPickerPanel(
+                    scenarios: widget.scenarios,
+                    isCompleted: widget.isCompleted,
+                    lastPerformance: widget.lastPerformance,
+                    onSelect: widget.onSelect,
                   ),
                 ),
               ),
@@ -3833,12 +3956,18 @@ void openWordSwipeFromHub(
 
 void openSentenceTrainingFromHub(
   BuildContext context, {
+  required WidgetRef ref,
   required String language,
   required String category,
+  int? chapterNo,
+  GlobalKey? popupAnchorKey,
 }) {
-  context.push(
-    '/scenarios/sentences/play'
-    '?lang=${Uri.encodeComponent(language)}'
-    '&category=${Uri.encodeComponent(category)}',
+  openSentenceTraining(
+    context,
+    ref: ref,
+    language: language,
+    category: category,
+    chapterNo: chapterNo,
+    popupAnchorKey: popupAnchorKey,
   );
 }

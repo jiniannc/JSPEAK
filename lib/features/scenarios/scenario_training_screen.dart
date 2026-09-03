@@ -51,6 +51,7 @@ class _ScenarioTrainingScreenState extends ConsumerState<ScenarioTrainingScreen>
   /// 아무 말풍선에도 주지 않아, 승객 말풍선 subtree가 GlobalKey 부착/해제로
   /// 불필요하게 재생성(타이핑 애니메이션 리플레이)되는 것을 막는다.
   bool _tourActive = false;
+  bool _tourStarting = false;
   bool _resultSheetShowing = false;
   late final LearningTourLocalDataSource _tourLocalDataSource;
   double _lastKeyboardInset = 0;
@@ -149,6 +150,7 @@ class _ScenarioTrainingScreenState extends ConsumerState<ScenarioTrainingScreen>
 
   Future<void> _scheduleInitialTour() async {
     if (_tourScheduled || _initialTourFinished || !mounted) return;
+    _tourScheduled = true;
 
     final completed = await _tourLocalDataSource.hasCompletedScenarioTour();
     if (!mounted || completed) {
@@ -156,7 +158,6 @@ class _ScenarioTrainingScreenState extends ConsumerState<ScenarioTrainingScreen>
       return;
     }
 
-    _tourScheduled = true;
     await Future<void>.delayed(const Duration(milliseconds: 300));
     if (!mounted) return;
 
@@ -170,26 +171,31 @@ class _ScenarioTrainingScreenState extends ConsumerState<ScenarioTrainingScreen>
   }
 
   Future<void> _startScenarioTour({required bool force}) async {
-    if (!mounted || ScenarioTour.isShowing) return;
+    if (!mounted || ScenarioTour.isShowing || _tourStarting) return;
     if (!force && !_canShowScenarioTour()) return;
 
-    await _ensureTourBubbleVisible();
-    await Future<void>.delayed(const Duration(milliseconds: 480));
-    if (!mounted || ScenarioTour.isShowing) return;
+    _tourStarting = true;
+    try {
+      await _ensureTourBubbleVisible();
+      await Future<void>.delayed(const Duration(milliseconds: 480));
+      if (!mounted || ScenarioTour.isShowing) return;
 
-    setState(() => _tourActive = true);
-    await ScenarioTour.show(
-      context: context,
-      keys: _tourKeys,
-      onComplete: () async {
-        if (mounted) setState(() => _tourActive = false);
-        await _tourLocalDataSource.setCompletedScenarioTour(true);
-      },
-      onSkip: () async {
-        if (mounted) setState(() => _tourActive = false);
-        await _tourLocalDataSource.setCompletedScenarioTour(true);
-      },
-    );
+      setState(() => _tourActive = true);
+      await ScenarioTour.show(
+        context: context,
+        keys: _tourKeys,
+        onComplete: () async {
+          if (mounted) setState(() => _tourActive = false);
+          await _tourLocalDataSource.setCompletedScenarioTour(true);
+        },
+        onSkip: () async {
+          if (mounted) setState(() => _tourActive = false);
+          await _tourLocalDataSource.setCompletedScenarioTour(true);
+        },
+      );
+    } finally {
+      _tourStarting = false;
+    }
   }
 
   void _scrollToBottom() {

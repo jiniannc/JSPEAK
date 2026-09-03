@@ -756,22 +756,25 @@ class _TypeTag extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 2),
-      decoration: BoxDecoration(
-        color: DictionaryItemKindColors.chipBackground(kind),
-        borderRadius: BorderRadius.circular(6),
-        border: Border.all(color: DictionaryItemKindColors.chipBorder(kind)),
-      ),
-      child: Text(
-        label,
-        style: TextStyle(
-          fontSize: 9.5,
-          fontWeight: FontWeight.w800,
-          color: DictionaryItemKindColors.label(kind),
-          letterSpacing: -0.1,
+    return Row(
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        Icon(
+          DictionaryItemKindColors.icon(kind),
+          size: 10,
+          color: DictionaryItemKindColors.iconTint(kind),
         ),
-      ),
+        const SizedBox(width: 3),
+        Text(
+          label,
+          style: TextStyle(
+            fontSize: 9.5,
+            fontWeight: FontWeight.w800,
+            color: DictionaryItemKindColors.label(kind),
+            letterSpacing: -0.1,
+          ),
+        ),
+      ],
     );
   }
 }

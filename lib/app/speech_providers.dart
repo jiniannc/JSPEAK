@@ -1,5 +1,6 @@
 import 'dart:async';
 
+import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import 'dashboard_providers.dart';
@@ -124,6 +125,10 @@ class SpeechPracticeController extends Notifier<SpeechPracticeState> {
   bool _restartingListen = false;
   bool _enginePauseForEnabled = false;
   Sentence? _listeningSentence;
+  double _sessionPeakSoundLevel = -10;
+  DateTime? _lastSoundLevelUiEmit;
+  String _lastSpokenTextEmit = '';
+  DateTime? _lastSpokenTextUiEmit;
 
   @override
   SpeechPracticeState build() => const SpeechPracticeState();
@@ -147,6 +152,10 @@ class SpeechPracticeController extends Notifier<SpeechPracticeState> {
     _restartingListen = false;
     _enginePauseForEnabled = false;
     _listeningSentence = null;
+    _sessionPeakSoundLevel = -10;
+    _lastSoundLevelUiEmit = null;
+    _lastSpokenTextEmit = '';
+    _lastSpokenTextUiEmit = null;
     if (resetSession) {
       _sessionStartedAt = null;
     }
@@ -180,6 +189,9 @@ class SpeechPracticeController extends Notifier<SpeechPracticeState> {
   }
 
   void _handleEngineStatus(String status) {
+    // Web STT만 무음 ~1~2초 후 자체 종료 — Android에서 재시작하면 UI가 깜빡인다.
+    if (!kIsWeb) return;
+
     final sentence = _listeningSentence;
     if (sentence == null || !state.isListening) return;
     if (_autoStopping || _restartingListen || _hadSpeechDuringSession) return;
@@ -211,6 +223,9 @@ class SpeechPracticeController extends Notifier<SpeechPracticeState> {
 
     _restartingListen = true;
     try {
+      if (_service.isListening) {
+        await _service.cancelListening();
+      }
       await _service.startListening(
         localeId: speechLocaleFor(sentence.language),
         listenFor: listenFor,
@@ -240,7 +255,9 @@ class SpeechPracticeController extends Notifier<SpeechPracticeState> {
     if (isFinal) {
       _partialSilenceTimer?.cancel();
       if (!_hadSpeechDuringSession && text.trim().isEmpty) {
-        unawaited(_maybeRestartListening(sentence));
+        if (kIsWeb) {
+          unawaited(_maybeRestartListening(sentence));
+        }
         return;
       }
       _clearVadTimers();
@@ -256,6 +273,21 @@ class SpeechPracticeController extends Notifier<SpeechPracticeState> {
       return;
     }
     _handlePartialSpeech(text);
+    _emitSpokenText(text);
+  }
+
+  void _emitSpokenText(String text) {
+    if (text == _lastSpokenTextEmit) return;
+
+    final now = DateTime.now();
+    final lastEmit = _lastSpokenTextUiEmit;
+    if (lastEmit != null &&
+        now.difference(lastEmit) < const Duration(milliseconds: 120)) {
+      return;
+    }
+
+    _lastSpokenTextEmit = text;
+    _lastSpokenTextUiEmit = now;
     state = state.copyWith(spokenText: text);
   }
 
@@ -289,12 +321,10 @@ class SpeechPracticeController extends Notifier<SpeechPracticeState> {
   void _handleSoundLevel(Sentence sentence, double level) {
     if (state.activeSentenceId != sentence.id || !state.isListening) return;
 
-    final peak = level > state.peakSoundLevel ? level : state.peakSoundLevel;
-    state = state.copyWith(
-      currentSoundLevel: level,
-      peakSoundLevel: peak,
-      hadSoundLevelSample: true,
-    );
+    if (level > _sessionPeakSoundLevel) {
+      _sessionPeakSoundLevel = level;
+    }
+    final peak = _sessionPeakSoundLevel;
 
     final now = DateTime.now();
     _listeningStartedAt ??= now;
@@ -304,22 +334,37 @@ class SpeechPracticeController extends Notifier<SpeechPracticeState> {
       if (now.difference(_speechLevelAboveSince!) >= _speechConfirmDuration) {
         _onSpeechDetected();
       }
+    } else {
+      _speechLevelAboveSince = null;
+
+      if (level > _silenceThreshold) {
+        _silenceStartedAt = null;
+      } else if (_canAutoStopNow) {
+        _silenceStartedAt ??= now;
+        if (now.difference(_silenceStartedAt!) >= _silenceHoldDuration) {
+          unawaited(_triggerAutoStop());
+        }
+      }
+    }
+
+    final lastUiEmit = _lastSoundLevelUiEmit;
+    if (lastUiEmit != null &&
+        now.difference(lastUiEmit) < const Duration(milliseconds: 120)) {
+      if (peak > state.peakSoundLevel) {
+        state = state.copyWith(
+          peakSoundLevel: peak,
+          hadSoundLevelSample: true,
+        );
+      }
       return;
     }
 
-    _speechLevelAboveSince = null;
-
-    if (level > _silenceThreshold) {
-      _silenceStartedAt = null;
-      return;
-    }
-
-    if (!_canAutoStopNow) return;
-
-    _silenceStartedAt ??= now;
-    if (now.difference(_silenceStartedAt!) >= _silenceHoldDuration) {
-      unawaited(_triggerAutoStop());
-    }
+    _lastSoundLevelUiEmit = now;
+    state = state.copyWith(
+      currentSoundLevel: level,
+      peakSoundLevel: peak,
+      hadSoundLevelSample: true,
+    );
   }
 
   /// Web 등 soundLevel 콜백이 없을 때 partial STT 갱신으로 무음을 감지한다.
