@@ -54,9 +54,10 @@ class ScenarioTurnPerformance {
       ScenarioResolutionMethod.answerReveal => 0,
     };
     final efficiency = efficiencyScore;
-    final independence = switch (hintLevel.clamp(0, 2)) {
+    final independence = switch (hintLevel.clamp(0, 3)) {
       0 => 25,
-      1 => 17,
+      1 => 20,
+      2 => 14,
       _ => 8,
     };
     final speakingParticipation = usedVoice ? 10 : 0;
@@ -98,15 +99,17 @@ class ScenarioTrainingResult {
       turns.fold(0, (sum, turn) => sum + turn.voiceAttempts);
   int get totalKeyboardAttempts =>
       turns.fold(0, (sum, turn) => sum + turn.keyboardAttempts);
-  int get structureHintUses =>
+  int get audioHintUses =>
       turns.where((turn) => turn.hintLevel >= 1).length;
-  int get wordHintUses =>
+  int get structureHintUses =>
       turns.where((turn) => turn.hintLevel >= 2).length;
+  int get wordHintUses =>
+      turns.where((turn) => turn.hintLevel >= 3).length;
   int get answerRevealUses =>
       turns.where((turn) => turn.revealedAnswer).length;
 
-  /// 대사당 구조·단어 힌트 2회.
-  static const hintsPerTurn = 2;
+  /// 대사당 오디오·구조·단어 힌트 3회.
+  static const hintsPerTurn = 3;
 
   int get totalHintSlots => turns.length * hintsPerTurn;
 
@@ -146,7 +149,7 @@ class ScenarioTrainingResult {
         turns.length;
   }
 
-  /// 사용하지 않은 힌트 슬롯 비율 (0~1). 대사당 힌트 2회 기준.
+  /// 사용하지 않은 힌트 슬롯 비율 (0~1). 대사당 힌트 3회 기준.
   double get hintFreeRatio {
     if (turns.isEmpty || totalHintSlots <= 0) return 0;
     return ((totalHintSlots - totalHintsUsed) / totalHintSlots)
@@ -172,7 +175,8 @@ class ScenarioTrainingResult {
   String get coachingComment {
     if (score >= 95 &&
         voicePassedTurns == totalTurns &&
-        structureHintUses == 0) {
+        structureHintUses == 0 &&
+        audioHintUses == 0) {
       return '힌트 없이 한 번에 완벽하게 응대했어요. 다음 시나리오로 넘어가 볼까요?';
     }
     if (answerRevealUses > 0) {

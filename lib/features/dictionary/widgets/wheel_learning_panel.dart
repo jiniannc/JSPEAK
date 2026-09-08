@@ -25,6 +25,7 @@ import '../../../shared/widgets/tappable_sentence_rich_text.dart';
 
 const _kHeaderContentGap = 10.0;
 const _kDeckGap = 12.0;
+
 /// 슬라이더 + 배속/재생 행 (Material Slider 터치 타깃 포함).
 const _kPlaybackIdleInnerHeight = 90.0;
 
@@ -48,8 +49,7 @@ class WheelLearningPanel extends ConsumerStatefulWidget {
   });
 
   @override
-  ConsumerState<WheelLearningPanel> createState() =>
-      _WheelLearningPanelState();
+  ConsumerState<WheelLearningPanel> createState() => _WheelLearningPanelState();
 }
 
 class _WheelLearningPanelState extends ConsumerState<WheelLearningPanel> {
@@ -144,13 +144,14 @@ class _WheelLearningPanelState extends ConsumerState<WheelLearningPanel> {
     final spokenText = speech.spokenText.trim();
     final controller = ref.read(speechPracticeProvider.notifier);
     final isNoAudioDetected = controller.isNoAudioDetected(speech);
-    final accuracy =
-        isNoAudioDetected ? 0 : _accuracyFor(speech.spokenText);
+    final accuracy = isNoAudioDetected ? 0 : _accuracyFor(speech.spokenText);
 
     // 레이아웃 패스가 끝난 뒤 스탬프를 점등해 Overlay/LayoutBuilder 충돌을 방지한다.
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (!mounted) return;
-      ref.read(sentenceProgressProvider.notifier).recordPracticeResult(
+      ref
+          .read(sentenceProgressProvider.notifier)
+          .recordPracticeResult(
             sentenceId: widget.sentence.id,
             accuracy: accuracy,
             hasSpokenText: spokenText.isNotEmpty,
@@ -164,7 +165,9 @@ class _WheelLearningPanelState extends ConsumerState<WheelLearningPanel> {
       isNoAudioDetected: isNoAudioDetected,
       spokenText: speech.spokenText,
       onRetry: () {
-        ref.read(speechPracticeProvider.notifier).startPractice(widget.sentence);
+        ref
+            .read(speechPracticeProvider.notifier)
+            .startPractice(widget.sentence);
       },
       onNextSentence: widget.onNextSentence,
       onClose: () {},
@@ -172,7 +175,8 @@ class _WheelLearningPanelState extends ConsumerState<WheelLearningPanel> {
       if (!mounted) return;
       _coachingDialogOpen = false;
       final currentSpeech = ref.read(speechPracticeProvider);
-      final stillBusy = currentSpeech.activeSentenceId == widget.sentence.id &&
+      final stillBusy =
+          currentSpeech.activeSentenceId == widget.sentence.id &&
           (currentSpeech.isListening || currentSpeech.isRecognizing);
       if (!stillBusy) {
         _clearAnalyzingBridge();
@@ -190,8 +194,10 @@ class _WheelLearningPanelState extends ConsumerState<WheelLearningPanel> {
     final isThisAudio = audio.playingSentenceId == sentence.id;
     final isThisSpeech = speech.activeSentenceId == sentence.id;
     final hasAudio = sentence.audioUrl.isNotEmpty;
-    final stage =
-        ref.watch(sentenceProgressProvider).stats.forSentence(sentence.id);
+    final stage = ref
+        .watch(sentenceProgressProvider)
+        .stats
+        .forSentence(sentence.id);
     // 듣기 미션 — 재생 버튼으로만 hasListened가 true (isRead와 분리).
     final hasListened = stage.hasListened;
     final hasSpoken = stage.isAttempted;
@@ -338,6 +344,9 @@ class _WheelLearningPanelState extends ConsumerState<WheelLearningPanel> {
           Expanded(
             child: LayoutBuilder(
               builder: (context, constraints) {
+                // 낮은 가용 높이(주로 가로 화면)에서는 재생 덱을 압축해
+                // 말하기 CTA와 최소 문장 영역을 항상 확보한다.
+                final compactControls = constraints.maxHeight < 360;
                 final decks = Column(
                   mainAxisSize: MainAxisSize.min,
                   children: [
@@ -351,10 +360,12 @@ class _WheelLearningPanelState extends ConsumerState<WheelLearningPanel> {
                             isActive: isThisAudio,
                             isPlaying: isThisAudio && audio.isPlaying,
                             isLoading: isThisAudio && audio.loading,
-                            position:
-                                isThisAudio ? audio.position : Duration.zero,
-                            duration:
-                                isThisAudio ? audio.duration : Duration.zero,
+                            position: isThisAudio
+                                ? audio.position
+                                : Duration.zero,
+                            duration: isThisAudio
+                                ? audio.duration
+                                : Duration.zero,
                             speed: audio.playbackSpeed,
                             playheadMode: playheadMode,
                             liveText: speech.spokenText,
@@ -374,6 +385,7 @@ class _WheelLearningPanelState extends ConsumerState<WheelLearningPanel> {
                                 .seekToProgress(v),
                             onSpeed: (s) =>
                                 ref.read(audioProvider.notifier).setSpeed(s),
+                            compact: compactControls,
                           ),
                         ),
                       ),
@@ -391,12 +403,12 @@ class _WheelLearningPanelState extends ConsumerState<WheelLearningPanel> {
                             ? PlayheadVoiceMode.playback
                             : playheadMode,
                         liveText: speech.spokenText,
-                        onCompleteRecording:
-                            isThisSpeech && speech.isListening
+                        onCompleteRecording: isThisSpeech && speech.isListening
                             ? () => ref
                                   .read(speechPracticeProvider.notifier)
                                   .autoStopRecording()
                             : null,
+                        compact: compactControls,
                         onMic: () {
                           ref
                               .read(speechPracticeProvider.notifier)
@@ -441,6 +453,7 @@ class _CenteredScrollTextPane extends StatefulWidget {
 
 class _CenteredScrollTextPaneState extends State<_CenteredScrollTextPane> {
   bool _showBottomFade = false;
+  final ScrollController _textScrollController = ScrollController();
 
   void _syncScrollable(bool scrollable) {
     if (_showBottomFade == scrollable) return;
@@ -452,53 +465,81 @@ class _CenteredScrollTextPaneState extends State<_CenteredScrollTextPane> {
   }
 
   @override
+  void dispose() {
+    _textScrollController.dispose();
+    super.dispose();
+  }
+
+  @override
   Widget build(BuildContext context) {
     return LayoutBuilder(
       builder: (context, constraints) {
-        final textAreaHeight = constraints.maxHeight.isFinite
-            ? constraints.maxHeight
-            : 0.0;
         return Column(
           crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
             Expanded(
-              child: Stack(
-                children: [
-                  NotificationListener<ScrollNotification>(
-                    onNotification: (notification) {
-                      _syncScrollable(notification.metrics.maxScrollExtent > 4);
-                      return false;
-                    },
-                    child: SingleChildScrollView(
-                      physics: const ClampingScrollPhysics(),
-                      child: ConstrainedBox(
-                        constraints: BoxConstraints(minHeight: textAreaHeight),
-                        child: Center(child: widget.child),
-                      ),
-                    ),
-                  ),
-                  if (_showBottomFade)
-                    Positioned(
-                      left: 0,
-                      right: 0,
-                      bottom: 0,
-                      height: 18,
-                      child: IgnorePointer(
-                        child: DecoratedBox(
-                          decoration: BoxDecoration(
-                            gradient: LinearGradient(
-                              begin: Alignment.topCenter,
-                              end: Alignment.bottomCenter,
-                              colors: [
-                                Colors.white.withValues(alpha: 0),
-                                Colors.white.withValues(alpha: 0.92),
-                              ],
+              // footer가 레이아웃된 뒤의 실제 남은 높이를 기준으로 문장을
+              // 중앙 정렬한다. 전체 높이를 minHeight로 사용하면 footer 높이가
+              // 중복되어 텍스트가 카드 밖으로 밀려난다.
+              child: LayoutBuilder(
+                builder: (context, textConstraints) {
+                  final textAreaHeight = textConstraints.maxHeight.isFinite
+                      ? textConstraints.maxHeight
+                      : 0.0;
+                  WidgetsBinding.instance.addPostFrameCallback((_) {
+                    if (!_textScrollController.hasClients) return;
+                    _syncScrollable(
+                      _textScrollController.position.maxScrollExtent > 4,
+                    );
+                  });
+                  return Stack(
+                    children: [
+                      NotificationListener<ScrollNotification>(
+                        onNotification: (notification) {
+                          _syncScrollable(
+                            notification.metrics.maxScrollExtent > 4,
+                          );
+                          return false;
+                        },
+                        child: SingleChildScrollView(
+                          controller: _textScrollController,
+                          // 실제로 넘칠 때만 세로 드래그를 받는다. 짧은 문장에서
+                          // 불필요하게 스크롤되는 느낌을 제거한다.
+                          physics: _showBottomFade
+                              ? const ClampingScrollPhysics()
+                              : const NeverScrollableScrollPhysics(),
+                          child: ConstrainedBox(
+                            constraints: BoxConstraints(
+                              minHeight: textAreaHeight,
                             ),
+                            child: Center(child: widget.child),
                           ),
                         ),
                       ),
-                    ),
-                ],
+                      if (_showBottomFade)
+                        Positioned(
+                          left: 0,
+                          right: 0,
+                          bottom: 0,
+                          height: 18,
+                          child: IgnorePointer(
+                            child: DecoratedBox(
+                              decoration: BoxDecoration(
+                                gradient: LinearGradient(
+                                  begin: Alignment.topCenter,
+                                  end: Alignment.bottomCenter,
+                                  colors: [
+                                    Colors.white.withValues(alpha: 0),
+                                    Colors.white.withValues(alpha: 0.92),
+                                  ],
+                                ),
+                              ),
+                            ),
+                          ),
+                        ),
+                    ],
+                  );
+                },
               ),
             ),
             if (widget.footer != null) ...[
@@ -526,6 +567,7 @@ class _GlassPlaybackDeck extends StatelessWidget {
   final VoidCallback onRestart;
   final ValueChanged<double> onSeek;
   final ValueChanged<double> onSpeed;
+  final bool compact;
 
   const _GlassPlaybackDeck({
     required this.accent,
@@ -541,6 +583,7 @@ class _GlassPlaybackDeck extends StatelessWidget {
     required this.onRestart,
     required this.onSeek,
     required this.onSpeed,
+    this.compact = false,
   });
 
   String _fmt(Duration d) {
@@ -560,113 +603,175 @@ class _GlassPlaybackDeck extends StatelessWidget {
       fillColor: Colors.white.withValues(alpha: 0.42),
       blurSigma: 8,
       child: Container(
-        padding: const EdgeInsets.fromLTRB(10, 8, 10, 8),
-        child: PronunciationPlayheadMorph(
-            mode: playheadMode,
-            liveText: liveText,
-            playbackChild: Column(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                SizedBox(
-                  height: _kPlaybackIdleInnerHeight - 42,
-                  child: Row(
-                    children: [
-                      Expanded(
-                        child: SliderTheme(
-                          data: SliderTheme.of(context).copyWith(
-                            trackHeight: 3,
-                            thumbShape: const RoundSliderThumbShape(
-                              enabledThumbRadius: 6,
-                            ),
-                            overlayShape: const RoundSliderOverlayShape(
-                              overlayRadius: 12,
-                            ),
-                            activeTrackColor: accent,
-                            inactiveTrackColor: accent.withValues(alpha: 0.14),
-                            thumbColor: accent,
-                            overlayColor: accent.withValues(alpha: 0.12),
+        padding: compact
+            ? const EdgeInsets.symmetric(horizontal: 10, vertical: 6)
+            : const EdgeInsets.fromLTRB(10, 8, 10, 8),
+        child: compact
+            ? SizedBox(
+                height: 42,
+                child: Row(
+                  children: [
+                    Expanded(
+                      child: SliderTheme(
+                        data: SliderTheme.of(context).copyWith(
+                          trackHeight: 3,
+                          thumbShape: const RoundSliderThumbShape(
+                            enabledThumbRadius: 6,
                           ),
-                          child: Slider(
-                            value: progress.clamp(0.0, 1.0),
-                            onChanged: isActive ? onSeek : null,
+                          overlayShape: const RoundSliderOverlayShape(
+                            overlayRadius: 12,
                           ),
+                          activeTrackColor: accent,
+                          inactiveTrackColor: accent.withValues(alpha: 0.14),
+                          thumbColor: accent,
+                        ),
+                        child: Slider(
+                          value: progress.clamp(0.0, 1.0),
+                          onChanged: isActive ? onSeek : null,
                         ),
                       ),
-                      const SizedBox(width: 6),
-                      Text(
-                        _fmt(isActive ? position : Duration.zero),
-                        style: const TextStyle(
-                          fontSize: 10,
-                          fontWeight: FontWeight.w600,
-                          color: DashboardPalette.textMuted,
-                          fontFeatures: [FontFeature.tabularFigures()],
-                        ),
-                      ),
-                      Text(
-                        ' / ${_fmt(isActive ? duration : Duration.zero)}',
-                        style: TextStyle(
-                          fontSize: 10,
-                          fontWeight: FontWeight.w500,
-                          color:
-                              DashboardPalette.textMuted.withValues(alpha: 0.7),
-                          fontFeatures: const [FontFeature.tabularFigures()],
-                        ),
-                      ),
-                    ],
-                  ),
-                ),
-                SizedBox(
-                  height: 42,
-                  child: Row(
-                    children: [
-                      for (final s in const [0.5, 0.75, 1.0])
-                        Padding(
-                          padding: const EdgeInsets.only(right: 4),
-                          child: _SpeedChip(
-                            label: s == 1.0 ? '1×' : '$s×',
-                            selected: (speed - s).abs() < 0.01,
-                            accent: accent,
-                            onTap: () => onSpeed(s),
-                          ),
-                        ),
-                      const Spacer(),
-                      _GlassRoundButton(
-                        accent: accent,
-                        size: 36,
-                        tooltip: '처음부터',
-                        onTap: onRestart,
-                        icon: Icon(Icons.replay_rounded, size: 18, color: accent),
-                      ),
-                      const SizedBox(width: 6),
-                      _GlassRoundButton(
-                        accent: accent,
-                        size: 42,
-                        tooltip: isPlaying ? '일시정지' : '재생',
-                        onTap: onPlayPause,
-                        icon: isLoading
-                            ? SizedBox(
-                                width: 18,
-                                height: 18,
-                                child: CircularProgressIndicator(
-                                  strokeWidth: 2,
-                                  color: accent,
-                                ),
-                              )
-                            : Icon(
-                                isPlaying
-                                    ? Icons.pause_rounded
-                                    : Icons.play_arrow_rounded,
-                                size: 22,
+                    ),
+                    const SizedBox(width: 6),
+                    _GlassRoundButton(
+                      accent: accent,
+                      size: 38,
+                      tooltip: isPlaying ? '일시정지' : '재생',
+                      onTap: onPlayPause,
+                      icon: isLoading
+                          ? SizedBox(
+                              width: 16,
+                              height: 16,
+                              child: CircularProgressIndicator(
+                                strokeWidth: 2,
                                 color: accent,
                               ),
-                      ),
-                    ],
-                  ),
+                            )
+                          : Icon(
+                              isPlaying
+                                  ? Icons.pause_rounded
+                                  : Icons.play_arrow_rounded,
+                              size: 22,
+                              color: accent,
+                            ),
+                    ),
+                  ],
                 ),
-              ],
-            ),
-          ),
-        ),
+              )
+            : PronunciationPlayheadMorph(
+                mode: playheadMode,
+                liveText: liveText,
+                playbackChild: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    SizedBox(
+                      height: _kPlaybackIdleInnerHeight - 42,
+                      child: Row(
+                        children: [
+                          Expanded(
+                            child: SliderTheme(
+                              data: SliderTheme.of(context).copyWith(
+                                trackHeight: 3,
+                                thumbShape: const RoundSliderThumbShape(
+                                  enabledThumbRadius: 6,
+                                ),
+                                overlayShape: const RoundSliderOverlayShape(
+                                  overlayRadius: 12,
+                                ),
+                                activeTrackColor: accent,
+                                inactiveTrackColor: accent.withValues(
+                                  alpha: 0.14,
+                                ),
+                                thumbColor: accent,
+                                overlayColor: accent.withValues(alpha: 0.12),
+                              ),
+                              child: Slider(
+                                value: progress.clamp(0.0, 1.0),
+                                onChanged: isActive ? onSeek : null,
+                              ),
+                            ),
+                          ),
+                          const SizedBox(width: 6),
+                          Text(
+                            _fmt(isActive ? position : Duration.zero),
+                            style: const TextStyle(
+                              fontSize: 10,
+                              fontWeight: FontWeight.w600,
+                              color: DashboardPalette.textMuted,
+                              fontFeatures: [FontFeature.tabularFigures()],
+                            ),
+                          ),
+                          Text(
+                            ' / ${_fmt(isActive ? duration : Duration.zero)}',
+                            style: TextStyle(
+                              fontSize: 10,
+                              fontWeight: FontWeight.w500,
+                              color: DashboardPalette.textMuted.withValues(
+                                alpha: 0.7,
+                              ),
+                              fontFeatures: const [
+                                FontFeature.tabularFigures(),
+                              ],
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                    SizedBox(
+                      height: 42,
+                      child: Row(
+                        children: [
+                          for (final s in const [0.5, 0.75, 1.0])
+                            Padding(
+                              padding: const EdgeInsets.only(right: 4),
+                              child: _SpeedChip(
+                                label: s == 1.0 ? '1×' : '$s×',
+                                selected: (speed - s).abs() < 0.01,
+                                accent: accent,
+                                onTap: () => onSpeed(s),
+                              ),
+                            ),
+                          const Spacer(),
+                          _GlassRoundButton(
+                            accent: accent,
+                            size: 36,
+                            tooltip: '처음부터',
+                            onTap: onRestart,
+                            icon: Icon(
+                              Icons.replay_rounded,
+                              size: 18,
+                              color: accent,
+                            ),
+                          ),
+                          const SizedBox(width: 6),
+                          _GlassRoundButton(
+                            accent: accent,
+                            size: 42,
+                            tooltip: isPlaying ? '일시정지' : '재생',
+                            onTap: onPlayPause,
+                            icon: isLoading
+                                ? SizedBox(
+                                    width: 18,
+                                    height: 18,
+                                    child: CircularProgressIndicator(
+                                      strokeWidth: 2,
+                                      color: accent,
+                                    ),
+                                  )
+                                : Icon(
+                                    isPlaying
+                                        ? Icons.pause_rounded
+                                        : Icons.play_arrow_rounded,
+                                    size: 22,
+                                    color: accent,
+                                  ),
+                          ),
+                        ],
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+      ),
     );
   }
 }
@@ -681,6 +786,7 @@ class _GlassPracticeDeck extends StatelessWidget {
   final String liveText;
   final VoidCallback? onCompleteRecording;
   final VoidCallback onMic;
+  final bool compact;
 
   const _GlassPracticeDeck({
     required this.accent,
@@ -692,6 +798,7 @@ class _GlassPracticeDeck extends StatelessWidget {
     required this.liveText,
     this.onCompleteRecording,
     required this.onMic,
+    this.compact = false,
   });
 
   @override
@@ -715,28 +822,28 @@ class _GlassPracticeDeck extends StatelessWidget {
       child: Container(
         padding: const EdgeInsets.all(10),
         child: Column(
-            crossAxisAlignment: CrossAxisAlignment.stretch,
-            children: [
-              if (playheadMode != PlayheadVoiceMode.playback) ...[
-                PronunciationPlayheadMorph(
-                  mode: playheadMode,
-                  liveText: liveText,
-                  playbackChild: const SizedBox.shrink(),
-                ),
-                const SizedBox(height: 8),
-              ],
-              speakButton,
-              if (isActive && speech.error != null) ...[
-                const SizedBox(height: 8),
-                Text(
-                  speech.error!,
-                  textAlign: TextAlign.center,
-                  style: const TextStyle(fontSize: 11, color: Colors.red),
-                ),
-              ],
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            if (!compact && playheadMode != PlayheadVoiceMode.playback) ...[
+              PronunciationPlayheadMorph(
+                mode: playheadMode,
+                liveText: liveText,
+                playbackChild: const SizedBox.shrink(),
+              ),
+              const SizedBox(height: 8),
             ],
-          ),
+            speakButton,
+            if (isActive && speech.error != null) ...[
+              const SizedBox(height: 8),
+              Text(
+                speech.error!,
+                textAlign: TextAlign.center,
+                style: const TextStyle(fontSize: 11, color: Colors.red),
+              ),
+            ],
+          ],
         ),
+      ),
     );
   }
 }
@@ -894,18 +1001,9 @@ class _WheelBookmarkToggleState extends State<_WheelBookmarkToggle> {
         ? Container(
             decoration: const BoxDecoration(
               shape: BoxShape.circle,
-              boxShadow: [
-                BoxShadow(
-                  color: Color(0x40F59E0B),
-                  blurRadius: 6,
-                ),
-              ],
+              boxShadow: [BoxShadow(color: Color(0x40F59E0B), blurRadius: 6)],
             ),
-            child: const Icon(
-              Icons.star_rounded,
-              size: 20,
-              color: gold,
-            ),
+            child: const Icon(Icons.star_rounded, size: 20, color: gold),
           )
         : Icon(
             Icons.star_outline_rounded,
@@ -958,7 +1056,10 @@ class _GlassRoundButton extends StatelessWidget {
         child: SizedBox(
           width: size,
           height: size,
-          child: Semantics(label: tooltip, child: Center(child: icon)),
+          child: Semantics(
+            label: tooltip,
+            child: Center(child: icon),
+          ),
         ),
       ),
     );
@@ -989,10 +1090,7 @@ class _PanelGlassShell extends StatelessWidget {
     if (kIsWeb) {
       return ClipRRect(
         borderRadius: borderRadius,
-        child: DecoratedBox(
-          decoration: decoration,
-          child: child,
-        ),
+        child: DecoratedBox(decoration: decoration, child: child),
       );
     }
 
@@ -1001,10 +1099,7 @@ class _PanelGlassShell extends StatelessWidget {
       child: RepaintBoundary(
         child: BackdropFilter(
           filter: ImageFilter.blur(sigmaX: blurSigma, sigmaY: blurSigma),
-          child: DecoratedBox(
-            decoration: decoration,
-            child: child,
-          ),
+          child: DecoratedBox(decoration: decoration, child: child),
         ),
       ),
     );

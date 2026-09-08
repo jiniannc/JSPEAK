@@ -24,6 +24,17 @@ void main() {
         'assets/images/avatar_wink.png',
       );
     });
+
+    test('male crew avatarm_ prefix resolves under assets/images', () {
+      expect(
+        resolveAvatarAssetPath('avatarm_snacks'),
+        'assets/images/avatarm_snacks.png',
+      );
+      expect(
+        resolveAvatarAssetPath('avatarm_creditcard.png'),
+        'assets/images/avatarm_creditcard.png',
+      );
+    });
   });
 
   group('ScenarioLine avatar_image', () {

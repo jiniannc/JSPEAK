@@ -6,7 +6,7 @@ import '../../../shared/widgets/hint_run_badge.dart';
 import '../../../shared/widgets/sleek_speech_bubble.dart';
 import '../scenario_word_hints.dart';
 
-/// 언더라인 바 아래에 배치되는 두 번째 힌트 말풍선 줄.
+/// 언더라인 바 아래에 배치되는 세 번째 힌트 말풍선 줄.
 class ScenarioWordHintLane extends StatelessWidget {
   final List<ScenarioWordHint> hints;
   final Set<int> dismissedRunIndices;

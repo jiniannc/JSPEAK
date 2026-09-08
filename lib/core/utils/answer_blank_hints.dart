@@ -368,6 +368,29 @@ class AnswerBlankHints {
     language: language,
   ).join();
 
+  /// [displayLetters] 슬롯이 속하는 가라오케 토큰 인덱스.
+  /// 영어는 단어, CJK는 글자(공백 제외) 단위.
+  static int karaokeTokenIndexForLetter({
+    required List<BlankLetter> letters,
+    required int letterIndex,
+    required String language,
+  }) {
+    if (letterIndex <= 0 || letters.isEmpty) return 0;
+    final last = letterIndex.clamp(0, letters.length - 1);
+    if (WordCompare.isCjkLanguage(language)) {
+      var idx = 0;
+      for (var i = 0; i < last; i++) {
+        if (!letters[i].isGap) idx++;
+      }
+      return idx;
+    }
+    var idx = 0;
+    for (var i = 0; i < last; i++) {
+      if (letters[i].isGap) idx++;
+    }
+    return idx;
+  }
+
   static List<String> _rawMatchLetters(
     String text, {
     required String language,
@@ -1214,6 +1237,10 @@ class AnswerBlankHintView extends StatefulWidget {
   final ValueChanged<int>? onBlankTap;
   final bool showHintRunLabels;
   final bool keyboardTyping;
+  /// TTS 가라오케 — 현재 읽고 있는 토큰. null이면 비활성.
+  final int? karaokeTokenIndex;
+  /// 힌트 공개 후 빈칸 영역을 한 번 강조하는 트리거.
+  final int attentionToken;
 
   const AnswerBlankHintView({
     super.key,
@@ -1231,6 +1258,8 @@ class AnswerBlankHintView extends StatefulWidget {
     this.onBlankTap,
     this.showHintRunLabels = false,
     this.keyboardTyping = false,
+    this.karaokeTokenIndex,
+    this.attentionToken = 0,
   });
 
   @override
@@ -1245,10 +1274,13 @@ class _AnswerBlankHintViewState extends State<AnswerBlankHintView>
 
   /// 줄 사이 간격.
   static const double _lineGap = 6.0;
+  /// 측정 폭 vs 실제 렌더(폰트·테두리·가ra오케) 오차 흡수.
+  static const double _linePackSlack = 8.0;
 
   late final AnimationController _pulse;
   late final AnimationController _revealController;
   late final AnimationController _blankFlashController;
+  late final AnimationController _attentionController;
 
   List<int>? _structureRevealOrder;
   bool _structureRevealComplete = false;
@@ -1273,8 +1305,17 @@ class _AnswerBlankHintViewState extends State<AnswerBlankHintView>
       vsync: this,
       duration: const Duration(milliseconds: 900),
     );
+    _attentionController = AnimationController(
+      vsync: this,
+      duration: const Duration(milliseconds: 1050),
+    );
     if (widget.structureRevealed) {
       _beginStructureReveal();
+    } else if (widget.karaokeTokenIndex != null) {
+      _pulse.repeat(reverse: true);
+    }
+    if (widget.attentionToken > 0) {
+      _attentionController.forward(from: 0);
     }
   }
 
@@ -1293,10 +1334,18 @@ class _AnswerBlankHintViewState extends State<AnswerBlankHintView>
         ..stop()
         ..value = 0;
     }
+    if (widget.attentionToken != oldWidget.attentionToken) {
+      _blankFlashController.forward(from: 0);
+      _attentionController.forward(from: 0);
+      if (!_pulse.isAnimating) {
+        _pulse.repeat(reverse: true);
+      }
+    }
 
-    if (widget.structureRevealed && !_pulse.isAnimating) {
+    final karaokeOn = widget.karaokeTokenIndex != null;
+    if ((widget.structureRevealed || karaokeOn) && !_pulse.isAnimating) {
       _pulse.repeat(reverse: true);
-    } else if (!widget.structureRevealed && _pulse.isAnimating) {
+    } else if (!widget.structureRevealed && !karaokeOn && _pulse.isAnimating) {
       _pulse
         ..stop()
         ..value = 0;
@@ -1358,11 +1407,25 @@ class _AnswerBlankHintViewState extends State<AnswerBlankHintView>
     return selected != keyWordIndex;
   }
 
+  _KaraokeLetterRole _karaokeRoleFor(List<BlankLetter> letters, int letterIndex) {
+    final active = widget.karaokeTokenIndex;
+    if (active == null) return _KaraokeLetterRole.none;
+    final token = AnswerBlankHints.karaokeTokenIndexForLetter(
+      letters: letters,
+      letterIndex: letterIndex,
+      language: widget.language,
+    );
+    if (token < active) return _KaraokeLetterRole.past;
+    if (token == active) return _KaraokeLetterRole.current;
+    return _KaraokeLetterRole.upcoming;
+  }
+
   @override
   void dispose() {
     _pulse.dispose();
     _revealController.dispose();
     _blankFlashController.dispose();
+    _attentionController.dispose();
     super.dispose();
   }
 
@@ -1449,6 +1512,7 @@ class _AnswerBlankHintViewState extends State<AnswerBlankHintView>
       return [groups];
     }
 
+    final budget = math.max(0.0, maxWidth - _linePackSlack);
     final lines = <List<_VisualGroup>>[];
     var currentLine = <_VisualGroup>[];
     var currentW = 0.0;
@@ -1458,7 +1522,7 @@ class _AnswerBlankHintViewState extends State<AnswerBlankHintView>
       final gap = currentLine.isEmpty ? 0.0 : _layout.groupGap;
       final needed = gap + groupW;
 
-      if (currentLine.isNotEmpty && currentW + needed > maxWidth) {
+      if (currentLine.isNotEmpty && currentW + needed > budget) {
         lines.add(currentLine);
         currentLine = [group];
         currentW = groupW;
@@ -1503,6 +1567,7 @@ class _AnswerBlankHintViewState extends State<AnswerBlankHintView>
         _pulse,
         _revealController,
         _blankFlashController,
+        _attentionController,
       ]),
       builder: (context, _) {
         return Column(
@@ -1512,15 +1577,27 @@ class _AnswerBlankHintViewState extends State<AnswerBlankHintView>
             for (var li = 0; li < lines.length; li++)
               Padding(
                 padding: EdgeInsets.only(top: li > 0 ? _lineGap : 0),
-                child: Row(
-                  mainAxisSize: MainAxisSize.min,
-                  crossAxisAlignment: CrossAxisAlignment.end,
-                  children: [
-                    for (var gi = 0; gi < lines[li].length; gi++) ...[
-                      if (gi > 0) SizedBox(width: _layout.groupGap),
-                      _buildVisualGroup(letters, states, muted, lines[li][gi]),
-                    ],
-                  ],
+                child: ClipRect(
+                  child: ConstrainedBox(
+                    constraints: BoxConstraints(
+                      maxWidth: widget.maxWidth ?? double.infinity,
+                    ),
+                    child: Row(
+                      mainAxisSize: MainAxisSize.min,
+                      crossAxisAlignment: CrossAxisAlignment.end,
+                      children: [
+                        for (var gi = 0; gi < lines[li].length; gi++) ...[
+                          if (gi > 0) SizedBox(width: _layout.groupGap),
+                          _buildVisualGroup(
+                            letters,
+                            states,
+                            muted,
+                            lines[li][gi],
+                          ),
+                        ],
+                      ],
+                    ),
+                  ),
                 ),
               ),
           ],
@@ -1560,7 +1637,21 @@ class _AnswerBlankHintViewState extends State<AnswerBlankHintView>
         j++;
       }
 
-      final wordRow = Row(
+      var wordKaraoke = _KaraokeLetterRole.none;
+      if (widget.karaokeTokenIndex != null) {
+        for (final idx in spanIndices) {
+          final role = _karaokeRoleFor(letters, idx);
+          if (role == _KaraokeLetterRole.current) {
+            wordKaraoke = _KaraokeLetterRole.current;
+            break;
+          }
+          if (role == _KaraokeLetterRole.past) {
+            wordKaraoke = _KaraokeLetterRole.past;
+          }
+        }
+      }
+
+      Widget wordRow = Row(
         mainAxisSize: MainAxisSize.min,
         crossAxisAlignment: CrossAxisAlignment.end,
         children: [
@@ -1586,10 +1677,32 @@ class _AnswerBlankHintViewState extends State<AnswerBlankHintView>
               ),
               dimmed: letters[spanIndices[k]].isKey &&
                   _isDimmedKeyBlank(letters[spanIndices[k]].keyWordIndex),
+              karaokeRole: _karaokeRoleFor(letters, spanIndices[k]),
             ),
           ],
         ],
       );
+
+      if (wordKaraoke == _KaraokeLetterRole.current) {
+        final t = Curves.easeInOut.transform(_pulse.value);
+        wordRow = DecoratedBox(
+          decoration: BoxDecoration(
+            color: widget.accentColor.withValues(alpha: 0.14 + t * 0.08),
+            borderRadius: BorderRadius.circular(6),
+            boxShadow: [
+              BoxShadow(
+                color: widget.accentColor.withValues(alpha: 0.16 + t * 0.14),
+                blurRadius: 8 + t * 4,
+                spreadRadius: 0.2,
+              ),
+            ],
+          ),
+          child: Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 2, vertical: 1),
+            child: wordRow,
+          ),
+        );
+      }
 
       children.add(wordRow);
     }
@@ -1635,6 +1748,7 @@ class _AnswerBlankHintViewState extends State<AnswerBlankHintView>
     );
 
     const borderWidth = 2.0;
+    final attention = math.sin(_attentionController.value * math.pi);
     final Color borderColor;
     Color? fillColor;
     List<BoxShadow>? glow;
@@ -1662,14 +1776,20 @@ class _AnswerBlankHintViewState extends State<AnswerBlankHintView>
         borderColor = _runBorderColor.withValues(alpha: 0.12);
       } else {
         borderColor =
-            _runBorderColor.withValues(alpha: 0.42 + t * 0.28 + flash * 0.22);
+            _runBorderColor.withValues(
+              alpha: 0.42 + t * 0.28 + flash * 0.22 + attention * 0.18,
+            );
         if (flash > 0.02) {
-          fillColor = _runBorderColor.withValues(alpha: 0.04 + flash * 0.10);
+          fillColor = _runBorderColor.withValues(
+            alpha: 0.04 + flash * 0.10 + attention * 0.10,
+          );
           glow = [
             BoxShadow(
-              color: _runBorderColor.withValues(alpha: 0.14 + flash * 0.22),
-              blurRadius: 6 + flash * 8,
-              spreadRadius: flash * 0.6,
+              color: _runBorderColor.withValues(
+                alpha: 0.14 + flash * 0.22 + attention * 0.22,
+              ),
+              blurRadius: 6 + flash * 8 + attention * 10,
+              spreadRadius: flash * 0.6 + attention * 1.2,
             ),
           ];
         } else {
@@ -1684,7 +1804,10 @@ class _AnswerBlankHintViewState extends State<AnswerBlankHintView>
       }
     }
 
-    final boxed = DecoratedBox(
+    final boxed = Transform.scale(
+      scale: 1 + attention * 0.045,
+      alignment: Alignment.center,
+      child: DecoratedBox(
       decoration: BoxDecoration(
         borderRadius: BorderRadius.circular(8),
         color: fillColor,
@@ -1695,6 +1818,7 @@ class _AnswerBlankHintViewState extends State<AnswerBlankHintView>
         boxShadow: glow,
       ),
       child: padded,
+      ),
     );
 
     if (!tappable) {
@@ -1717,12 +1841,17 @@ class _AnswerBlankHintViewState extends State<AnswerBlankHintView>
       return child;
     }
     return Stack(
-      clipBehavior: Clip.none,
+      // 바깥 레이아웃이 ClipRect를 사용하므로, 배지까지 포함한 높이를
+      // Stack 안에 확보해야 세 번째 힌트의 번호 윗부분이 잘리지 않는다.
+      clipBehavior: Clip.hardEdge,
       children: [
-        child,
+        Padding(
+          padding: const EdgeInsets.only(top: 7),
+          child: child,
+        ),
         Positioned(
-          top: -5,
-          left: -4,
+          top: 0,
+          left: 0,
           child: HintRunBadge(
             number: runIndex + 1,
             color: widget.accentColor,
@@ -1812,6 +1941,8 @@ class _VisualGroup {
   bool get isKeyRun => runIndex != null;
 }
 
+enum _KaraokeLetterRole { none, upcoming, current, past }
+
 class _LetterSlot extends StatelessWidget {
   final BlankLetterState state;
   final String correctChar;
@@ -1824,6 +1955,7 @@ class _LetterSlot extends StatelessWidget {
   final String blankPlaceholder;
   final double revealT;
   final bool dimmed;
+  final _KaraokeLetterRole karaokeRole;
 
   const _LetterSlot({
     required this.state,
@@ -1837,6 +1969,7 @@ class _LetterSlot extends StatelessWidget {
     required this.blankPlaceholder,
     this.revealT = 1.0,
     this.dimmed = false,
+    this.karaokeRole = _KaraokeLetterRole.none,
   });
 
   @override
@@ -1888,6 +2021,13 @@ class _LetterSlot extends StatelessWidget {
       barColor = accent.withValues(alpha: dimmed ? 0.18 : 0.4);
     } else if (effectiveKind == BlankRevealKind.wrong) {
       barColor = wrongColor.withValues(alpha: 0.7);
+    } else if (karaokeRole == _KaraokeLetterRole.current) {
+      barColor = accent;
+      barHeight = 3.0;
+    } else if (karaokeRole == _KaraokeLetterRole.past) {
+      barColor = accent.withValues(alpha: 0.45);
+    } else if (karaokeRole == _KaraokeLetterRole.upcoming) {
+      barColor = muted.withValues(alpha: 0.22);
     } else {
       barColor = dimmed ? muted.withValues(alpha: 0.28) : muted;
     }

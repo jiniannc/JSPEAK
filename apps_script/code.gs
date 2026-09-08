@@ -22,11 +22,14 @@
  *  E: word | F: pronunciation (IPA) | G: meaning | H: description
  *  I: popular | J: important (Yes/No)
  *
- * 시나리오 시트 (scenarios_en / scenarios_jp / scenarios_cn, 1행은 헤더):
+ * 시나리오 시트 (scenarios_en / scenarios_jp / scenarios_cn, 1행은 헤더 필수):
  *  A: scenario_id | B: chapter_no | C: chapter_name | D: avatar_image
  *  E: title | F: order | G: speaker | H: text_ko | I: text_target
  *  J: pronunciation | K: blank_frame | L: flight_stage | M: level | N: new
- *  avatar_image: `avatar_normal` 또는 `avatar_normal.png`
+ *  O: audio (선택) | P: audio_start (선택) | Q: audio_end (선택)
+ *
+ * text_ko 열이 없으면 H열에 text_target만 두어도 됨 (헤더명 text_target).
+ * 1행 헤더는 영문 권장: scenario_id, chapter_no, … (한글만 있으면 컬럼 인식 실패)
  *
  * audio 열: Google Drive **파일 ID** 또는 **공유 링크(URL)** 둘 다 가능.
  * "링크 복사"로 받은 주소를 그대로 붙여넣으면 Apps Script가 ID를 추출한다.
@@ -89,6 +92,12 @@ function normalizeAvatarImage(raw) {
   path = path.replace(/^assets\/images\//i, '');
   path = path.replace(/^images\//i, '');
   if (/\.(png|jpe?g|webp|gif)$/i.test(path)) {
+    return path.replace(/^\/+/, '');
+  }
+  if (/^avatarm?_/i.test(path)) {
+    if (!/\.(png|jpe?g|webp|gif)$/i.test(path)) {
+      return path + '.png';
+    }
     return path.replace(/^\/+/, '');
   }
   if (/^avatar_/i.test(path)) {
@@ -199,6 +208,9 @@ function getScenarios(sheetName) {
     flight_stage: 11,
     level: 12,
     new: 13,
+    audio: 14,
+    audio_start: 15,
+    audio_end: 16,
   };
 
   const HEADER_ALIASES = {
@@ -216,6 +228,9 @@ function getScenarios(sheetName) {
     chapter_name: ['chapter_name', 'chaptername', 'chapter_title'],
     chapter_image: ['chapter_image', 'chapterimage', 'chapter_thumb', 'chapter_thumbnail'],
     avatar_image: ['avatar_image', 'avatarimage', 'avatar', 'character_image'],
+    audio: ['audio', 'audio_url', 'audiourl', 'recording', 'voice'],
+    audio_start: ['audio_start', 'audiostart', 'audio_start_sec', 'karaoke_start'],
+    audio_end: ['audio_end', 'audioend', 'audio_end_sec', 'karaoke_end'],
     new: ['new', 'is_new', 'isnew', 'new_content'],
   };
 
@@ -240,6 +255,28 @@ function getScenarios(sheetName) {
     return s === 'true' || s === '1' || s === 'yes' || s === 'y';
   }
 
+  function parseOptionalNumber(v) {
+    if (v === undefined || v === null || v === '') return null;
+    const n = parseFloat(String(v).trim());
+    return isNaN(n) ? null : n;
+  }
+
+  function readScenarioTextFields(row, useHeader) {
+    if (useHeader) {
+      return {
+        text_ko: String(readCell(row, 'text_ko')).trim(),
+        text_target: String(readCell(row, 'text_target')).trim(),
+      };
+    }
+    const maybeKo = row[FALLBACK.text_ko] != null ? String(row[FALLBACK.text_ko]).trim() : '';
+    const maybeTarget =
+      row[FALLBACK.text_target] != null ? String(row[FALLBACK.text_target]).trim() : '';
+    if (maybeTarget) {
+      return { text_ko: maybeKo, text_target: maybeTarget };
+    }
+    return { text_ko: '', text_target: maybeKo };
+  }
+
   function parseRows(useHeader) {
     const rows = [];
     for (let i = 1; i < data.length; i++) {
@@ -254,14 +291,15 @@ function getScenarios(sheetName) {
 
       const chapterNoRaw = useHeader ? readCell(row, 'chapter_no') : row[FALLBACK.chapter_no];
       const chapterNo = parseInt(chapterNoRaw) || 1;
+      const texts = readScenarioTextFields(row, useHeader);
 
       rows.push({
         scenario_id: idText,
         title: String(useHeader ? readCell(row, 'title') : row[FALLBACK.title]).trim(),
         order: parseInt(useHeader ? readCell(row, 'order') : row[FALLBACK.order]) || 0,
         speaker: useHeader ? readCell(row, 'speaker') : row[FALLBACK.speaker],
-        text_ko: useHeader ? readCell(row, 'text_ko') : row[FALLBACK.text_ko],
-        text_target: useHeader ? readCell(row, 'text_target') : row[FALLBACK.text_target],
+        text_ko: texts.text_ko,
+        text_target: texts.text_target,
         pronunciation: useHeader ? readCell(row, 'pronunciation') : row[FALLBACK.pronunciation],
         blank_frame: useHeader ? readCell(row, 'blank_frame') : row[FALLBACK.blank_frame],
         flight_stage: useHeader ? readCell(row, 'flight_stage') : row[FALLBACK.flight_stage],
@@ -270,6 +308,13 @@ function getScenarios(sheetName) {
         chapter_name: String(useHeader ? readCell(row, 'chapter_name') : row[FALLBACK.chapter_name]).trim(),
         avatar_image: normalizeAvatarImage(
           useHeader ? readCell(row, 'avatar_image') : row[FALLBACK.avatar_image]
+        ),
+        audio: resolveAudioUrl(useHeader ? readCell(row, 'audio') : row[FALLBACK.audio]),
+        audio_start: parseOptionalNumber(
+          useHeader ? readCell(row, 'audio_start') : row[FALLBACK.audio_start]
+        ),
+        audio_end: parseOptionalNumber(
+          useHeader ? readCell(row, 'audio_end') : row[FALLBACK.audio_end]
         ),
         new: parseBoolCell(useHeader ? readCell(row, 'new') : row[FALLBACK.new]),
       });

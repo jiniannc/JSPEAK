@@ -1,23 +1,34 @@
 import 'dart:async';
 import 'dart:math' as math;
 
+import 'package:flutter/foundation.dart' show debugPrint, kIsWeb;
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:just_audio/just_audio.dart';
 
 import '../data/datasources/local/scenario_progress_local_datasource.dart';
+import '../data/models/content_bundle.dart';
 import '../data/models/scenario.dart';
 import '../data/models/scenario_chapter.dart';
 import '../data/models/scenario_line.dart';
 import '../data/models/scenario_training_result.dart';
+import '../data/repositories/content_repository.dart';
 import '../data/repositories/scenario_progress_repository.dart';
 import 'dictionary_providers.dart';
 import 'learning_hub_language_provider.dart';
 import 'providers.dart';
 import 'speech_providers.dart';
+import '../core/network/apps_script_fetch.dart';
+import '../core/services/audio_bytes_cache.dart';
+import '../core/services/audio_player_service.dart';
+import '../core/services/dio_stream_audio_source.dart';
 import '../core/services/speech_recognition_service.dart';
 import '../core/constants/labels.dart';
 import '../core/utils/answer_blank_hints.dart';
+import '../core/utils/karaoke_word_index.dart';
 import '../core/utils/scenario_answer_compare.dart';
+import '../core/utils/scenario_hint_audio.dart';
 import '../core/utils/word_compare.dart';
+import 'tts_providers.dart';
 
 final scenarioProgressLocalDataSourceProvider =
     Provider<ScenarioProgressLocalDataSource>(
@@ -230,7 +241,7 @@ class ChatMessage {
   final String? spokenText;
   /// 빈칸 틀(blank_frame) 힌트를 말풍선 안에 표시.
   final bool showBlankFrame;
-  /// 두 번째 힌트 — 빈칸 단어 뜻 말풍선.
+  /// 세 번째 힌트 — 빈칸 단어 뜻 말풍선.
   final bool showWordHints;
   /// 정답으로 전환된 상태 (맞추거나 정답 보기).
   final bool isResolved;
@@ -277,8 +288,14 @@ class ScenarioTrainingState {
   final String language;
   final List<ChatMessage> messages;
   final int currentLineIndex;
-  /// 힌트 단계: 1=한국어(기본), 2=빈칸틀, 3=전체정답 힌트.
+  /// 힌트 단계: 1=없음, 2=TTS 가라오케, 3=빈칸틀, 4=단어 뜻.
   final int hintStage;
+  static const hintStageNone = 1;
+  static const hintStageAudio = 2;
+  static const hintStageStructure = 3;
+  static const hintStageWordMeaning = 4;
+  /// TTS 가라오케로 읽고 있는 토큰. null이면 비활성.
+  final int? karaokeTokenIndex;
   final int submitCount;
   final bool isListening;
   final bool isInitializingStt;
@@ -290,6 +307,10 @@ class ScenarioTrainingState {
   final EnglishSpeakingWrongKind? speakingWrongKind;
   /// 오답 시 셰이크 트리거 (값이 바뀔 때마다 재생).
   final int shakeToken;
+  /// 사용자가 다음 행동을 알 수 있도록 마이크를 강조하는 트리거.
+  final int micAttentionToken;
+  /// 힌트 2·3 공개 후 빈칸 박스를 강조하는 트리거.
+  final int blankAttentionToken;
   final bool lastAttemptCorrect;
   final bool isCompleted;
   final bool isTypingMode;
@@ -305,7 +326,8 @@ class ScenarioTrainingState {
     required this.language,
     this.messages = const [],
     this.currentLineIndex = 0,
-    this.hintStage = 1,
+    this.hintStage = hintStageNone,
+    this.karaokeTokenIndex,
     this.submitCount = 0,
     this.isListening = false,
     this.isInitializingStt = false,
@@ -315,6 +337,8 @@ class ScenarioTrainingState {
     this.feedback = TrainingFeedback.start,
     this.speakingWrongKind,
     this.shakeToken = 0,
+    this.micAttentionToken = 0,
+    this.blankAttentionToken = 0,
     this.lastAttemptCorrect = false,
     this.isCompleted = false,
     this.isTypingMode = false,
@@ -328,6 +352,8 @@ class ScenarioTrainingState {
     List<ChatMessage>? messages,
     int? currentLineIndex,
     int? hintStage,
+    int? karaokeTokenIndex,
+    bool clearKaraoke = false,
     int? submitCount,
     bool? isListening,
     bool? isInitializingStt,
@@ -338,6 +364,8 @@ class ScenarioTrainingState {
     EnglishSpeakingWrongKind? speakingWrongKind,
     bool clearSpeakingWrongKind = false,
     int? shakeToken,
+    int? micAttentionToken,
+    int? blankAttentionToken,
     bool? lastAttemptCorrect,
     bool? isCompleted,
     bool? isTypingMode,
@@ -355,6 +383,9 @@ class ScenarioTrainingState {
       messages: messages ?? this.messages,
       currentLineIndex: currentLineIndex ?? this.currentLineIndex,
       hintStage: hintStage ?? this.hintStage,
+      karaokeTokenIndex: clearKaraoke
+          ? null
+          : (karaokeTokenIndex ?? this.karaokeTokenIndex),
       submitCount: submitCount ?? this.submitCount,
       isListening: isListening ?? this.isListening,
       isInitializingStt: isInitializingStt ?? this.isInitializingStt,
@@ -366,6 +397,8 @@ class ScenarioTrainingState {
           ? null
           : (speakingWrongKind ?? this.speakingWrongKind),
       shakeToken: shakeToken ?? this.shakeToken,
+      micAttentionToken: micAttentionToken ?? this.micAttentionToken,
+      blankAttentionToken: blankAttentionToken ?? this.blankAttentionToken,
       lastAttemptCorrect: lastAttemptCorrect ?? this.lastAttemptCorrect,
       isCompleted: isCompleted ?? this.isCompleted,
       isTypingMode: isTypingMode ?? this.isTypingMode,
@@ -378,11 +411,18 @@ class ScenarioTrainingState {
     );
   }
 
-  bool get canRevealMoreHints => hintStage < 3;
+  bool get canRevealMoreHints => hintStage < hintStageWordMeaning;
+
+  /// 다음에 쓸 힌트 버튼 문구.
+  String get nextHintLabel => switch (hintStage) {
+        <= hintStageNone => '힌트',
+        hintStageAudio => '두 번째 힌트',
+        _ => '세 번째 힌트',
+      };
 
   /// 힌트가 열려 빈칸 터치 입력 모드인지.
   bool get isBlankFillMode {
-    if (hintStage < 2 || isCompleted) return false;
+    if (hintStage < hintStageStructure || isCompleted) return false;
     for (var i = messages.length - 1; i >= 0; i--) {
       final m = messages[i];
       if (m.kind == ChatBubbleKind.crewTurn && !m.isResolved) {
@@ -429,7 +469,9 @@ class ScenarioTrainingState {
           ? '조금 더 크게 말씀해 보세요 🗣️'
           : '듣고 있어요 — 말씀이 끝나면 자동으로 채점됩니다 ✓',
       TrainingFeedback.wrong => _wrongGuidanceText(),
-      TrainingFeedback.hint => '제공된 힌트를 참고해서 천천히 따라 읽어보세요! ✨',
+      TrainingFeedback.hint => karaokeTokenIndex != null
+          ? '승무원 대사를 듣고, 빈칸 문장을 따라가 보세요! ✨'
+          : '제공된 힌트를 참고해서 천천히 따라 읽어보세요! ✨',
       TrainingFeedback.correct => '완벽합니다! 다음 대화로 넘어갈게요. 🎉',
       TrainingFeedback.start =>
         '위 문장을 ${languageLabel(language)}로 말해보세요! 🎙️',
@@ -496,6 +538,12 @@ class ScenarioTrainingController extends Notifier<ScenarioTrainingState> {
   ScenarioLine? _listeningLine;
   bool _gradingInProgress = false;
   final Map<int, _ScenarioTurnAccumulator> _turnPerformance = {};
+  int _hintTtsGen = 0;
+  Timer? _karaokeFallbackTimer;
+  bool _usedNativeKaraokeProgress = false;
+  StreamSubscription<Duration>? _hintAudioPositionSub;
+  final Set<String> _prefetchedHintUrls = {};
+  int _scenarioPrefetchGen = 0;
 
   List<ScenarioLine> get _lines => _scenario?.lines ?? [];
 
@@ -506,7 +554,12 @@ class ScenarioTrainingController extends Notifier<ScenarioTrainingState> {
   ScenarioTrainingState build() {
     ref.onDispose(() {
       _sessionActive = false;
+      _hintTtsGen++;
+      _karaokeFallbackTimer?.cancel();
+      _hintAudioPositionSub?.cancel();
       _stt.cancelListening();
+      ref.read(ttsServiceProvider).stop();
+      ref.read(audioPlayerServiceProvider).stop();
     });
     return const ScenarioTrainingState(scenarioId: '', language: 'English');
   }
@@ -516,11 +569,78 @@ class ScenarioTrainingController extends Notifier<ScenarioTrainingState> {
     _msgSeq = 0;
     _turnPerformance.clear();
     _scenario = scenario;
+    _prefetchedHintUrls.clear();
     state = ScenarioTrainingState(
       scenarioId: scenario.id,
       language: scenario.language,
     );
+    unawaited(_prefetchScenarioHintAudio(scenario));
     _beginCurrentLine();
+  }
+
+  Future<void> _prefetchScenarioHintAudio(Scenario scenario) async {
+    final gen = ++_scenarioPrefetchGen;
+
+    ContentBundle? bundle = ref.read(contentProvider).value?.bundle;
+    for (var attempt = 0; bundle == null && attempt < 60; attempt++) {
+      if (gen != _scenarioPrefetchGen || !ref.mounted) return;
+      await Future<void>.delayed(const Duration(milliseconds: 100));
+      bundle = ref.read(contentProvider).value?.bundle;
+    }
+    if (bundle == null) return;
+
+    final urls = <String>{};
+    for (final line in scenario.lines) {
+      if (!line.isCrew) continue;
+      final hint = resolveScenarioHintAudio(
+        line: line,
+        sentences: bundle.sentences,
+      );
+      for (final clip in hint.clips) {
+        if (clip.playbackUrl.isNotEmpty) {
+          urls.add(clip.playbackUrl);
+        }
+      }
+    }
+    if (urls.isEmpty || gen != _scenarioPrefetchGen) return;
+
+    await _prefetchHintUrls(urls);
+  }
+
+  Future<void> _prefetchHintUrls(Set<String> urls) async {
+    if (urls.isEmpty) return;
+    final pending = urls
+        .where((url) => !_prefetchedHintUrls.contains(url))
+        .toList();
+    if (pending.isEmpty) return;
+
+    if (kIsWeb) {
+      await Future.wait(
+        pending.map((url) async {
+          try {
+            await AudioBytesCache.instance.getOrFetch(url);
+            _prefetchedHintUrls.add(url);
+          } catch (_) {}
+        }),
+      );
+      return;
+    }
+
+    final repo = ref.read(contentRepositoryProvider);
+    await Future.wait(
+      pending.map((url) async {
+        try {
+          await repo.cacheAudioInBackground(url);
+          _prefetchedHintUrls.add(url);
+        } catch (_) {}
+      }),
+    );
+  }
+
+  Future<void> _prefetchHintClips(List<HintAudioClip> clips) async {
+    await _prefetchHintUrls(
+      clips.map((clip) => clip.playbackUrl).where((url) => url.isNotEmpty).toSet(),
+    );
   }
 
   _ScenarioTurnAccumulator _performanceFor(ScenarioLine line) =>
@@ -542,6 +662,15 @@ class ScenarioTrainingController extends Notifier<ScenarioTrainingState> {
   }
 
   Future<void> _beginCurrentLine() async {
+    // 새 시나리오의 첫 말풍선은 이전 오디오 정리 완료를 기다릴 이유가 없다.
+    // 특히 웹에서는 player.stop()이 늦게 끝날 수 있어 첫 화면이 비는 원인이 된다.
+    final isInitialCrewReveal =
+        state.currentLineIndex == 0 && state.messages.isEmpty;
+    if (isInitialCrewReveal) {
+      unawaited(_stopHintTts());
+    } else {
+      await _stopHintTts();
+    }
     final line = _currentLine;
     if (line == null) {
       await _completeScenario();
@@ -559,9 +688,10 @@ class ScenarioTrainingController extends Notifier<ScenarioTrainingState> {
             kind: ChatBubbleKind.passenger,
           ),
         ],
-        hintStage: 1,
+        hintStage: ScenarioTrainingState.hintStageNone,
         submitCount: 0,
         clearSpokenText: true,
+        clearKaraoke: true,
         clearError: true,
         lastAttemptCorrect: false,
         soundLevel: 0,
@@ -585,9 +715,10 @@ class ScenarioTrainingController extends Notifier<ScenarioTrainingState> {
             kind: ChatBubbleKind.crewTurn,
           ),
         ],
-        hintStage: 1,
+        hintStage: ScenarioTrainingState.hintStageNone,
         submitCount: 0,
         clearSpokenText: true,
+        clearKaraoke: true,
         clearError: true,
         clearSelectedBlank: true,
         blankInputs: const [],
@@ -597,6 +728,7 @@ class ScenarioTrainingController extends Notifier<ScenarioTrainingState> {
         soundLevel: 0,
         isVolumeLow: false,
         feedback: TrainingFeedback.start,
+        micAttentionToken: state.micAttentionToken + 1,
       );
     }
   }
@@ -879,9 +1011,12 @@ class ScenarioTrainingController extends Notifier<ScenarioTrainingState> {
       return;
     }
 
+    await _stopHintTts();
+
     state = state.copyWith(
       isInitializingStt: true,
       clearSpokenText: true,
+      clearKaraoke: true,
       clearSpeakingWrongKind: true,
       clearSelectedBlank: true,
       clearError: true,
@@ -952,6 +1087,8 @@ class ScenarioTrainingController extends Notifier<ScenarioTrainingState> {
       await _stt.cancelListening();
     }
 
+    await _stopHintTts();
+
     if (enabled && state.isBlankFillMode) {
       final idx = state.selectedBlankIndex ?? _firstEmptyBlankIndex() ?? 0;
       selectBlank(idx);
@@ -964,6 +1101,7 @@ class ScenarioTrainingController extends Notifier<ScenarioTrainingState> {
       soundLevel: 0,
       isVolumeLow: false,
       clearSpokenText: enabled,
+      clearKaraoke: true,
       clearError: true,
       clearSelectedBlank: true,
       feedback: TrainingFeedback.start,
@@ -1199,45 +1337,479 @@ class ScenarioTrainingController extends Notifier<ScenarioTrainingState> {
     );
   }
 
-  /// 힌트 보기 — 1차: blank_frame / 2차: 빈칸 단어 뜻 말풍선.
+  /// 힌트 보기 — 1차: TTS 가라오케 / 2차: blank_frame / 3차: 빈칸 단어 뜻.
   void revealNextHint() {
     if (!state.canRevealMoreHints || state.isCompleted) return;
     final line = _currentLine;
     if (line == null || !line.isCrew) return;
 
-    if (state.hintStage < 2) {
+    if (state.hintStage < ScenarioTrainingState.hintStageAudio) {
       _performanceFor(line).hintLevel =
           math.max(_performanceFor(line).hintLevel, 1);
-      final runs = line.blankFrame.trim().isEmpty
-          ? const <List<int>>[]
-          : _keyRunsFor(line);
-
+      final hintAudio = _resolveHintAudio(line);
+      final initialKaraoke = hintAudio.clips.isNotEmpty
+          ? hintAudio.clips.first.karaokeTokenStart
+          : 0;
       state = state.copyWith(
-        hintStage: 2,
-        messages: _updateActiveCrew(
-          (m) => m.copyWith(showBlankFrame: true),
-        ),
-        blankInputs: List<String>.filled(runs.length, ''),
-        clearSelectedBlank: true,
-        isTypingMode: false,
+        hintStage: ScenarioTrainingState.hintStageAudio,
+        karaokeTokenIndex: initialKaraoke,
         isListening: false,
         clearSpokenText: true,
         feedback: TrainingFeedback.hint,
         clearError: true,
       );
+      unawaited(_playHintTts(line));
+      return;
+    }
+
+    unawaited(_stopHintTts());
+
+    if (state.hintStage < ScenarioTrainingState.hintStageStructure) {
+      _performanceFor(line).hintLevel =
+          math.max(_performanceFor(line).hintLevel, 2);
+      final runs = line.blankFrame.trim().isEmpty
+          ? const <List<int>>[]
+          : _keyRunsFor(line);
+
+      state = state.copyWith(
+        hintStage: ScenarioTrainingState.hintStageStructure,
+        messages: _updateActiveCrew(
+          (m) => m.copyWith(showBlankFrame: true),
+        ),
+        blankInputs: List<String>.filled(runs.length, ''),
+        clearSelectedBlank: true,
+        clearKaraoke: true,
+        isTypingMode: false,
+        isListening: false,
+        clearSpokenText: true,
+        feedback: TrainingFeedback.hint,
+        clearError: true,
+        micAttentionToken: state.micAttentionToken + 1,
+        blankAttentionToken: state.blankAttentionToken + 1,
+      );
       return;
     }
 
     _performanceFor(line).hintLevel =
-        math.max(_performanceFor(line).hintLevel, 2);
+        math.max(_performanceFor(line).hintLevel, 3);
     state = state.copyWith(
-      hintStage: 3,
+      hintStage: ScenarioTrainingState.hintStageWordMeaning,
       messages: _updateActiveCrew(
         (m) => m.copyWith(showWordHints: true),
       ),
+      clearKaraoke: true,
       feedback: TrainingFeedback.hint,
       clearError: true,
+      micAttentionToken: state.micAttentionToken + 1,
+      blankAttentionToken: state.blankAttentionToken + 1,
     );
+  }
+
+  Future<void> _stopHintTts() async {
+    _hintTtsGen++;
+    _usedNativeKaraokeProgress = false;
+    _karaokeFallbackTimer?.cancel();
+    _karaokeFallbackTimer = null;
+    await _hintAudioPositionSub?.cancel();
+    _hintAudioPositionSub = null;
+    await ref.read(ttsServiceProvider).stop();
+    await ref.read(audioPlayerServiceProvider).stop();
+  }
+
+  ScenarioHintAudio _resolveHintAudio(ScenarioLine line) {
+    final bundle = ref.read(contentProvider).value?.bundle;
+    return resolveScenarioHintAudio(
+      line: line,
+      sentences: bundle?.sentences ?? const [],
+    );
+  }
+
+  Future<void> _playHintTts(ScenarioLine line) async {
+    final gen = ++_hintTtsGen;
+    _usedNativeKaraokeProgress = false;
+    _karaokeFallbackTimer?.cancel();
+    _karaokeFallbackTimer = null;
+    await _hintAudioPositionSub?.cancel();
+    _hintAudioPositionSub = null;
+    var finished = false;
+
+    try {
+      final hintAudio = _resolveHintAudio(line);
+      if (hintAudio.isAvailable) {
+        final played = await _playHintRecordingChain(line, hintAudio, gen);
+        if (played) return;
+        debugPrint('힌트 녹음 클립은 찾았지만 재생 실패 — 전체 TTS 폴백 생략');
+        return;
+      }
+
+      Future<void>.delayed(const Duration(milliseconds: 420), () {
+        if (finished || gen != _hintTtsGen || !ref.mounted) return;
+        if (_usedNativeKaraokeProgress) return;
+        _startKaraokeFallback(line, gen);
+      });
+      await _speakHintWithBuiltInTts(line, gen);
+    } finally {
+      finished = true;
+      if (gen == _hintTtsGen) {
+        _karaokeFallbackTimer?.cancel();
+        _karaokeFallbackTimer = null;
+        await _hintAudioPositionSub?.cancel();
+        _hintAudioPositionSub = null;
+        if (ref.mounted) {
+          state = state.copyWith(
+            clearKaraoke: true,
+            // 힌트 1의 오디오/TTS가 모두 끝난 뒤에만 다시 말하기를 유도한다.
+            micAttentionToken:
+                state.hintStage == ScenarioTrainingState.hintStageAudio
+                ? state.micAttentionToken + 1
+                : state.micAttentionToken,
+          );
+        }
+      }
+    }
+  }
+
+  Future<bool> _playHintRecordingChain(
+    ScenarioLine line,
+    ScenarioHintAudio hintAudio,
+    int gen,
+  ) async {
+    if (hintAudio.clips.length > 1) {
+      return _playHintRecordingConcatenated(line, hintAudio, gen);
+    }
+    if (hintAudio.clips.length == 1) {
+      return _playHintClip(line, hintAudio.clips.single, gen);
+    }
+    return false;
+  }
+
+  Future<AudioSource> _audioSourceForHintClip(
+    HintAudioClip clip,
+    ContentRepository repo,
+  ) async {
+    final url = clip.playbackUrl;
+    if (!kIsWeb) {
+      final localPath =
+          await repo.cachedAudioPath(url) ?? await repo.localAudioPath(url);
+      if (localPath != null) {
+        return AudioSource.file(localPath);
+      }
+    }
+
+    if (kIsWeb || AppsScriptFetch.isWebAppUrl(url)) {
+      return DioStreamAudioSource(url);
+    }
+    return AudioSource.uri(Uri.parse(url));
+  }
+
+  Future<void> _waitForPlayerReady(
+    AudioPlayerService service, {
+    Duration timeout = const Duration(seconds: 8),
+  }) async {
+    await service.playerStateStream
+        .firstWhere(
+          (state) =>
+              state.processingState == ProcessingState.ready ||
+              state.processingState == ProcessingState.completed,
+        )
+        .timeout(timeout);
+  }
+
+  Future<List<Duration>> _resolveClipDurations(
+    AudioPlayerService service,
+    int clipCount,
+  ) async {
+    for (var attempt = 0; attempt < 40; attempt++) {
+      final fromSequence = service.sequence
+          .map((source) => source.duration ?? Duration.zero)
+          .toList();
+      if (fromSequence.length >= clipCount &&
+          fromSequence.take(clipCount).every((d) => d.inMilliseconds > 0)) {
+        return fromSequence.take(clipCount).toList();
+      }
+
+      final total = await service.resolveDuration();
+      if (total.inMilliseconds > 0 && clipCount == 1) {
+        return [total];
+      }
+
+      await Future<void>.delayed(const Duration(milliseconds: 80));
+    }
+    return List<Duration>.filled(clipCount, Duration.zero);
+  }
+
+  Future<bool> _waitForHintPlaybackEnd(
+    AudioPlayerService service,
+    int gen, {
+    required int expectedTotalMs,
+  }) async {
+    final timeoutMs = expectedTotalMs > 0 ? expectedTotalMs + 12000 : 90000;
+    final done = Completer<void>();
+    late StreamSubscription<PlayerState> stateSub;
+    late StreamSubscription<Duration> positionSub;
+
+    void tryComplete() {
+      if (done.isCompleted) return;
+      if (gen != _hintTtsGen) {
+        done.complete();
+        return;
+      }
+      final posMs = service.position.inMilliseconds;
+      if (expectedTotalMs > 0 && posMs >= expectedTotalMs - 120) {
+        done.complete();
+      }
+    }
+
+    stateSub = service.playerStateStream.listen((playerState) {
+      if (gen != _hintTtsGen) {
+        done.complete();
+        return;
+      }
+      if (playerState.processingState == ProcessingState.completed) {
+        done.complete();
+        return;
+      }
+      if (!playerState.playing &&
+          expectedTotalMs > 0 &&
+          service.position.inMilliseconds >= expectedTotalMs - 250) {
+        done.complete();
+      }
+    });
+
+    positionSub = service.positionStream.listen((_) => tryComplete());
+
+    try {
+      await done.future.timeout(Duration(milliseconds: timeoutMs));
+    } on TimeoutException {
+      // 재생은 끝났을 가능성이 큼 — TTS 폴백으로 넘기지 않는다.
+    } finally {
+      await stateSub.cancel();
+      await positionSub.cancel();
+    }
+
+    return gen == _hintTtsGen && ref.mounted;
+  }
+
+  int _resolveKaraokePositionMs({
+    required AudioPlayerService service,
+    required Stopwatch stopwatch,
+    required Duration playbackAnchor,
+    List<Duration>? clipDurations,
+    required int maxPosMs,
+  }) {
+    final watchMs = playbackAnchor.inMilliseconds + stopwatch.elapsedMilliseconds;
+
+    if (clipDurations != null && clipDurations.length > 1) {
+      final index = service.currentIndex ?? 0;
+      var offsetMs = 0;
+      for (var i = 0; i < index && i < clipDurations.length; i++) {
+        offsetMs += clipDurations[i].inMilliseconds;
+      }
+      // ConcatenatingAudioSource는 클립 전환 시 position이 0으로 리셋될 수 있다.
+      final estimatedMs = offsetMs + service.position.inMilliseconds;
+      if (estimatedMs + 120 < maxPosMs) {
+        return math.max(maxPosMs, watchMs);
+      }
+      return math.max(maxPosMs, estimatedMs);
+    }
+
+    final playerMs = service.position.inMilliseconds;
+    final estimatedMs = playerMs > playbackAnchor.inMilliseconds + 50
+        ? playerMs
+        : watchMs;
+    return math.max(maxPosMs, estimatedMs);
+  }
+
+  void _startRecordedKaraoke({
+    required int gen,
+    required AudioPlayerService service,
+    required Stopwatch stopwatch,
+    required Duration playbackAnchor,
+    required List<({HintAudioClip clip, Duration start, Duration end})> segments,
+    List<Duration>? clipDurations,
+  }) {
+    _karaokeFallbackTimer?.cancel();
+    if (segments.isEmpty) return;
+
+    _usedNativeKaraokeProgress = true;
+    var maxPosMs = 0;
+    _karaokeFallbackTimer = Timer.periodic(const Duration(milliseconds: 40), (t) {
+      if (gen != _hintTtsGen || !ref.mounted) {
+        t.cancel();
+        return;
+      }
+
+      final posMs = _resolveKaraokePositionMs(
+        service: service,
+        stopwatch: stopwatch,
+        playbackAnchor: playbackAnchor,
+        clipDurations: clipDurations,
+        maxPosMs: maxPosMs,
+      );
+      maxPosMs = posMs;
+      for (final segment in segments) {
+        final startMs = segment.start.inMilliseconds;
+        final endMs = segment.end.inMilliseconds;
+        if (endMs <= startMs || posMs < startMs || posMs >= endMs) {
+          continue;
+        }
+
+        _usedNativeKaraokeProgress = true;
+        final spanMs = endMs - startMs;
+        final elapsedMs = (posMs - startMs).clamp(0, spanMs);
+        final ratio = elapsedMs / spanMs;
+        final tokenCount = segment.clip.karaokeTokenCount;
+        if (tokenCount <= 0) return;
+
+        final localIdx = (ratio * tokenCount)
+            .floor()
+            .clamp(0, math.max(0, tokenCount - 1))
+            .toInt();
+        final globalIdx = segment.clip.karaokeTokenStart + localIdx;
+        if (globalIdx != state.karaokeTokenIndex) {
+          state = state.copyWith(karaokeTokenIndex: globalIdx);
+        }
+        return;
+      }
+    });
+  }
+
+  Future<bool> _playHintRecordingConcatenated(
+    ScenarioLine line,
+    ScenarioHintAudio hintAudio,
+    int gen,
+  ) async {
+    if (gen != _hintTtsGen || !ref.mounted) return false;
+
+    try {
+      // 웹 just_audio의 ConcatenatingAudioSource는 클립 전환 때 position과
+      // currentIndex가 비동기적으로 갱신돼 두 번째 문장의 가라오케 기준이
+      // 흔들릴 수 있다. 각 녹음을 독립 재생해 그 클립의 시간축만 사용한다.
+      for (final clip in hintAudio.clips) {
+        final played = await _playHintClip(line, clip, gen);
+        if (!played || gen != _hintTtsGen || !ref.mounted) return false;
+      }
+      return true;
+    } catch (e, st) {
+      debugPrint('힌트 연속 녹음 재생 실패');
+      debugPrint('$e\n$st');
+      await ref.read(audioPlayerServiceProvider).stop();
+      return false;
+    }
+  }
+
+  Future<bool> _playHintClip(
+    ScenarioLine line,
+    HintAudioClip clip,
+    int gen,
+  ) async {
+    if (gen != _hintTtsGen || !ref.mounted) return false;
+
+    final service = ref.read(audioPlayerServiceProvider);
+    final repo = ref.read(contentRepositoryProvider);
+
+    try {
+      await ref.read(audioProvider.notifier).stop();
+      await _hintAudioPositionSub?.cancel();
+      _hintAudioPositionSub = null;
+
+      if (ref.mounted) {
+        state = state.copyWith(karaokeTokenIndex: clip.karaokeTokenStart);
+      }
+
+      unawaited(_prefetchHintClips([clip]));
+      if (gen != _hintTtsGen || !ref.mounted) return false;
+
+      final source = await _audioSourceForHintClip(clip, repo);
+      await service.loadConcatenating([source]);
+      await _waitForPlayerReady(service);
+
+      final duration = await _resolveClipDurations(service, 1).then(
+        (durations) => durations.isNotEmpty ? durations.first : Duration.zero,
+      );
+      final (segmentStart, segmentEnd) = clip.segment.resolveBounds(duration);
+      if (segmentStart.inMilliseconds > 0) {
+        await service.seek(segmentStart);
+      }
+
+      final stopwatch = Stopwatch()..start();
+      await service.startPlayback();
+      if (gen != _hintTtsGen || !ref.mounted) return false;
+
+      _startRecordedKaraoke(
+        gen: gen,
+        service: service,
+        stopwatch: stopwatch,
+        playbackAnchor: segmentStart,
+        segments: [
+          (clip: clip, start: segmentStart, end: segmentEnd),
+        ],
+      );
+      if (segmentEnd.inMilliseconds <= segmentStart.inMilliseconds) {
+        _startKaraokeFallback(line, gen);
+      }
+
+      final segmentMs = segmentEnd.inMilliseconds - segmentStart.inMilliseconds;
+      return await _waitForHintPlaybackEnd(
+        service,
+        gen,
+        expectedTotalMs: segmentMs > 0 ? segmentEnd.inMilliseconds : duration.inMilliseconds,
+      );
+    } catch (e, st) {
+      debugPrint('힌트 녹음 재생 실패: ${clip.playbackUrl}');
+      debugPrint('$e\n$st');
+      await service.stop();
+      return false;
+    }
+  }
+
+  Future<void> _speakHintWithBuiltInTts(ScenarioLine line, int gen) async {
+    await ref.read(ttsServiceProvider).speakWithProgress(
+      line.textTarget,
+      language: line.language,
+      onProgress: (start, end, word) {
+        if (gen != _hintTtsGen || !ref.mounted) return;
+        if (!_usedNativeKaraokeProgress) {
+          _usedNativeKaraokeProgress = true;
+          _karaokeFallbackTimer?.cancel();
+          _karaokeFallbackTimer = null;
+        }
+        final idx = KaraokeWordIndex.resolveFromOffset(
+          sentence: line.textTarget,
+          language: line.language,
+          startOffset: start,
+        );
+        if (idx == null || idx == state.karaokeTokenIndex) return;
+        state = state.copyWith(karaokeTokenIndex: idx);
+      },
+    );
+  }
+
+  void _startKaraokeFallback(ScenarioLine line, int gen) {
+    _karaokeFallbackTimer?.cancel();
+    final tokens = WordCompare.splitTokens(
+      line.textTarget,
+      language: line.language,
+    );
+    if (tokens.isEmpty) return;
+
+    final msPer = WordCompare.isCjkLanguage(line.language) ? 210 : 300;
+    var idx = 0;
+    if (ref.mounted && state.karaokeTokenIndex != 0) {
+      state = state.copyWith(karaokeTokenIndex: 0);
+    }
+    _karaokeFallbackTimer = Timer.periodic(Duration(milliseconds: msPer), (t) {
+      if (gen != _hintTtsGen || !ref.mounted) {
+        t.cancel();
+        return;
+      }
+      idx++;
+      if (idx >= tokens.length) {
+        t.cancel();
+        return;
+      }
+      state = state.copyWith(karaokeTokenIndex: idx);
+    });
   }
 
   /// 정답 보기 — 같은 말풍선을 정답으로 변형 후 다음 턴.
@@ -1251,6 +1823,8 @@ class ScenarioTrainingController extends Notifier<ScenarioTrainingState> {
       await _stt.cancelListening();
     }
 
+    await _stopHintTts();
+
     _performanceFor(line).resolutionMethod =
         ScenarioResolutionMethod.answerReveal;
     _performanceFor(line)
@@ -1261,7 +1835,7 @@ class ScenarioTrainingController extends Notifier<ScenarioTrainingState> {
       isTypingMode: false,
       soundLevel: 0,
       isVolumeLow: false,
-      hintStage: 2,
+      hintStage: ScenarioTrainingState.hintStageStructure,
       messages: _updateActiveCrew(
         (m) => m.copyWith(
           isResolved: true,
@@ -1269,6 +1843,7 @@ class ScenarioTrainingController extends Notifier<ScenarioTrainingState> {
           resolvedByAnswerReveal: true,
         ),
       ),
+      clearKaraoke: true,
       feedback: TrainingFeedback.hint,
       clearError: true,
     );
@@ -1283,7 +1858,7 @@ class ScenarioTrainingController extends Notifier<ScenarioTrainingState> {
     _gradingInProgress = true;
 
     final wasTyping = state.isTypingMode;
-    final hintShown = state.hintStage >= 2;
+    final hintShown = state.hintStage >= ScenarioTrainingState.hintStageStructure;
 
     state = state.copyWith(
       isListening: false,
@@ -1387,6 +1962,7 @@ class ScenarioTrainingController extends Notifier<ScenarioTrainingState> {
   /// TTS·STT 등 오디오 리소스를 즉시 해제한다.
   Future<void> stopAll() async {
     _sessionActive = false;
+    await _stopHintTts();
     _clearVadTimers();
     await _stt.cancelListening();
     state = state.copyWith(
@@ -1395,6 +1971,7 @@ class ScenarioTrainingController extends Notifier<ScenarioTrainingState> {
       soundLevel: 0,
       isVolumeLow: false,
       clearSpokenText: true,
+      clearKaraoke: true,
       clearError: true,
     );
   }

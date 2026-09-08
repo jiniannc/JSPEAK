@@ -102,7 +102,10 @@ void openSentenceTraining(
   final box = ctx.findRenderObject() as RenderBox?;
   if (box == null || !box.hasSize || !box.attached) return null;
 
-  final overlay = Overlay.of(context, rootOverlay: true);
+  // 학습 탭의 분기 Navigator가 아닌 앱 최상위 Navigator의 Overlay에 넣어,
+  // MainShell의 플로팅 하단 네비게이션 바보다 위 레이어에 표시한다.
+  final overlay = Navigator.of(context, rootNavigator: true).overlay;
+  if (overlay == null) return null;
   final anchor = box.localToGlobal(Offset.zero);
   return (anchor: anchor, size: box.size, overlay: overlay);
 }
@@ -248,14 +251,17 @@ class _SentenceGroupPickerOverlayState extends State<_SentenceGroupPickerOverlay
     final anchorBottom = widget.anchor.dy + widget.anchorSize.height;
     final spaceAbove = math.max(0.0, anchorTop - safeTop - _anchorGap);
     final spaceBelow = math.max(0.0, safeBottom - anchorBottom - _anchorGap);
-    final showBelow =
-        spaceBelow >= estimatedHeight * 0.55 ||
-        (spaceBelow >= 120 && spaceBelow >= spaceAbove);
+    // 일부만 들어가는 경우 아래로 열면 하단 네비게이션 바에 가려진다.
+    // 전체 목록 높이를 확보할 수 있을 때에만 아래로 열고, 그 외에는 위로 연다.
+    final showBelow = spaceBelow >= estimatedHeight;
     final availableHeight = math.max(
       120.0,
       math.min(
-        showBelow ? spaceBelow : spaceAbove,
-        math.max(120.0, safeBottom - safeTop),
+        estimatedHeight,
+        math.min(
+          showBelow ? spaceBelow : spaceAbove,
+          math.max(120.0, safeBottom - safeTop),
+        ),
       ),
     );
 
@@ -264,6 +270,7 @@ class _SentenceGroupPickerOverlayState extends State<_SentenceGroupPickerOverlay
       _screenMargin,
       math.max(_screenMargin, size.width - popupWidth - _screenMargin),
     );
+
     final popupTop = showBelow
         ? (anchorBottom + _anchorGap).clamp(safeTop, safeBottom - 80)
         : (anchorTop - _anchorGap - availableHeight).clamp(
@@ -400,7 +407,7 @@ class _SentenceGroupPickerPanel extends StatelessWidget {
                 ),
                 const SizedBox(width: 6),
                 const Text(
-                  '문장 그룹 선택',
+                  '문장 주제 선택',
                   style: TextStyle(
                     fontSize: 13,
                     fontWeight: FontWeight.w800,
@@ -499,19 +506,114 @@ class _SentenceGroupPickerRow extends StatelessWidget {
                   color: DashboardPalette.teal.withValues(alpha: 0.88),
                 ),
               ),
-            Text(
-              progress.total == 0
-                  ? '0/0'
-                  : '${progress.mastered}/${progress.total}',
-              style: TextStyle(
-                fontSize: 11,
-                fontWeight: FontWeight.w700,
-                color: DashboardPalette.navy.withValues(alpha: 0.55),
-              ),
+            _SentenceGroupProgressRing(
+              mastered: progress.mastered,
+              total: progress.total,
             ),
           ],
         ),
       ),
     );
   }
+}
+
+/// 시나리오 선택의 최근 점수 링과 동일한 크기·여백의 문장 학습 진척도 링.
+class _SentenceGroupProgressRing extends StatelessWidget {
+  final int mastered;
+  final int total;
+
+  const _SentenceGroupProgressRing({
+    required this.mastered,
+    required this.total,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    const size = 34.0;
+    const stroke = 3.5;
+    const track = Color(0xFFE2E8F0);
+    final ratio = total <= 0 ? 0.0 : (mastered / total).clamp(0.0, 1.0);
+
+    return SizedBox(
+      width: size,
+      height: size,
+      child: Stack(
+        alignment: Alignment.center,
+        children: [
+          CustomPaint(
+            size: const Size(size, size),
+            painter: _SentenceGroupProgressRingPainter(
+              ratio: ratio,
+              trackColor: track,
+              strokeWidth: stroke,
+            ),
+          ),
+          Text(
+            total <= 0 ? '' : '$mastered',
+            style: TextStyle(
+              fontSize: 9.5,
+              fontWeight: FontWeight.w800,
+              height: 1,
+              color: DashboardPalette.navy.withValues(alpha: 0.72),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _SentenceGroupProgressRingPainter extends CustomPainter {
+  final double ratio;
+  final Color trackColor;
+  final double strokeWidth;
+
+  const _SentenceGroupProgressRingPainter({
+    required this.ratio,
+    required this.trackColor,
+    required this.strokeWidth,
+  });
+
+  @override
+  void paint(Canvas canvas, Size size) {
+    final center = Offset(size.width / 2, size.height / 2);
+    final radius = math.min(size.width, size.height) / 2 - strokeWidth;
+    final rect = Rect.fromCircle(center: center, radius: radius);
+    const startAngle = -math.pi / 2;
+    const fullSweep = 2 * math.pi;
+
+    canvas.drawArc(
+      rect,
+      0,
+      fullSweep,
+      false,
+      Paint()
+        ..color = trackColor
+        ..style = PaintingStyle.stroke
+        ..strokeWidth = strokeWidth,
+    );
+
+    final sweep = fullSweep * ratio;
+    if (sweep <= 0.001) return;
+    const colors = [Color(0xFFE11D48), Color(0xFFFB7185)];
+    canvas.drawArc(
+      rect,
+      startAngle,
+      sweep,
+      false,
+      Paint()
+        ..shader = SweepGradient(
+          colors: colors,
+          startAngle: startAngle,
+          endAngle: startAngle + math.max(sweep, 0.001),
+        ).createShader(rect)
+        ..style = PaintingStyle.stroke
+        ..strokeWidth = strokeWidth
+        ..strokeCap = StrokeCap.round,
+    );
+  }
+
+  @override
+  bool shouldRepaint(covariant _SentenceGroupProgressRingPainter oldDelegate) =>
+      oldDelegate.ratio != ratio;
 }

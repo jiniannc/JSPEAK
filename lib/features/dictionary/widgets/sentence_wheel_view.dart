@@ -108,16 +108,16 @@ class _SentenceWheelViewState extends ConsumerState<SentenceWheelView>
   static const _kUnfoldDuration = Duration(milliseconds: 300);
 
   /// 전체 화면(상·하단 세이프 영역 포함) 기준 포커스 Y — 0.5보다 작을수록 위.
-  static const _kVisualCenterFraction = 0.32;
+  static const _kVisualCenterFraction = 0.38;
 
   /// 위·아래 네비 화살표가 있을 때 카드만 시각 중심에 오도록 보정.
   static const _kNavChromeBias = 34.0;
 
   /// 메인 카드·3D 휠을 추가로 위로 올리는 보정.
-  static const _kFocusLiftBias = 52.0;
+  static const _kFocusLiftBias = 18.0;
 
   /// focusAlignment 클램프와 별도로, 전체 휠·카드 블록을 추가로 위로 올림.
-  static const _kFocusExtraLift = 30.0;
+  static const _kFocusExtraLift = 8.0;
 
   /// 스와이프 코치를 메인 카드 위에 띄울 때 카드 상단과의 간격.
   static const _kSwipeCoachGapAboveCard = 10.0;
@@ -590,11 +590,18 @@ class _SentenceWheelViewState extends ConsumerState<SentenceWheelView>
         final horizontalPad = (constraints.maxWidth * 0.04).clamp(12.0, 20.0);
         // 휠 스냅 타겟·메인 카드가 동일한 가로 폭을 쓰도록 inset 통일.
         final cardSideInset = horizontalPad * 0.65;
-        // 하단 인덱스(1/6)와 플레이헤드·말하기 덱이 항상 보이도록 카드 높이 상한.
-        // 긴 문장(영문 2줄 + 한국어)이 잘리지 않도록 본문 여유를 충분히 확보한다.
-        const bottomChrome = 48.0;
-        final maxFocusHeight = ((constraints.maxHeight - bottomChrome) * 0.72)
-            .clamp(300.0, 480.0);
+        // 카드 밖 네비·인덱스 영역을 먼저 제외한다. 이전의 화면 비율 + 300px
+        // 하한은 가로/작은 화면에서 카드와 CTA를 뷰포트 밖으로 밀어냈다.
+        const bottomChrome = 52.0;
+        const navChrome = 84.0; // 위/아래 화살표 + 간격
+        final availableCardHeight =
+            constraints.maxHeight -
+            bottomChrome -
+            (widget.sentences.length > 1 ? navChrome : 0);
+        final maxFocusHeight = math.min(
+          480.0,
+          math.max(0.0, availableCardHeight),
+        );
         final maxFocusWidth = constraints.maxWidth - cardSideInset * 2;
         final isLastCard = _currentIndex >= widget.sentences.length - 1;
         final hasPrev = _currentIndex > 0;
@@ -1031,13 +1038,12 @@ class _CenterFocusCard extends StatelessWidget {
                             ),
                           ),
                           child: ClipRect(
-                            child: SizedBox(
-                              height: fullHeight * t,
-                              width: double.infinity,
-                              child: OverflowBox(
-                                alignment: Alignment.topCenter,
-                                minHeight: fullHeight,
-                                maxHeight: fullHeight,
+                            child: Align(
+                              alignment: Alignment.topCenter,
+                              heightFactor: t,
+                              child: SizedBox(
+                                height: fullHeight,
+                                width: double.infinity,
                                 child: learningPanel,
                               ),
                             ),

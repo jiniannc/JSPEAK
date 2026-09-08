@@ -1,3 +1,5 @@
+import 'dart:async' show unawaited;
+
 import 'dart:math' as math;
 import 'dart:ui' show ImageFilter;
 
@@ -19,6 +21,7 @@ import '../../../shared/widgets/flight_progress_bar.dart';
 import '../../../shared/widgets/web_safe_backdrop_blur.dart';
 import '../../dashboard/dashboard_palette.dart';
 import '../../shell/floating_island_nav_bar.dart';
+import '../../scenarios/widgets/scenario_bubble_avatar.dart';
 import '../../word_swipe/word_swipe_training_screen.dart';
 import 'mode_guide_cards.dart';
 import 'sentence_group_picker.dart';
@@ -1654,9 +1657,7 @@ class _ChapterHeroHeaderTexts extends StatelessWidget {
               ),
               shadows: [
                 Shadow(
-                  color: Colors.black.withValues(
-                    alpha: _lerp(0.65, 0.72, t),
-                  ),
+                  color: Colors.black.withValues(alpha: _lerp(0.65, 0.72, t)),
                   blurRadius: _lerp(8, 9, t),
                   offset: const Offset(0, 1),
                 ),
@@ -2360,38 +2361,77 @@ class _ChampagneSparklePainter extends CustomPainter {
 class _CompletedGoldIcon extends StatelessWidget {
   const _CompletedGoldIcon({
     required this.icon,
-    required this.shimmerT,
     this.size = 21,
   });
 
   final IconData icon;
-  final double shimmerT;
   final double size;
 
   @override
   Widget build(BuildContext context) {
-    // 하이라이트가 아이콘 왼쪽 밖 → 오른쪽 밖으로 완전히 빠져나가
-    // t=0 과 t=1 이 같은 베이스 골드만 보이게 해서 루프가 이어진다.
-    final shift = -2.6 + (5.2 * shimmerT);
-    return Stack(
-      alignment: Alignment.center,
-      children: [
-        Icon(icon, size: size, color: _HubChapterGoldTheme.iconGold),
-        ShaderMask(
-          blendMode: BlendMode.srcIn,
-          shaderCallback: (bounds) {
-            return LinearGradient(
-              begin: Alignment(shift - 0.7, -0.28),
-              end: Alignment(shift + 0.7, 0.28),
-              colors: const [
-                _HubChapterGoldTheme.iconGold,
-                _HubChapterGoldTheme.hairline,
-              ],
-            ).createShader(bounds);
-          },
-          child: Icon(icon, size: size, color: Colors.white),
-        ),
-      ],
+    return Icon(
+      icon,
+      size: size,
+      color: const Color(0xFFB8860B),
+      weight: 500,
+    );
+  }
+}
+
+class _ModeShinyIcon extends StatelessWidget {
+  const _ModeShinyIcon({
+    required this.icon,
+    required this.color,
+    required this.size,
+  });
+
+  final IconData icon;
+  final Color color;
+  final double size;
+
+  @override
+  Widget build(BuildContext context) {
+    return Icon(
+      icon,
+      size: size,
+      color: Color.lerp(color, const Color(0xFF1E293B), 0.22),
+      weight: 500,
+    );
+  }
+}
+
+/// 담백한 내부 디스크 — 옅은 tint + 얇은 테두리만.
+class _ModeShinyDisc extends StatelessWidget {
+  const _ModeShinyDisc({
+    required this.size,
+    required this.accent,
+    required this.gold,
+    required this.child,
+  });
+
+  final double size;
+  final Color accent;
+  final bool gold;
+  final Widget child;
+
+  @override
+  Widget build(BuildContext context) {
+    final fill = gold
+        ? const Color(0xFFFFF8E8)
+        : Colors.white.withValues(alpha: 0.82);
+    final border = gold
+        ? const Color(0xFFE8C878)
+        : accent.withValues(alpha: 0.28);
+
+    return Container(
+      width: size,
+      height: size,
+      decoration: BoxDecoration(
+        shape: BoxShape.circle,
+        color: fill,
+        border: Border.all(color: border, width: 1),
+      ),
+      child: Center(child: child),
     );
   }
 }
@@ -2418,20 +2458,15 @@ class _ModeGlassIcon extends StatefulWidget {
 }
 
 class _ModeGlassIconState extends State<_ModeGlassIcon>
-    with TickerProviderStateMixin {
+    with SingleTickerProviderStateMixin {
   late final AnimationController _ring;
-  late final AnimationController _iconPop;
-  late final AnimationController _idle;
-  late final AnimationController _iconShimmer;
   late final Animation<double> _ringCurve;
-  late final Animation<double> _iconPopScale;
   bool _started = false;
 
-  double get _outer => widget.compact ? 38.0 : 50.0;
-  double get _inner => widget.compact ? 30.0 : 40.0;
-  double get _iconSize => widget.compact ? 17.0 : 21.0;
-  double get _restStroke => widget.compact ? 2.8 : 3.3;
-  double get _activeStroke => widget.compact ? 3.4 : 4.2;
+  double get _outer => widget.compact ? 42.0 : 50.0;
+  double get _inner => widget.compact ? 32.0 : 38.0;
+  double get _iconSize => widget.compact ? 19.0 : 21.0;
+  double get _stroke => widget.compact ? 2.4 : 2.6;
 
   @override
   void initState() {
@@ -2440,36 +2475,8 @@ class _ModeGlassIconState extends State<_ModeGlassIcon>
       vsync: this,
       duration: const Duration(milliseconds: 1500),
     );
-    _iconPop = AnimationController(
-      vsync: this,
-      duration: const Duration(milliseconds: 720),
-    );
-    _idle = AnimationController(
-      vsync: this,
-      duration: const Duration(milliseconds: 2800),
-    )..repeat();
-    _iconShimmer = AnimationController(
-      vsync: this,
-      duration: const Duration(milliseconds: 2200),
-    )..repeat();
     _ringCurve = CurvedAnimation(parent: _ring, curve: Curves.easeOutCubic);
-    _iconPopScale = TweenSequence<double>([
-      TweenSequenceItem(tween: Tween(begin: 1.0, end: 1.16), weight: 1),
-      TweenSequenceItem(tween: Tween(begin: 1.16, end: 0.94), weight: 1),
-      TweenSequenceItem(tween: Tween(begin: 0.94, end: 1.11), weight: 1),
-      TweenSequenceItem(tween: Tween(begin: 1.11, end: 0.98), weight: 1),
-      TweenSequenceItem(tween: Tween(begin: 0.98, end: 1.0), weight: 1.4),
-    ]).animate(CurvedAnimation(parent: _iconPop, curve: Curves.easeOut));
-    _ring.addStatusListener(_handleRingStatus);
     _maybeStart();
-  }
-
-  void _handleRingStatus(AnimationStatus status) {
-    if (status != AnimationStatus.completed) return;
-    final target = widget.progress.clamp(0.0, 1.0);
-    if (target > 0.001) {
-      _iconPop.forward(from: 0);
-    }
   }
 
   @override
@@ -2486,7 +2493,6 @@ class _ModeGlassIconState extends State<_ModeGlassIcon>
   void _resetIntroAnimation() {
     _started = false;
     _ring.reset();
-    _iconPop.reset();
   }
 
   void _maybeStart() {
@@ -2504,11 +2510,7 @@ class _ModeGlassIconState extends State<_ModeGlassIcon>
 
   @override
   void dispose() {
-    _ring.removeStatusListener(_handleRingStatus);
     _ring.dispose();
-    _iconPop.dispose();
-    _idle.dispose();
-    _iconShimmer.dispose();
     super.dispose();
   }
 
@@ -2518,124 +2520,50 @@ class _ModeGlassIconState extends State<_ModeGlassIcon>
     final hasProgress = target > 0.001;
 
     return AnimatedBuilder(
-      animation: Listenable.merge([
-        _ringCurve,
-        _iconPopScale,
-        _idle,
-        _iconShimmer,
-      ]),
+      animation: _ringCurve,
       builder: (context, _) {
         final fillT = _ringCurve.value;
-        final isFilling = hasProgress && _ring.isAnimating;
         final displayed = hasProgress ? target * fillT : 0.0;
-        final stroke = isFilling ? _activeStroke : _restStroke;
-        final ringScale = isFilling ? 1.06 : 1.0;
-        final popScale = _iconPop.isAnimating || _iconPop.value > 0
-            ? _iconPopScale.value
-            : 1.0;
-
-        final idleActive = widget.revealProgress >= 0.28;
-        final popActive = _iconPop.isAnimating;
-        final idleAmp = idleActive ? (popActive ? 0.55 : 1.0) : 0.0;
-        final idleT = _idle.value * math.pi * 2 + widget.idlePhase;
-        final idleScale = 1.0 + 0.045 * idleAmp * math.sin(idleT);
-        final idleSway = 0.028 * idleAmp * math.sin(idleT * 0.86 + 0.65);
-        final idleBob = 0.9 * idleAmp * math.sin(idleT * 1.08 + 1.15);
-
         final ringFull = hasProgress && displayed >= 0.995;
-        final shimmerT = (_iconShimmer.value + widget.idlePhase * 0.05) % 1.0;
+        final trackColor = widget.color.withValues(alpha: 0.16);
         final ringColor = ringFull
-            ? _HubChapterGoldTheme.hairline.withValues(alpha: 0.82)
-            : hasProgress
-            ? (isFilling ? widget.color : widget.color.withValues(alpha: 0.92))
-            : Colors.white.withValues(alpha: 0.22);
-        final trackColor = hasProgress
-            ? Colors.white.withValues(alpha: isFilling ? 0.18 : 0.12)
-            : Colors.white.withValues(alpha: 0.08);
-        final innerFill = ringFull
-            ? Color.lerp(
-                Colors.white.withValues(alpha: 0.50),
-                _HubChapterGoldTheme.champagne,
-                0.10,
-              )!
-            : Colors.white.withValues(alpha: 0.50);
-        final innerBorder = ringFull
-            ? _HubChapterGoldTheme.hairline.withValues(alpha: 0.42)
-            : Colors.white.withValues(alpha: 0.65);
+            ? const Color(0xFFD4A843)
+            : widget.color.withValues(alpha: 0.88);
 
-        final body = SizedBox(
+        return SizedBox(
           width: _outer,
           height: _outer,
           child: Stack(
             alignment: Alignment.center,
             children: [
-              if (isFilling)
-                Container(
-                  width: _outer * ringScale,
-                  height: _outer * ringScale,
-                  decoration: BoxDecoration(
-                    shape: BoxShape.circle,
-                    boxShadow: [
-                      BoxShadow(
-                        color: widget.color.withValues(alpha: 0.42),
-                        blurRadius: 12,
-                        spreadRadius: 0.5,
-                      ),
-                    ],
-                  ),
-                ),
-              Transform.scale(
-                scale: ringScale,
-                child: SizedBox(
-                  width: _outer,
-                  height: _outer,
-                  child: CustomPaint(
-                    painter: _ModeProgressRingPainter(
-                      progress: displayed,
-                      color: ringColor,
-                      trackColor: trackColor,
-                      strokeWidth: stroke,
-                    ),
+              SizedBox(
+                width: _outer,
+                height: _outer,
+                child: CustomPaint(
+                  painter: _ModeProgressRingPainter(
+                    progress: displayed,
+                    color: ringColor,
+                    trackColor: trackColor,
+                    strokeWidth: _stroke,
                   ),
                 ),
               ),
-              Transform.scale(
-                scale: popScale,
-                child: Container(
-                  width: _inner,
-                  height: _inner,
-                  decoration: BoxDecoration(
-                    shape: BoxShape.circle,
-                    color: innerFill,
-                    border: Border.all(color: innerBorder, width: 1.1),
-                    boxShadow: [
-                      BoxShadow(
-                        color: Colors.black.withValues(alpha: 0.12),
-                        blurRadius: 8,
-                        offset: const Offset(0, 2),
+              _ModeShinyDisc(
+                size: _inner,
+                accent: widget.color,
+                gold: ringFull,
+                child: ringFull
+                    ? _CompletedGoldIcon(
+                        icon: widget.icon,
+                        size: _iconSize,
+                      )
+                    : _ModeShinyIcon(
+                        icon: widget.icon,
+                        color: widget.color,
+                        size: _iconSize,
                       ),
-                    ],
-                  ),
-                  child: ringFull
-                      ? _CompletedGoldIcon(
-                          icon: widget.icon,
-                          shimmerT: shimmerT,
-                          size: _iconSize,
-                        )
-                      : Icon(widget.icon, size: _iconSize, color: widget.color),
-                ),
               ),
             ],
-          ),
-        );
-
-        if (idleAmp <= 0) return body;
-
-        return Transform.translate(
-          offset: Offset(0, idleBob),
-          child: Transform.rotate(
-            angle: idleSway,
-            child: Transform.scale(scale: idleScale, child: body),
           ),
         );
       },
@@ -2664,6 +2592,8 @@ class _ModeProgressRingPainter extends CustomPainter {
     final radius = (size.shortestSide - strokeWidth) / 2;
     if (radius <= 0) return;
 
+    final rect = Rect.fromCircle(center: center, radius: radius);
+
     final trackPaint = Paint()
       ..color = trackColor
       ..style = PaintingStyle.stroke
@@ -2682,7 +2612,7 @@ class _ModeProgressRingPainter extends CustomPainter {
       ..strokeCap = StrokeCap.round;
 
     canvas.drawArc(
-      Rect.fromCircle(center: center, radius: radius),
+      rect,
       -math.pi / 2,
       math.pi * 2 * value,
       false,
@@ -2815,7 +2745,7 @@ class _ModeVerticalBody extends StatelessWidget {
     final labelGap = compact ? 4.0 : 6.0;
     final titleSize = compact ? 11.0 : 12.0;
     final titleLines = compact ? 1 : 2;
-    final iconOuter = compact ? 38.0 : 50.0;
+    final iconOuter = compact ? 42.0 : 50.0;
 
     final body = Padding(
       padding: EdgeInsets.symmetric(horizontal: hPad),
@@ -2940,7 +2870,7 @@ class _WordModeCell extends StatelessWidget {
       ),
       child: _ModeVerticalBody(
         compact: true,
-        icon: Icons.style_rounded,
+        icon: Icons.touch_app_rounded,
         accentColor: _accent,
         progressColor: canReview ? const Color(0xFFE53935) : _progressColor,
         progress: completed ? 1 : ratio,
@@ -2996,13 +2926,13 @@ class _SentenceModeCellState extends ConsumerState<_SentenceModeCell> {
       completed: widget.completed,
       onTap: total > 0
           ? () => openSentenceTraining(
-                context,
-                ref: ref,
-                language: widget.language,
-                category: widget.category,
-                chapterNo: widget.chapterNo,
-                popupAnchorKey: _popupAnchorKey,
-              )
+              context,
+              ref: ref,
+              language: widget.language,
+              category: widget.category,
+              chapterNo: widget.chapterNo,
+              popupAnchorKey: _popupAnchorKey,
+            )
           : null,
       howItWorks: _ModeHowItWorksButton(
         accent: _SentenceModeCell._accent,
@@ -3013,7 +2943,7 @@ class _SentenceModeCellState extends ConsumerState<_SentenceModeCell> {
         key: _popupAnchorKey,
         child: _ModeVerticalBody(
           compact: true,
-          icon: Icons.view_carousel_rounded,
+          icon: Icons.mic_rounded,
           accentColor: _SentenceModeCell._accent,
           progressColor: _SentenceModeCell._progressColor,
           progress: widget.completed ? 1 : ratio,
@@ -3083,7 +3013,7 @@ class _ScenarioModeCellState extends ConsumerState<_ScenarioModeCell> {
         key: _popupAnchorKey,
         child: _ModeVerticalBody(
           compact: true,
-          icon: Icons.forum_rounded,
+          icon: Icons.chat_bubble_rounded,
           accentColor: _ScenarioModeCell._accent,
           progressColor: const Color(0xFF38BDF8),
           progress: widget.completed ? 1 : ratio,
@@ -3385,7 +3315,10 @@ class _ModeHowItWorksOverlayState extends State<_ModeHowItWorksOverlay>
   box ??= context.findRenderObject() as RenderBox?;
   if (box == null || !box.hasSize || !box.attached) return null;
 
-  final overlay = Overlay.of(context, rootOverlay: true);
+  // 학습 탭의 분기 Navigator가 아닌 앱 최상위 Navigator의 Overlay에 넣어,
+  // MainShell의 플로팅 하단 네비게이션 바보다 위 레이어에 표시한다.
+  final overlay = Navigator.of(context, rootNavigator: true).overlay;
+  if (overlay == null) return null;
   // root overlay Positioned는 화면 좌표와 동일하므로 globalToLocal 변환은 생략한다.
   final anchor = box.localToGlobal(Offset.zero);
   return (anchor: anchor, size: box.size, overlay: overlay);
@@ -3453,20 +3386,27 @@ class _ScenarioPickerOverlayState extends State<_ScenarioPickerOverlay>
 
     _scale = TweenSequence<double>([
       TweenSequenceItem(
-        tween: Tween<double>(begin: 0.72, end: 1.08).chain(
-          CurveTween(curve: Curves.easeOutCubic),
-        ),
+        tween: Tween<double>(
+          begin: 0.72,
+          end: 1.08,
+        ).chain(CurveTween(curve: Curves.easeOutCubic)),
         weight: 55,
       ),
       TweenSequenceItem(
-        tween: Tween<double>(begin: 1.08, end: 1.0).chain(
-          CurveTween(curve: Curves.easeOutBack),
-        ),
+        tween: Tween<double>(
+          begin: 1.08,
+          end: 1.0,
+        ).chain(CurveTween(curve: Curves.easeOutBack)),
         weight: 45,
       ),
     ]).animate(_entry);
 
     _entry.forward();
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      unawaited(
+        ScenarioBubbleAvatar.precacheScenarios(context, widget.scenarios),
+      );
+    });
   }
 
   void _ensureDirectionalMotion(bool opensBelow) {
@@ -3531,15 +3471,17 @@ class _ScenarioPickerOverlayState extends State<_ScenarioPickerOverlay>
     final anchorBottom = widget.anchor.dy + widget.anchorSize.height;
     final spaceAbove = math.max(0.0, anchorTop - safeTop - _anchorGap);
     final spaceBelow = math.max(0.0, safeBottom - anchorBottom - _anchorGap);
-    // 칩/아이콘 근처 — 아래 공간이 충분하면 아래, 아니면 위.
-    final showBelow =
-        spaceBelow >= estimatedHeight * 0.55 ||
-        (spaceBelow >= 120 && spaceBelow >= spaceAbove);
+    // 일부만 들어가는 경우 아래로 열면 하단 네비게이션 바에 가려진다.
+    // 전체 목록 높이를 확보할 수 있을 때에만 아래로 열고, 그 외에는 위로 연다.
+    final showBelow = spaceBelow >= estimatedHeight;
     final availableHeight = math.max(
       120.0,
       math.min(
-        showBelow ? spaceBelow : spaceAbove,
-        math.max(120.0, safeBottom - safeTop),
+        estimatedHeight,
+        math.min(
+          showBelow ? spaceBelow : spaceAbove,
+          math.max(120.0, safeBottom - safeTop),
+        ),
       ),
     );
 
@@ -3548,6 +3490,7 @@ class _ScenarioPickerOverlayState extends State<_ScenarioPickerOverlay>
       _screenMargin,
       math.max(_screenMargin, size.width - popupWidth - _screenMargin),
     );
+
     final popupTop = showBelow
         ? (anchorBottom + _anchorGap).clamp(safeTop, safeBottom - 80)
         : (anchorTop - _anchorGap - availableHeight).clamp(
@@ -3556,8 +3499,9 @@ class _ScenarioPickerOverlayState extends State<_ScenarioPickerOverlay>
           );
 
     _ensureDirectionalMotion(showBelow);
-    final panelAlignment =
-        showBelow ? Alignment.topCenter : Alignment.bottomCenter;
+    final panelAlignment = showBelow
+        ? Alignment.topCenter
+        : Alignment.bottomCenter;
 
     return Stack(
       children: [

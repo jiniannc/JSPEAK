@@ -19,6 +19,9 @@ class Scenario {
     'chapter_name',
     'chapter_image',
     'avatar_image',
+    'audio',
+    'audio_start',
+    'audio_end',
     'new',
   };
 

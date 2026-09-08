@@ -27,23 +27,31 @@ void main() {
         hintLevel: 0,
         resolutionMethod: ScenarioResolutionMethod.voice,
       );
-      const structureHint = ScenarioTurnPerformance(
+      const audioHint = ScenarioTurnPerformance(
         lineOrder: 2,
         voiceAttempts: 1,
         keyboardAttempts: 0,
         hintLevel: 1,
         resolutionMethod: ScenarioResolutionMethod.voice,
       );
-      const wordHint = ScenarioTurnPerformance(
+      const structureHint = ScenarioTurnPerformance(
         lineOrder: 3,
         voiceAttempts: 1,
         keyboardAttempts: 0,
         hintLevel: 2,
         resolutionMethod: ScenarioResolutionMethod.voice,
       );
+      const wordHint = ScenarioTurnPerformance(
+        lineOrder: 4,
+        voiceAttempts: 1,
+        keyboardAttempts: 0,
+        hintLevel: 3,
+        resolutionMethod: ScenarioResolutionMethod.voice,
+      );
 
       expect(secondTry.score, 93);
-      expect(structureHint.score, 92);
+      expect(audioHint.score, 95);
+      expect(structureHint.score, 89);
       expect(wordHint.score, 83);
     });
 
@@ -103,7 +111,7 @@ void main() {
       expect(result.hintFreeRatio, 1.0);
     });
 
-    test('힌트 링은 대사당 2회 슬롯 기준으로 계산된다', () {
+    test('힌트 링은 대사당 3회 슬롯 기준으로 계산된다', () {
       const hintedOnce = ScenarioTurnPerformance(
         lineOrder: 1,
         voiceAttempts: 1,
@@ -122,9 +130,9 @@ void main() {
         turns: [hintedOnce, clean, clean],
       );
 
-      expect(result.totalHintSlots, 6);
+      expect(result.totalHintSlots, 9);
       expect(result.totalHintsUsed, 1);
-      expect(result.hintFreeRatio, closeTo(5 / 6, 0.001));
+      expect(result.hintFreeRatio, closeTo(8 / 9, 0.001));
     });
 
     test('전체 점수는 승무원 대사별 점수의 평균', () {

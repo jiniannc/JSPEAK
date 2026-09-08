@@ -1,3 +1,4 @@
+import 'dart:async' show unawaited;
 import 'dart:math' as math;
 
 import 'package:flutter/material.dart';
@@ -19,6 +20,7 @@ import '../../features/dashboard/dashboard_palette.dart';
 import '../../shared/widgets/web_safe_backdrop_blur.dart';
 import 'scenario_tour.dart';
 import 'scenario_word_hints.dart';
+import 'widgets/scenario_bubble_avatar.dart';
 import 'widgets/scenario_chat_bubble.dart';
 import 'widgets/scenario_glass_header.dart';
 import 'widgets/scenario_result_modal.dart';
@@ -70,10 +72,25 @@ class _ScenarioTrainingScreenState extends ConsumerState<ScenarioTrainingScreen>
     );
     _typingFocus.addListener(_onTypingFocusChanged);
 
-    WidgetsBinding.instance.addPostFrameCallback((_) {
-      ref.read(scenarioTrainingProvider.notifier).init(widget.scenario);
-      _scheduleInitialTour();
-    });
+    WidgetsBinding.instance.addPostFrameCallback((_) => _bootstrapScenario());
+  }
+
+  Future<void> _bootstrapScenario() async {
+    final lines = widget.scenario.lines;
+    final firstLine = lines.isNotEmpty ? lines.first : null;
+    if (firstLine?.isCrew == true && firstLine!.avatarImage.isNotEmpty) {
+      await ScenarioBubbleAvatar.precachePaths(
+        context,
+        [firstLine.avatarImage],
+      );
+    }
+    if (!mounted) return;
+
+    ref.read(scenarioTrainingProvider.notifier).init(widget.scenario);
+    unawaited(
+      ScenarioBubbleAvatar.precacheScenarios(context, [widget.scenario]),
+    );
+    _scheduleInitialTour();
   }
 
   void _onTypingFocusChanged() {
@@ -474,6 +491,12 @@ class _ScenarioTrainingScreenState extends ConsumerState<ScenarioTrainingScreen>
                                   language: msg.line.language,
                                 )
                               : const [],
+                          karaokeTokenIndex: msg.id == activeMsgId
+                              ? training.karaokeTokenIndex
+                              : null,
+                          blankAttentionToken: msg.id == activeMsgId
+                              ? training.blankAttentionToken
+                              : 0,
                           onBlankTap:
                               msg.id == activeMsgId && training.isBlankFillMode
                               ? (i) => ref
@@ -761,7 +784,7 @@ class _FloatingControlBar extends StatelessWidget {
                               ? Icons.lightbulb_outline_rounded
                               : Icons.touch_app_rounded,
                           label: training.canRevealMoreHints
-                              ? '두 번째 힌트'
+                              ? training.nextHintLabel
                               : '빈칸 터치',
                           color: primaryColor,
                           enabled:
@@ -787,6 +810,7 @@ class _FloatingControlBar extends StatelessWidget {
                         isInitializing:
                             training.isInitializingStt && !training.isListening,
                         isListening: training.isListening,
+                        attentionToken: training.micAttentionToken,
                         primaryColor: primaryColor,
                         secondaryColor: secondaryColor,
                         onPressed: onMic,
@@ -860,7 +884,7 @@ class _FloatingControlBar extends StatelessWidget {
                         icon: Icons.lightbulb_outline_rounded,
                         color: primaryColor,
                         onTap: onHint,
-                        tooltip: '힌트',
+                        tooltip: training.nextHintLabel,
                       ),
                       const SizedBox(width: 4),
                     ],
@@ -894,7 +918,7 @@ class _FloatingControlBar extends StatelessWidget {
                       Expanded(
                         child: _SideAction(
                           icon: Icons.lightbulb_outline_rounded,
-                          label: '힌트',
+                          label: training.nextHintLabel,
                           color: primaryColor,
                           enabled:
                               !training.isListening &&
@@ -920,6 +944,7 @@ class _FloatingControlBar extends StatelessWidget {
                         isInitializing:
                             training.isInitializingStt && !training.isListening,
                         isListening: training.isListening,
+                        attentionToken: training.micAttentionToken,
                         primaryColor: primaryColor,
                         secondaryColor: secondaryColor,
                         onPressed: onMic,
@@ -1115,6 +1140,7 @@ class _MicButton extends StatefulWidget {
   final bool enabled;
   final bool isInitializing;
   final bool isListening;
+  final int attentionToken;
   final Color primaryColor;
   final Color secondaryColor;
   final VoidCallback onPressed;
@@ -1124,6 +1150,7 @@ class _MicButton extends StatefulWidget {
     required this.enabled,
     required this.isInitializing,
     required this.isListening,
+    this.attentionToken = 0,
     required this.primaryColor,
     required this.secondaryColor,
     required this.onPressed,
@@ -1135,34 +1162,65 @@ class _MicButton extends StatefulWidget {
 }
 
 class _MicButtonState extends State<_MicButton>
-    with SingleTickerProviderStateMixin {
-  late final AnimationController _pulse;
+    with TickerProviderStateMixin {
+  late final AnimationController _listenPulse;
+  late final AnimationController _attentionPulse;
+  bool _attentionActive = false;
 
   @override
   void initState() {
     super.initState();
-    _pulse = AnimationController(
+    _listenPulse = AnimationController(
       vsync: this,
       duration: const Duration(milliseconds: 1400),
     );
-    if (widget.isListening) _pulse.repeat();
+    _attentionPulse = AnimationController(
+      vsync: this,
+      duration: const Duration(milliseconds: 1500),
+    );
+    _attentionPulse.addStatusListener((status) {
+      if (status != AnimationStatus.completed || !mounted) return;
+      setState(() => _attentionActive = false);
+    });
+    if (widget.isListening) {
+      _listenPulse.repeat();
+    } else if (widget.attentionToken > 0) {
+      _playAttentionPulse();
+    }
+  }
+
+  void _playAttentionPulse() {
+    _attentionActive = true;
+    _attentionPulse.forward(from: 0);
   }
 
   @override
   void didUpdateWidget(covariant _MicButton oldWidget) {
     super.didUpdateWidget(oldWidget);
-    if (widget.isListening && !_pulse.isAnimating) {
-      _pulse.repeat();
-    } else if (!widget.isListening && _pulse.isAnimating) {
-      _pulse
-        ..stop()
-        ..reset();
+    if (widget.isListening) {
+      if (!_listenPulse.isAnimating) _listenPulse.repeat();
+      if (_attentionActive) {
+        _attentionPulse
+          ..stop()
+          ..reset();
+        _attentionActive = false;
+      }
+    } else {
+      if (_listenPulse.isAnimating) {
+        _listenPulse
+          ..stop()
+          ..reset();
+      }
+      if (widget.attentionToken != oldWidget.attentionToken) {
+        _playAttentionPulse();
+      }
     }
   }
 
   @override
   void dispose() {
-    _pulse.dispose();
+    _listenPulse.dispose();
+    _attentionPulse.dispose();
     super.dispose();
   }
 
@@ -1185,7 +1243,7 @@ class _MicButtonState extends State<_MicButton>
             children: [
               if (widget.isListening)
                 AnimatedBuilder(
-                  animation: _pulse,
+                  animation: _listenPulse,
                   builder: (context, _) {
                     return Stack(
                       alignment: Alignment.center,
@@ -1193,7 +1251,8 @@ class _MicButtonState extends State<_MicButton>
                       children: [
                         for (final phase in [0.0, 0.45])
                           Transform.scale(
-                            scale: 1.0 + (_pulse.value + phase) % 1.0 * 0.55,
+                            scale:
+                                1.0 + (_listenPulse.value + phase) % 1.0 * 0.55,
                             child: Container(
                               width: micSize,
                               height: micSize,
@@ -1201,9 +1260,8 @@ class _MicButtonState extends State<_MicButton>
                                 shape: BoxShape.circle,
                                 border: Border.all(
                                   color: Colors.red.withValues(
-                                    alpha:
-                                        0.42 *
-                                        (1 - ((_pulse.value + phase) % 1.0)),
+                                    alpha: 0.42 *
+                                        (1 - ((_listenPulse.value + phase) % 1.0)),
                                   ),
                                   width: 2.2,
                                 ),
@@ -1214,8 +1272,48 @@ class _MicButtonState extends State<_MicButton>
                     );
                   },
                 ),
-              AnimatedContainer(
-                duration: const Duration(milliseconds: 200),
+              if (_attentionActive && !widget.isListening)
+                AnimatedBuilder(
+                  animation: _attentionPulse,
+                  builder: (context, _) {
+                    final t = Curves.easeOutCubic.transform(_attentionPulse.value);
+                    final ringColor = Color.lerp(
+                      widget.primaryColor,
+                      const Color(0xFFFF8A80),
+                      0.35,
+                    )!;
+                    return Transform.scale(
+                      scale: 1.0 + t * 0.22,
+                      child: Container(
+                        width: micSize,
+                        height: micSize,
+                        decoration: BoxDecoration(
+                          shape: BoxShape.circle,
+                          border: Border.all(
+                            color: ringColor.withValues(alpha: 0.38 * (1 - t)),
+                            width: 2,
+                          ),
+                        ),
+                      ),
+                    );
+                  },
+                ),
+              AnimatedBuilder(
+                animation: _attentionPulse,
+                builder: (context, child) {
+                  final t = _attentionActive && !widget.isListening
+                      ? Curves.easeInOut.transform(
+                          math.sin(_attentionPulse.value * math.pi) * 0.5 + 0.5,
+                        )
+                      : 0.0;
+                  return Transform.scale(
+                    scale: 1.0 + t * 0.04,
+                    child: child,
+                  );
+                },
+                child: AnimatedContainer(
+                duration: const Duration(milliseconds: 320),
+                curve: Curves.easeOutCubic,
                 width: micSize,
                 height: micSize,
                 decoration: BoxDecoration(
@@ -1240,14 +1338,17 @@ class _MicButtonState extends State<_MicButton>
                   boxShadow: widget.enabled
                       ? [
                           BoxShadow(
-                            color:
-                                (widget.isListening
-                                        ? Colors.red
-                                        : widget.primaryColor)
-                                    .withValues(
-                                      alpha: widget.isListening ? 0.42 : 0.35,
-                                    ),
-                            blurRadius: widget.isListening ? 18 : 14,
+                            color: (widget.isListening
+                                    ? Colors.red
+                                    : widget.primaryColor)
+                                .withValues(
+                                  alpha: widget.isListening
+                                      ? 0.42
+                                      : (_attentionActive ? 0.40 : 0.35),
+                                ),
+                            blurRadius: widget.isListening
+                                ? 18
+                                : (_attentionActive ? 16 : 14),
                             spreadRadius: widget.isListening ? 1 : 0,
                             offset: const Offset(0, 4),
                           ),
@@ -1267,6 +1368,7 @@ class _MicButtonState extends State<_MicButton>
                         color: Colors.white,
                         size: widget.isListening ? 30 : 28,
                       ),
+                ),
               ),
             ],
           ),

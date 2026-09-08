@@ -1,5 +1,7 @@
 import 'package:flutter/material.dart';
 
+import '../../../data/models/scenario.dart';
+
 /// 말풍선 **우측 상단** peeking — 이미지 최하단이 말풍선 상단 테두리에 맞닿음.
 class ScenarioBubbleAvatar extends StatelessWidget {
   final String assetPath;
@@ -31,7 +33,81 @@ class ScenarioBubbleAvatar extends StatelessWidget {
   /// 승무원 말풍선 최대 폭 비율 — IntrinsicWidth로 내용만큼만, 필요 시까지 확장.
   static const crewMaxWidthFactor = 0.88;
 
+  static const _maxCacheWidth = 384;
+  static const _cacheMultiplier = 1.75;
+
+  static final Set<String> _precachedPaths = {};
+
   static double sizeFor(bool isHero) => isHero ? heroSize : compactSize;
+
+  static bool isPrecached(String assetPath) =>
+      assetPath.isNotEmpty && _precachedPaths.contains(assetPath);
+
+  static int cacheWidthFor({
+    required double displaySize,
+    required double devicePixelRatio,
+  }) {
+    return (displaySize * devicePixelRatio * _cacheMultiplier)
+        .round()
+        .clamp(1, _maxCacheWidth);
+  }
+
+  /// precache·표시 모두 동일 provider — decode 크기가 달라지면 캐시 미스가 난다.
+  static ImageProvider imageProvider(
+    String assetPath, {
+    required double displaySize,
+    required double devicePixelRatio,
+  }) {
+    return ResizeImage(
+      AssetImage(assetPath),
+      width: cacheWidthFor(
+        displaySize: displaySize,
+        devicePixelRatio: devicePixelRatio,
+      ),
+    );
+  }
+
+  static Iterable<String> avatarPathsFrom(Iterable<Scenario> scenarios) sync* {
+    for (final scenario in scenarios) {
+      for (final line in scenario.lines) {
+        final path = line.avatarImage;
+        if (path.isNotEmpty) yield path;
+      }
+    }
+  }
+
+  static Future<void> precachePaths(
+    BuildContext context,
+    Iterable<String> paths, {
+    double displaySize = heroSize,
+  }) {
+    final dpr = MediaQuery.devicePixelRatioOf(context);
+    final pending = paths.where((p) => p.isNotEmpty && !_precachedPaths.contains(p));
+    if (pending.isEmpty) return Future.value();
+
+    return Future.wait(
+      pending.map((path) async {
+        try {
+          await precacheImage(
+            imageProvider(
+              path,
+              displaySize: displaySize,
+              devicePixelRatio: dpr,
+            ),
+            context,
+          );
+          _precachedPaths.add(path);
+        } catch (_) {}
+      }),
+    );
+  }
+
+  static Future<void> precacheScenarios(
+    BuildContext context,
+    Iterable<Scenario> scenarios,
+  ) {
+    return precachePaths(context, avatarPathsFrom(scenarios).toSet());
+  }
 
   /// 채도 매트릭스 — 1=원색, 0=흑백 (0.55 근처면 살짝 흐려진 느낌).
   static List<double> _saturationMatrix(double saturation) {
@@ -66,14 +142,13 @@ class ScenarioBubbleAvatar extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final targetT = muted ? 0.0 : 1.0;
-
-    final image = Image.asset(
-      assetPath,
-      // hero/compact 전환 중 decode 크기가 바뀌면 서로 다른 ImageProvider로
-      // 취급되어 기존 이미지가 사라진 뒤 다시 나타난다. 항상 같은 고해상도
-      // 캐시를 재사용해 한 프레임도 끊기지 않게 한다.
-      cacheWidth: 480,
+    final dpr = MediaQuery.devicePixelRatioOf(context);
+    final image = Image(
+      image: imageProvider(
+        assetPath,
+        displaySize: heroSize,
+        devicePixelRatio: dpr,
+      ),
       filterQuality: FilterQuality.medium,
       fit: BoxFit.contain,
       alignment: Alignment.bottomCenter,
@@ -85,28 +160,29 @@ class ScenarioBubbleAvatar extends StatelessWidget {
       ),
     );
 
+    final sizedImage = AnimatedContainer(
+      width: size,
+      height: size,
+      duration: resizeDuration,
+      curve: resizeCurve,
+      alignment: Alignment.bottomCenter,
+      child: image,
+    );
+
+    if (!muted) return sizedImage;
+
     return AnimatedContainer(
       width: size,
       height: size,
       duration: resizeDuration,
       curve: resizeCurve,
       alignment: Alignment.bottomCenter,
-      child: TweenAnimationBuilder<double>(
-        tween: Tween<double>(begin: targetT, end: targetT),
-        duration: const Duration(milliseconds: 520),
-        curve: Curves.easeOutCubic,
-        builder: (context, t, child) {
-          final opacity = 0.84 + 0.16 * t;
-          final saturation = 0.5 + 0.5 * t;
-          return Opacity(
-            opacity: opacity,
-            child: ColorFiltered(
-              colorFilter: ColorFilter.matrix(_saturationMatrix(saturation)),
-              child: child,
-            ),
-          );
-        },
-        child: image,
+      child: Opacity(
+        opacity: 0.84,
+        child: ColorFiltered(
+          colorFilter: ColorFilter.matrix(_saturationMatrix(0.5)),
+          child: image,
+        ),
       ),
     );
   }

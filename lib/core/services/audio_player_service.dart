@@ -22,22 +22,45 @@ class AudioPlayerService {
   ProcessingState get processingState => _player.processingState;
 
   Future<void> playFile(String path) async {
-    await _player.stop();
-    await _player.setFilePath(path);
-    // just_audio의 play() Future는 재생 "시작"이 아니라 완료/중단 시 끝난다.
-    // 이를 await하면 이전 재생의 후속 상태가 다음 재생 세션을 덮어쓴다.
+    await loadFile(path);
     unawaited(_player.play());
   }
 
   Future<void> playUrl(String url) async {
+    await loadUrl(url);
+    unawaited(_player.play());
+  }
+
+  Future<void> loadFile(String path) async {
+    await _player.stop();
+    await _player.setFilePath(path);
+  }
+
+  Future<void> loadUrl(String url) async {
     await _player.stop();
     if (kIsWeb || AppsScriptFetch.isWebAppUrl(url)) {
       await _player.setAudioSource(DioStreamAudioSource(url));
     } else {
       await _player.setUrl(url);
     }
+  }
+
+  Future<void> startPlayback() async {
     unawaited(_player.play());
   }
+
+  Future<void> loadConcatenating(List<AudioSource> sources) async {
+    await _player.stop();
+    await _player.setAudioSource(
+      ConcatenatingAudioSource(children: sources),
+    );
+  }
+
+  Stream<SequenceState> get sequenceStateStream => _player.sequenceStateStream;
+
+  List<IndexedAudioSource> get sequence => _player.sequence;
+
+  int? get currentIndex => _player.currentIndex;
 
   Future<void> pause() => _player.pause();
 

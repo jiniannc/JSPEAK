@@ -1,5 +1,6 @@
 import '../../core/utils/avatar_asset_path.dart';
 import '../../core/utils/chapter_asset_path.dart';
+import 'sentence.dart';
 
 /// 시나리오 대화 한 줄 (시트 행).
 class ScenarioLine {
@@ -20,6 +21,12 @@ class ScenarioLine {
   final String chapterImage;
   /// 말풍선 좌상단 캐릭터 (`avatar_normal` → assets/images/avatar_normal.png).
   final String avatarImage;
+  /// 승무원 대사 녹음 (Drive ID 또는 URL). 없으면 문장 사전 audio로 매칭.
+  final String audioUrl;
+  /// 녹음 파일에서 가라오케 시작 시각(초). 없으면 자동 추정.
+  final double? audioStartSec;
+  /// 녹음 파일에서 가라오케 종료 시각(초). 없으면 파일 끝까지.
+  final double? audioEndSec;
   final bool isNewContent;
 
   const ScenarioLine({
@@ -38,6 +45,9 @@ class ScenarioLine {
     this.chapterName = '',
     this.chapterImage = '',
     this.avatarImage = '',
+    this.audioUrl = '',
+    this.audioStartSec,
+    this.audioEndSec,
     this.isNewContent = false,
   });
 
@@ -67,6 +77,9 @@ class ScenarioLine {
       avatarImage: resolveAvatarAssetPath(
         json['avatar_image']?.toString() ?? '',
       ),
+      audioUrl: Sentence.resolveAudioUrl(json['audio']?.toString() ?? ''),
+      audioStartSec: _parseOptionalDouble(json['audio_start']),
+      audioEndSec: _parseOptionalDouble(json['audio_end']),
       isNewContent: _parseNewFlag(json['new']),
     );
   }
@@ -80,6 +93,13 @@ class ScenarioLine {
         normalized == '1' ||
         normalized == 'yes' ||
         normalized == 'y';
+  }
+
+  static double? _parseOptionalDouble(dynamic value) {
+    if (value == null) return null;
+    final text = value.toString().trim();
+    if (text.isEmpty) return null;
+    return double.tryParse(text);
   }
 
   Map<String, dynamic> toJson() => {
@@ -98,6 +118,9 @@ class ScenarioLine {
         if (chapterName.isNotEmpty) 'chapter_name': chapterName,
         if (chapterImage.isNotEmpty) 'chapter_image': chapterImage,
         if (avatarImage.isNotEmpty) 'avatar_image': avatarImage,
+        if (audioUrl.isNotEmpty) 'audio': audioUrl,
+        if (audioStartSec != null) 'audio_start': audioStartSec,
+        if (audioEndSec != null) 'audio_end': audioEndSec,
         if (isNewContent) 'new': true,
       };
 }

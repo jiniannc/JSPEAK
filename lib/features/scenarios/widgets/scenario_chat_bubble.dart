@@ -97,6 +97,8 @@ class ScenarioChatBubble extends StatefulWidget {
   final int? selectedBlankIndex;
   final ValueChanged<int>? onBlankTap;
   final List<ScenarioWordHint> wordHints;
+  final int? karaokeTokenIndex;
+  final int blankAttentionToken;
   final GlobalKey? tourHighlightKey;
   final GlobalKey? scrollAnchorKey;
   final bool keyboardTyping;
@@ -115,6 +117,8 @@ class ScenarioChatBubble extends StatefulWidget {
     this.selectedBlankIndex,
     this.onBlankTap,
     this.wordHints = const [],
+    this.karaokeTokenIndex,
+    this.blankAttentionToken = 0,
     this.tourHighlightKey,
     this.scrollAnchorKey,
     this.keyboardTyping = false,
@@ -131,28 +135,57 @@ class _ScenarioChatBubbleState extends State<ScenarioChatBubble>
   late final Animation<double> _fade;
   late final Animation<Offset> _slide;
   late final Animation<double> _scale;
+  late final Animation<double> _avatarFade;
+  late final Animation<Offset> _avatarSlide;
 
   @override
   void initState() {
     super.initState();
     final isPassenger = widget.message.kind == ChatBubbleKind.passenger;
+    final isCrewTurn = widget.message.kind == ChatBubbleKind.crewTurn;
+    final hasAvatar =
+        isCrewTurn && widget.message.line.avatarImage.isNotEmpty;
+
     _enterController = AnimationController(
       vsync: this,
-      duration: Duration(milliseconds: isPassenger ? 520 : 480),
+      duration: Duration(milliseconds: isPassenger ? 560 : 720),
     );
     final curved = CurvedAnimation(
       parent: _enterController,
-      curve: Curves.easeOutCubic,
+      curve: Curves.easeOutQuart,
     );
-    _fade = curved;
+    _fade = CurvedAnimation(
+      parent: _enterController,
+      curve: const Interval(0, 0.72, curve: Curves.easeOut),
+    );
     _slide = Tween<Offset>(
-      begin: Offset(isPassenger ? -0.08 : 0.1, 0.22),
+      begin: Offset(isPassenger ? -0.04 : 0.05, hasAvatar ? 0.06 : 0.10),
       end: Offset.zero,
     ).animate(curved);
-    _scale = TweenSequence<double>([
-      TweenSequenceItem(tween: Tween(begin: 0.86, end: 1.04), weight: 62),
-      TweenSequenceItem(tween: Tween(begin: 1.04, end: 1.0), weight: 38),
-    ]).animate(curved);
+    _scale = hasAvatar
+        ? Tween<double>(begin: 0.97, end: 1.0).animate(
+            CurvedAnimation(
+              parent: _enterController,
+              curve: const Interval(0, 0.88, curve: Curves.easeOutCubic),
+            ),
+          )
+        : TweenSequence<double>([
+            TweenSequenceItem(tween: Tween(begin: 0.96, end: 1.01), weight: 72),
+            TweenSequenceItem(tween: Tween(begin: 1.01, end: 1.0), weight: 28),
+          ]).animate(curved);
+    _avatarFade = CurvedAnimation(
+      parent: _enterController,
+      curve: const Interval(0.14, 0.94, curve: Curves.easeOut),
+    );
+    _avatarSlide = Tween<Offset>(
+      begin: const Offset(0, 0.10),
+      end: Offset.zero,
+    ).animate(
+      CurvedAnimation(
+        parent: _enterController,
+        curve: const Interval(0.10, 0.96, curve: Curves.easeOutCubic),
+      ),
+    );
     _enterController.forward();
   }
 
@@ -181,7 +214,8 @@ class _ScenarioChatBubbleState extends State<ScenarioChatBubble>
     final stickerSize = ScenarioBubbleAvatar.sizeFor(isHeroAvatar);
     // 아바타는 카드 위쪽 테두리에 닿기만 할 뿐 콘텐츠 영역과 겹치지 않으므로
     // 텍스트용 여분 우측 패딩이 필요 없다 — 우측 여백 최소화.
-    final crewContentMaxW = crewMaxW - 36;
+    // 카드 패딩(36) + 테두리(4) 여유.
+    final crewContentMaxW = crewMaxW - 40;
 
     final bubbleCard = Container(
       margin: const EdgeInsets.only(bottom: 8),
@@ -232,6 +266,10 @@ class _ScenarioChatBubbleState extends State<ScenarioChatBubble>
               selectedBlankIndex: widget.selectedBlankIndex,
               onBlankTap: widget.onBlankTap,
               wordHints: widget.wordHints,
+              karaokeTokenIndex: widget.isActive ? widget.karaokeTokenIndex : null,
+              blankAttentionToken: widget.isActive
+                  ? widget.blankAttentionToken
+                  : 0,
               keyboardTyping: widget.keyboardTyping,
               contentMaxWidth: crewContentMaxW,
             ),
@@ -240,11 +278,17 @@ class _ScenarioChatBubbleState extends State<ScenarioChatBubble>
     // 위에 겹칠 이전 메시지가 있을 때만(allowTopOverlap) 아바타를 이미지
     // height만큼 정확히 위로 올려 여백 없이 겹침 — 리스트 첫 메시지는 헤더
     // 밖으로 새어나갈 수 있어 예약된 공간 안에서만 peeking(안전 모드).
-    final avatarWidget = ScenarioBubbleAvatar(
-      assetPath: avatarPath,
-      size: stickerSize,
-      accentColor: accent,
-      muted: hasCrewAvatar && !isHeroAvatar,
+    final avatarWidget = FadeTransition(
+      opacity: _avatarFade,
+      child: SlideTransition(
+        position: _avatarSlide,
+        child: ScenarioBubbleAvatar(
+          assetPath: avatarPath,
+          size: stickerSize,
+          accentColor: accent,
+          muted: hasCrewAvatar && !isHeroAvatar,
+        ),
+      ),
     );
 
     final bubbleLayout = !hasCrewAvatar
@@ -451,6 +495,8 @@ class _CrewTurnBody extends StatelessWidget {
   final int? selectedBlankIndex;
   final ValueChanged<int>? onBlankTap;
   final List<ScenarioWordHint> wordHints;
+  final int? karaokeTokenIndex;
+  final int blankAttentionToken;
   final bool keyboardTyping;
   final double contentMaxWidth;
 
@@ -463,6 +509,8 @@ class _CrewTurnBody extends StatelessWidget {
     this.selectedBlankIndex,
     this.onBlankTap,
     this.wordHints = const [],
+    this.karaokeTokenIndex,
+    this.blankAttentionToken = 0,
     this.keyboardTyping = false,
     required this.contentMaxWidth,
   });
@@ -524,6 +572,8 @@ class _CrewTurnBody extends StatelessWidget {
                       showPronunciation: showPronunciation,
                       showWordHints: message.showWordHints,
                       wordHints: wordHints,
+                      karaokeTokenIndex: isActive ? karaokeTokenIndex : null,
+                      blankAttentionToken: isActive ? blankAttentionToken : 0,
                       keyboardTyping: keyboardTyping,
                       contentMaxWidth: contentMaxWidth,
                     ),
@@ -546,6 +596,8 @@ class _SpeakingContent extends StatefulWidget {
   final bool showPronunciation;
   final bool showWordHints;
   final List<ScenarioWordHint> wordHints;
+  final int? karaokeTokenIndex;
+  final int blankAttentionToken;
   final bool keyboardTyping;
   final double contentMaxWidth;
 
@@ -560,6 +612,8 @@ class _SpeakingContent extends StatefulWidget {
     this.showPronunciation = false,
     this.showWordHints = false,
     this.wordHints = const [],
+    this.karaokeTokenIndex,
+    this.blankAttentionToken = 0,
     this.keyboardTyping = false,
     required this.contentMaxWidth,
   });
@@ -592,13 +646,16 @@ class _SpeakingContentState extends State<_SpeakingContent> {
       mainAxisSize: MainAxisSize.min,
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        Text(
-          line.textKo,
-          style: const TextStyle(
-            fontSize: 16.5,
-            fontWeight: FontWeight.w700,
-            color: DashboardPalette.navy,
-            height: 1.4,
+        ConstrainedBox(
+          constraints: BoxConstraints(maxWidth: widget.contentMaxWidth),
+          child: Text(
+            line.textKo,
+            style: const TextStyle(
+              fontSize: 16.5,
+              fontWeight: FontWeight.w700,
+              color: DashboardPalette.navy,
+              height: 1.4,
+            ),
           ),
         ),
         const SizedBox(height: 14),
@@ -616,6 +673,8 @@ class _SpeakingContentState extends State<_SpeakingContent> {
           onBlankTap: structureOn ? widget.onBlankTap : null,
           showHintRunLabels: showWordHints && wordHints.length >= 2,
           keyboardTyping: widget.keyboardTyping,
+          karaokeTokenIndex: widget.karaokeTokenIndex,
+          attentionToken: widget.blankAttentionToken,
         ),
         if (showWordHints && wordHints.isNotEmpty)
           ScenarioWordHintLane(
