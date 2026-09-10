@@ -8,12 +8,14 @@ class SentenceCategorySummary {
   final int readCount;
   final int attemptedCount;
   final int masteredCount;
+  final int stampEarned;
 
   const SentenceCategorySummary({
     required this.total,
     required this.readCount,
     required this.attemptedCount,
     required this.masteredCount,
+    this.stampEarned = 0,
   });
 
   bool get allRead => total > 0 && readCount >= total;
@@ -21,6 +23,13 @@ class SentenceCategorySummary {
   bool get allMastered => total > 0 && masteredCount >= total;
 
   double get attemptedRatio => total == 0 ? 0 : attemptedCount / total;
+
+  /// LISTEN + SPEAK + MASTER 스탬프 비율 (0~1) — 허브 상단 트랙과 동일 기준.
+  double get stampRatio {
+    final possible = total * 3;
+    if (possible <= 0) return 0;
+    return (stampEarned / possible).clamp(0.0, 1.0);
+  }
 }
 
 class SentenceProgressRepository {
@@ -104,17 +113,22 @@ class SentenceProgressRepository {
     var read = 0;
     var attempted = 0;
     var mastered = 0;
+    var stampEarned = 0;
     for (final s in sentences) {
       final p = stats.forSentence(s.id);
       if (p.isRead) read++;
       if (p.isAttempted) attempted++;
       if (p.isMastered) mastered++;
+      if (p.hasListened || p.isRead) stampEarned++;
+      if (p.isAttempted) stampEarned++;
+      if (p.isMastered) stampEarned++;
     }
     return SentenceCategorySummary(
       total: sentences.length,
       readCount: read,
       attemptedCount: attempted,
       masteredCount: mastered,
+      stampEarned: stampEarned,
     );
   }
 

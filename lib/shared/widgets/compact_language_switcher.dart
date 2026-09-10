@@ -181,7 +181,7 @@ class _LanguageSegment extends StatelessWidget {
   }
 }
 
-String _shortLanguageLabel(String lang) {
+String shortLanguageLabel(String lang) {
   switch (lang) {
     case 'English':
       return 'EN';
@@ -191,5 +191,134 @@ String _shortLanguageLabel(String lang) {
       return 'CN';
     default:
       return languageLabel(lang);
+  }
+}
+
+String _shortLanguageLabel(String lang) => shortLanguageLabel(lang);
+
+/// 헤더용 — 선택된 언어만 pill로 보여주고 드롭다운으로 전환.
+class CompactLanguageDropdown extends StatelessWidget {
+  final String selectedLanguage;
+  final ValueChanged<String> onSelected;
+  final Color accent;
+
+  const CompactLanguageDropdown({
+    super.key,
+    required this.selectedLanguage,
+    required this.onSelected,
+    required this.accent,
+  });
+
+  static const bookmarkButtonWidth = 32.0;
+  static const dividerWidth = 1.0;
+  static const dividerSpacing = 8.0;
+  static const pillHeight = 32.0;
+  static const outerWidth = 76.0;
+
+  static const _pillHorizontalPadding = 10.0;
+  static const _menuItemPadding =
+      EdgeInsets.symmetric(horizontal: _pillHorizontalPadding);
+
+  static BoxDecoration _pillDecoration({required bool isOpen}) {
+    return BoxDecoration(
+      color: Colors.white.withValues(alpha: isOpen ? 0.58 : 0.42),
+      borderRadius: BorderRadius.circular(16),
+    );
+  }
+
+  Widget _buildPillRow({
+    required String emoji,
+    required String label,
+    required Color labelColor,
+    bool showChevron = false,
+    bool showCheck = false,
+  }) {
+    return Row(
+      children: [
+        Text(
+          emoji,
+          style: const TextStyle(fontSize: 12, height: 1),
+        ),
+        const SizedBox(width: 5),
+        Expanded(
+          child: Text(
+            label,
+            maxLines: 1,
+            overflow: TextOverflow.ellipsis,
+            style: TextStyle(
+              fontSize: 11,
+              fontWeight: FontWeight.w800,
+              height: 1,
+              color: labelColor,
+            ),
+          ),
+        ),
+        if (showChevron)
+          Icon(
+            Icons.keyboard_arrow_down_rounded,
+            size: 16,
+            color: DashboardPalette.textMuted.withValues(alpha: 0.85),
+          )
+        else if (showCheck)
+          Icon(Icons.check_rounded, size: 14, color: labelColor),
+      ],
+    );
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final emoji = languageEmoji[selectedLanguage] ?? '';
+    final label = shortLanguageLabel(selectedLanguage);
+    final menuConstraints = BoxConstraints(
+      minWidth: outerWidth,
+      maxWidth: outerWidth,
+    );
+
+    return PopupMenuButton<String>(
+      padding: EdgeInsets.zero,
+      constraints: menuConstraints,
+      offset: const Offset(0, 6),
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+      elevation: 6,
+      shadowColor: Colors.black.withValues(alpha: 0.08),
+      color: Colors.white.withValues(alpha: 0.96),
+      surfaceTintColor: Colors.transparent,
+      splashRadius: 0.001,
+      onSelected: onSelected,
+      itemBuilder: (context) {
+        return [
+          for (final lang in kDictionaryLanguages)
+            PopupMenuItem<String>(
+              value: lang,
+              height: pillHeight,
+              padding: _menuItemPadding,
+              child: _buildPillRow(
+                emoji: languageEmoji[lang] ?? '',
+                label: shortLanguageLabel(lang),
+                labelColor: lang == selectedLanguage
+                    ? accent
+                    : DashboardPalette.navy,
+                showCheck: lang == selectedLanguage,
+              ),
+            ),
+        ];
+      },
+      child: SizedBox(
+        width: outerWidth,
+        height: pillHeight,
+        child: DecoratedBox(
+          decoration: _pillDecoration(isOpen: false),
+          child: Padding(
+            padding: const EdgeInsets.symmetric(horizontal: _pillHorizontalPadding),
+            child: _buildPillRow(
+              emoji: emoji,
+              label: label,
+              labelColor: accent,
+              showChevron: true,
+            ),
+          ),
+        ),
+      ),
+    );
   }
 }

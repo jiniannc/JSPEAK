@@ -14,7 +14,7 @@ class AudioPlaybackUrl {
     if (_isScriptAudioProxy(value)) return value;
 
     final driveId = _driveFileId(value);
-    final base = proxyBase ?? AppConfig.contentUrl;
+    final base = proxyBase ?? AppConfig.normalizedContentUrl;
     if (driveId != null && base.isNotEmpty) {
       return _proxyUrl(base, driveId);
     }

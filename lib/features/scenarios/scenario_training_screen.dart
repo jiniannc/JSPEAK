@@ -1,4 +1,4 @@
-import 'dart:async' show unawaited;
+import 'dart:async' show Timer, unawaited;
 import 'dart:math' as math;
 
 import 'package:flutter/material.dart';
@@ -787,6 +787,7 @@ class _FloatingControlBar extends StatelessWidget {
                               ? training.nextHintLabel
                               : '빈칸 터치',
                           color: primaryColor,
+                          attentionToken: training.blankAttentionToken,
                           enabled:
                               training.canRevealMoreHints &&
                               !training.isListening &&
@@ -920,6 +921,7 @@ class _FloatingControlBar extends StatelessWidget {
                           icon: Icons.lightbulb_outline_rounded,
                           label: training.nextHintLabel,
                           color: primaryColor,
+                          attentionToken: training.blankAttentionToken,
                           enabled:
                               !training.isListening &&
                               !training.isInitializingStt &&
@@ -1093,12 +1095,13 @@ class _GuidanceBanner extends StatelessWidget {
   }
 }
 
-class _SideAction extends StatelessWidget {
+class _SideAction extends StatefulWidget {
   final IconData icon;
   final String label;
   final Color color;
   final bool enabled;
   final VoidCallback onTap;
+  final int attentionToken;
 
   const _SideAction({
     required this.icon,
@@ -1106,32 +1109,95 @@ class _SideAction extends StatelessWidget {
     required this.color,
     required this.enabled,
     required this.onTap,
+    this.attentionToken = 0,
   });
 
   @override
+  State<_SideAction> createState() => _SideActionState();
+}
+
+class _SideActionState extends State<_SideAction>
+    with SingleTickerProviderStateMixin {
+  static const _warmAccent = Color(0xFFFF6D00);
+
+  late final AnimationController _pulse;
+  Timer? _stopTimer;
+  bool _pulsing = false;
+
+  @override
+  void initState() {
+    super.initState();
+    _pulse = AnimationController(
+      vsync: this,
+      duration: const Duration(milliseconds: 820),
+    );
+  }
+
+  @override
+  void didUpdateWidget(covariant _SideAction oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (widget.attentionToken != oldWidget.attentionToken &&
+        widget.attentionToken > 0) {
+      _startPulse();
+    }
+  }
+
+  void _startPulse() {
+    _stopTimer?.cancel();
+    setState(() => _pulsing = true);
+    _pulse
+      ..reset()
+      ..repeat(reverse: true);
+    _stopTimer = Timer(const Duration(milliseconds: 3400), () {
+      if (!mounted) return;
+      _pulse
+        ..stop()
+        ..value = 0;
+      setState(() => _pulsing = false);
+    });
+  }
+
+  @override
+  void dispose() {
+    _stopTimer?.cancel();
+    _pulse.dispose();
+    super.dispose();
+  }
+
+  @override
   Widget build(BuildContext context) {
-    final c = enabled ? color : color.withValues(alpha: 0.35);
-    return InkWell(
-      onTap: enabled ? onTap : null,
-      borderRadius: BorderRadius.circular(14),
-      child: Padding(
-        padding: const EdgeInsets.symmetric(vertical: 8, horizontal: 4),
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            Icon(icon, size: 22, color: c),
-            const SizedBox(height: 4),
-            Text(
-              label,
-              style: TextStyle(
-                fontSize: 11,
-                fontWeight: FontWeight.w700,
-                color: c,
-              ),
+    final base =
+        widget.enabled ? widget.color : widget.color.withValues(alpha: 0.35);
+    return AnimatedBuilder(
+      animation: _pulse,
+      builder: (context, child) {
+        final t = _pulsing
+            ? Curves.easeInOut.transform(_pulse.value)
+            : 0.0;
+        final accent = Color.lerp(base, _warmAccent, t * 0.72)!;
+        return InkWell(
+          onTap: widget.enabled ? widget.onTap : null,
+          borderRadius: BorderRadius.circular(14),
+          child: Padding(
+            padding: const EdgeInsets.symmetric(vertical: 8, horizontal: 4),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Icon(widget.icon, size: 22, color: accent),
+                const SizedBox(height: 4),
+                Text(
+                  widget.label,
+                  style: TextStyle(
+                    fontSize: 11,
+                    fontWeight: FontWeight.w700,
+                    color: accent,
+                  ),
+                ),
+              ],
             ),
-          ],
-        ),
-      ),
+          ),
+        );
+      },
     );
   }
 }
@@ -1163,8 +1229,12 @@ class _MicButton extends StatefulWidget {
 
 class _MicButtonState extends State<_MicButton>
     with TickerProviderStateMixin {
+  static const _warmPrimary = Color(0xFFFF6D00);
+  static const _warmSecondary = Color(0xFFFF9100);
+
   late final AnimationController _listenPulse;
   late final AnimationController _attentionPulse;
+  Timer? _attentionStopTimer;
   bool _attentionActive = false;
 
   @override
@@ -1176,12 +1246,8 @@ class _MicButtonState extends State<_MicButton>
     );
     _attentionPulse = AnimationController(
       vsync: this,
-      duration: const Duration(milliseconds: 1500),
+      duration: const Duration(milliseconds: 780),
     );
-    _attentionPulse.addStatusListener((status) {
-      if (status != AnimationStatus.completed || !mounted) return;
-      setState(() => _attentionActive = false);
-    });
     if (widget.isListening) {
       _listenPulse.repeat();
     } else if (widget.attentionToken > 0) {
@@ -1190,16 +1256,27 @@ class _MicButtonState extends State<_MicButton>
   }
 
   void _playAttentionPulse() {
-    _attentionActive = true;
-    _attentionPulse.forward(from: 0);
+    _attentionStopTimer?.cancel();
+    setState(() => _attentionActive = true);
+    _attentionPulse
+      ..reset()
+      ..repeat(reverse: true);
+    _attentionStopTimer = Timer(const Duration(milliseconds: 3600), () {
+      if (!mounted || widget.isListening) return;
+      _attentionPulse
+        ..stop()
+        ..value = 0;
+      setState(() => _attentionActive = false);
+    });
   }
 
   @override
   void didUpdateWidget(covariant _MicButton oldWidget) {
     super.didUpdateWidget(oldWidget);
-    if (widget.isListening) {
+      if (widget.isListening) {
       if (!_listenPulse.isAnimating) _listenPulse.repeat();
       if (_attentionActive) {
+        _attentionStopTimer?.cancel();
         _attentionPulse
           ..stop()
           ..reset();
@@ -1219,6 +1296,7 @@ class _MicButtonState extends State<_MicButton>
 
   @override
   void dispose() {
+    _attentionStopTimer?.cancel();
     _listenPulse.dispose();
     _attentionPulse.dispose();
     super.dispose();
@@ -1276,99 +1354,131 @@ class _MicButtonState extends State<_MicButton>
                 AnimatedBuilder(
                   animation: _attentionPulse,
                   builder: (context, _) {
-                    final t = Curves.easeOutCubic.transform(_attentionPulse.value);
                     final ringColor = Color.lerp(
                       widget.primaryColor,
-                      const Color(0xFFFF8A80),
-                      0.35,
+                      _warmPrimary,
+                      0.72,
                     )!;
-                    return Transform.scale(
-                      scale: 1.0 + t * 0.22,
-                      child: Container(
-                        width: micSize,
-                        height: micSize,
-                        decoration: BoxDecoration(
-                          shape: BoxShape.circle,
-                          border: Border.all(
-                            color: ringColor.withValues(alpha: 0.38 * (1 - t)),
-                            width: 2,
+                    return Stack(
+                      alignment: Alignment.center,
+                      clipBehavior: Clip.none,
+                      children: [
+                        for (final phase in [0.0, 0.48])
+                          Transform.scale(
+                            scale: 1.0 +
+                                ((_attentionPulse.value + phase) % 1.0) * 0.42,
+                            child: Container(
+                              width: micSize,
+                              height: micSize,
+                              decoration: BoxDecoration(
+                                shape: BoxShape.circle,
+                                border: Border.all(
+                                  color: ringColor.withValues(
+                                    alpha: 0.62 *
+                                        (1 -
+                                            ((_attentionPulse.value + phase) %
+                                                1.0)),
+                                  ),
+                                  width: 2.6,
+                                ),
+                              ),
+                            ),
                           ),
-                        ),
-                      ),
+                      ],
                     );
                   },
                 ),
               AnimatedBuilder(
                 animation: _attentionPulse,
-                builder: (context, child) {
+                builder: (context, _) {
                   final t = _attentionActive && !widget.isListening
-                      ? Curves.easeInOut.transform(
-                          math.sin(_attentionPulse.value * math.pi) * 0.5 + 0.5,
-                        )
+                      ? Curves.easeInOut.transform(_attentionPulse.value)
                       : 0.0;
+                  final warmth =
+                      _attentionActive && !widget.isListening ? 0.72 * t : 0.0;
                   return Transform.scale(
-                    scale: 1.0 + t * 0.04,
-                    child: child,
+                    scale: 1.0 + t * 0.08,
+                    child: Container(
+                      width: micSize,
+                      height: micSize,
+                      decoration: BoxDecoration(
+                        shape: BoxShape.circle,
+                        gradient: widget.enabled
+                            ? (widget.isListening
+                                  ? const LinearGradient(
+                                      colors: [
+                                        Color(0xFFFF5252),
+                                        Color(0xFFD32F2F),
+                                      ],
+                                      begin: Alignment.topLeft,
+                                      end: Alignment.bottomRight,
+                                    )
+                                  : LinearGradient(
+                                      colors: [
+                                        Color.lerp(
+                                          widget.primaryColor,
+                                          _warmPrimary,
+                                          warmth,
+                                        )!,
+                                        Color.lerp(
+                                          widget.secondaryColor,
+                                          _warmSecondary,
+                                          warmth,
+                                        )!,
+                                      ],
+                                      begin: Alignment.topLeft,
+                                      end: Alignment.bottomRight,
+                                    ))
+                            : null,
+                        color: widget.enabled ? null : DashboardPalette.borderLight,
+                        boxShadow: widget.enabled
+                            ? [
+                                BoxShadow(
+                                  color: (widget.isListening
+                                          ? Colors.red
+                                          : (_attentionActive
+                                              ? _warmPrimary
+                                              : widget.primaryColor))
+                                      .withValues(
+                                        alpha: widget.isListening
+                                            ? 0.42
+                                            : (0.35 + warmth * 0.38),
+                                      ),
+                                  blurRadius: widget.isListening
+                                      ? 18
+                                      : (14 + warmth * 10),
+                                  spreadRadius: widget.isListening
+                                      ? 1
+                                      : (warmth * 2.4),
+                                  offset: const Offset(0, 4),
+                                ),
+                                if (_attentionActive && !widget.isListening)
+                                  BoxShadow(
+                                    color: _warmSecondary.withValues(
+                                      alpha: 0.18 + warmth * 0.28,
+                                    ),
+                                    blurRadius: 24 + warmth * 10,
+                                    spreadRadius: 2 + warmth * 3,
+                                  ),
+                              ]
+                            : null,
+                      ),
+                      child: widget.isInitializing
+                          ? const Padding(
+                              padding: EdgeInsets.all(18),
+                              child: CircularProgressIndicator(
+                                strokeWidth: 2.5,
+                                color: Colors.white,
+                              ),
+                            )
+                          : Icon(
+                              Icons.mic_rounded,
+                              color: Colors.white,
+                              size: widget.isListening ? 30 : 28,
+                            ),
+                    ),
                   );
                 },
-                child: AnimatedContainer(
-                duration: const Duration(milliseconds: 320),
-                curve: Curves.easeOutCubic,
-                width: micSize,
-                height: micSize,
-                decoration: BoxDecoration(
-                  shape: BoxShape.circle,
-                  gradient: widget.enabled
-                      ? (widget.isListening
-                            ? const LinearGradient(
-                                colors: [Color(0xFFFF5252), Color(0xFFD32F2F)],
-                                begin: Alignment.topLeft,
-                                end: Alignment.bottomRight,
-                              )
-                            : LinearGradient(
-                                colors: [
-                                  widget.primaryColor,
-                                  widget.secondaryColor,
-                                ],
-                                begin: Alignment.topLeft,
-                                end: Alignment.bottomRight,
-                              ))
-                      : null,
-                  color: widget.enabled ? null : DashboardPalette.borderLight,
-                  boxShadow: widget.enabled
-                      ? [
-                          BoxShadow(
-                            color: (widget.isListening
-                                    ? Colors.red
-                                    : widget.primaryColor)
-                                .withValues(
-                                  alpha: widget.isListening
-                                      ? 0.42
-                                      : (_attentionActive ? 0.40 : 0.35),
-                                ),
-                            blurRadius: widget.isListening
-                                ? 18
-                                : (_attentionActive ? 16 : 14),
-                            spreadRadius: widget.isListening ? 1 : 0,
-                            offset: const Offset(0, 4),
-                          ),
-                        ]
-                      : null,
-                ),
-                child: widget.isInitializing
-                    ? const Padding(
-                        padding: EdgeInsets.all(18),
-                        child: CircularProgressIndicator(
-                          strokeWidth: 2.5,
-                          color: Colors.white,
-                        ),
-                      )
-                    : Icon(
-                        Icons.mic_rounded,
-                        color: Colors.white,
-                        size: widget.isListening ? 30 : 28,
-                      ),
-                ),
               ),
             ],
           ),

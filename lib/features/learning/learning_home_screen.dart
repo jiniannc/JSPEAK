@@ -1288,6 +1288,7 @@ class _HubChapterCardLoaderState extends State<_HubChapterCardLoader>
             onExpandRequested: widget.onExpandRequested,
             swipeProgress: words.isEmpty ? null : swipeCat,
             sentenceSummary: sentences.isEmpty ? null : sentenceSummary,
+            sentences: sentences,
             scenarios: scenarios,
             isScenarioCompleted: isScenarioCompleted,
             onWordPlay: words.isEmpty

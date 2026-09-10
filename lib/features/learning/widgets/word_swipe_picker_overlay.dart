@@ -2,59 +2,35 @@ import 'dart:math' as math;
 
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
-import 'package:go_router/go_router.dart';
 
-import '../../../app/providers.dart';
-import '../../../app/sentence_progress_providers.dart';
-import '../../../core/utils/sentence_category_grouping.dart';
+import '../../../app/swipe_progress_providers.dart';
+import '../../../data/datasources/local/swipe_progress_local_datasource.dart';
 import '../../dashboard/dashboard_palette.dart';
-import '../../shell/floating_island_nav_bar.dart';
 import 'hub_mode_picker_shared.dart';
+import 'learning_hub_chapter_card.dart';
 import 'mode_guide_cards.dart';
 
-/// 문장 스피킹 진입 — 괄호 그룹이 2개 이상이면 시나리오와 동일한 오버레이 피커.
-void openSentenceTraining(
+/// 단어 스와이프 진입 — 문장·시나리오와 동일한 선택 오버레이.
+void openWordSwipePicker(
   BuildContext context, {
   required WidgetRef ref,
   required String language,
   required String category,
-  int? chapterNo,
+  required int wordCount,
   GlobalKey? popupAnchorKey,
 }) {
-  final bundle = ref.read(contentProvider).value?.bundle;
-  if (bundle == null) return;
-
-  final groups = bundle.sentenceGroupsFor(
-    language,
-    category,
-    chapterNo: chapterNo,
-  );
-  if (groups.isEmpty) {
-    ScaffoldMessenger.of(context).showSnackBar(
-      const SnackBar(content: Text('이 주제에 학습할 문장이 없어요.')),
-    );
-    return;
-  }
-
-  void navigate(String fullCategory) {
-    if (!context.mounted) return;
-    context.push(
-      '/scenarios/sentences/play'
-      '?lang=${Uri.encodeComponent(language)}'
-      '&category=${Uri.encodeComponent(fullCategory)}',
-    );
-  }
-
-  if (groups.length == 1) {
-    navigate(groups.first.fullCategory);
-    return;
-  }
+  if (wordCount <= 0) return;
 
   final resolved = popupAnchorKey == null
       ? null
       : popupAnchorFor(context, anchorKey: popupAnchorKey);
   if (resolved == null) {
-    navigate(groups.first.fullCategory);
+    if (!context.mounted) return;
+    openWordSwipeFromHub(
+      context,
+      language: language,
+      category: category,
+    );
     return;
   }
 
@@ -63,31 +39,24 @@ void openSentenceTraining(
   entry = OverlayEntry(
     builder: (overlayContext) => Consumer(
       builder: (context, ref, _) {
-        final stats = ref.watch(sentenceProgressProvider).stats;
-        final repo = ref.watch(sentenceProgressRepositoryProvider);
-        return _SentenceGroupPickerOverlay(
+        final stats = ref.watch(swipeProgressProvider).stats;
+        final progress = stats.forCategory(language, category);
+        return _WordSwipePickerOverlay(
           anchor: resolved.anchor,
           anchorSize: resolved.size,
-          groups: groups,
-          groupProgress: (fullCategory) {
-            final sentences = bundle.sentencesFor(language, fullCategory);
-            final summary = repo.categorySummary(
-              sentences: sentences,
-              stats: stats,
-            );
-            return (
-              mastered: summary.masteredCount,
-              total: summary.total,
-              allMastered: summary.allMastered,
-            );
-          },
+          wordCount: wordCount,
+          progress: progress,
           onDismiss: () {
             if (entry.mounted) entry.remove();
           },
-          onSelect: (group) {
+          onStart: () {
             if (entry.mounted) entry.remove();
             if (!parent.mounted) return;
-            navigate(group.fullCategory);
+            openWordSwipeFromHub(
+              parent,
+              language: language,
+              category: category,
+            );
           },
         );
       },
@@ -96,30 +65,29 @@ void openSentenceTraining(
   resolved.overlay.insert(entry);
 }
 
-class _SentenceGroupPickerOverlay extends StatefulWidget {
-  final Offset anchor;
-  final Size anchorSize;
-  final List<SentenceCategoryGroupInfo> groups;
-  final ({int mastered, int total, bool allMastered}) Function(String fullCategory)
-      groupProgress;
-  final VoidCallback onDismiss;
-  final ValueChanged<SentenceCategoryGroupInfo> onSelect;
-
-  const _SentenceGroupPickerOverlay({
+class _WordSwipePickerOverlay extends StatefulWidget {
+  const _WordSwipePickerOverlay({
     required this.anchor,
     required this.anchorSize,
-    required this.groups,
-    required this.groupProgress,
+    required this.wordCount,
+    required this.progress,
     required this.onDismiss,
-    required this.onSelect,
+    required this.onStart,
   });
 
+  final Offset anchor;
+  final Size anchorSize;
+  final int wordCount;
+  final SwipeCategoryProgress progress;
+  final VoidCallback onDismiss;
+  final VoidCallback onStart;
+
   @override
-  State<_SentenceGroupPickerOverlay> createState() =>
-      _SentenceGroupPickerOverlayState();
+  State<_WordSwipePickerOverlay> createState() =>
+      _WordSwipePickerOverlayState();
 }
 
-class _SentenceGroupPickerOverlayState extends State<_SentenceGroupPickerOverlay>
+class _WordSwipePickerOverlayState extends State<_WordSwipePickerOverlay>
     with SingleTickerProviderStateMixin {
   late final AnimationController _entry;
   late final Animation<double> _dimOpacity;
@@ -131,10 +99,7 @@ class _SentenceGroupPickerOverlayState extends State<_SentenceGroupPickerOverlay
   Animation<double>? _tiltX;
   Animation<double>? _liftShadow;
 
-  static const _preferredPopupWidth = 292.0;
-  static const _screenMargin = 14.0;
-  static const _anchorGap = 8.0;
-  static const _sentenceAccent = Color(0xFFE11D48);
+  static const _wordAccent = Color(0xFFE67E22);
 
   @override
   void initState() {
@@ -218,55 +183,61 @@ class _SentenceGroupPickerOverlayState extends State<_SentenceGroupPickerOverlay
     final media = MediaQuery.of(context);
     final size = media.size;
     final pad = media.padding;
-    final popupWidth = math.min(
-      _preferredPopupWidth,
-      math.max(1.0, size.width - _screenMargin * 2),
-    );
-    final estimatedHeight = math.min(
-      widget.groups.length * 46.0 + 62,
-      math.max(120.0, size.height * 0.52),
-    );
-    final bottomObstruction =
-        pad.bottom + FloatingIslandNavBar.reservedHeight(context);
-    final safeTop = pad.top + _screenMargin;
+    const popupWidth = HubPickerLayout.preferredPopupWidth;
+    const estimatedHeight = 108.0;
+    final bottomObstruction = HubPickerLayout.bottomObstruction(context);
+    final safeTop = pad.top + HubPickerLayout.screenMargin;
     final safeBottom = math.max(
       safeTop + 120,
-      size.height - bottomObstruction - _screenMargin,
+      size.height - bottomObstruction - HubPickerLayout.screenMargin,
     );
     final anchorTop = widget.anchor.dy;
     final anchorBottom = widget.anchor.dy + widget.anchorSize.height;
-    final spaceAbove = math.max(0.0, anchorTop - safeTop - _anchorGap);
-    final spaceBelow = math.max(0.0, safeBottom - anchorBottom - _anchorGap);
-    // 일부만 들어가는 경우 아래로 열면 하단 네비게이션 바에 가려진다.
-    // 전체 목록 높이를 확보할 수 있을 때에만 아래로 열고, 그 외에는 위로 연다.
+    final spaceAbove =
+        math.max(0.0, anchorTop - safeTop - HubPickerLayout.anchorGap);
+    final spaceBelow = math.max(
+      0.0,
+      safeBottom - anchorBottom - HubPickerLayout.anchorGap,
+    );
     final showBelow = spaceBelow >= estimatedHeight;
     final availableHeight = math.max(
-      120.0,
+      96.0,
       math.min(
         estimatedHeight,
         math.min(
           showBelow ? spaceBelow : spaceAbove,
-          math.max(120.0, safeBottom - safeTop),
+          math.max(96.0, safeBottom - safeTop),
         ),
       ),
     );
 
     var left = widget.anchor.dx + widget.anchorSize.width / 2 - popupWidth / 2;
     left = left.clamp(
-      _screenMargin,
-      math.max(_screenMargin, size.width - popupWidth - _screenMargin),
+      HubPickerLayout.screenMargin,
+      math.max(
+        HubPickerLayout.screenMargin,
+        size.width - popupWidth - HubPickerLayout.screenMargin,
+      ),
     );
 
     final popupTop = showBelow
-        ? (anchorBottom + _anchorGap).clamp(safeTop, safeBottom - 80)
-        : (anchorTop - _anchorGap - availableHeight).clamp(
+        ? (anchorBottom + HubPickerLayout.anchorGap)
+            .clamp(safeTop, safeBottom - 80)
+        : (anchorTop - HubPickerLayout.anchorGap - availableHeight).clamp(
             safeTop,
-            anchorTop - _anchorGap,
+            anchorTop - HubPickerLayout.anchorGap,
           );
 
     _ensureDirectionalMotion(showBelow);
     final panelAlignment =
         showBelow ? Alignment.topCenter : Alignment.bottomCenter;
+
+    final completed = LearningHubChapterCard.isWordModeComplete(
+      widget.wordCount,
+      widget.progress,
+    );
+    final known = widget.progress.knownCount;
+    final total = widget.wordCount;
 
     return Stack(
       children: [
@@ -310,7 +281,7 @@ class _SentenceGroupPickerOverlayState extends State<_SentenceGroupPickerOverlay
                           offset: Offset(0, 5 + 14 * lift),
                         ),
                         BoxShadow(
-                          color: _sentenceAccent.withValues(
+                          color: _wordAccent.withValues(
                             alpha: 0.04 + 0.08 * lift,
                           ),
                           blurRadius: 18 + 12 * lift,
@@ -326,15 +297,11 @@ class _SentenceGroupPickerOverlayState extends State<_SentenceGroupPickerOverlay
             },
             child: Material(
               color: Colors.transparent,
-              child: ConstrainedBox(
-                constraints: BoxConstraints(maxHeight: availableHeight),
-                child: SingleChildScrollView(
-                  child: _SentenceGroupPickerPanel(
-                    groups: widget.groups,
-                    groupProgress: widget.groupProgress,
-                    onSelect: widget.onSelect,
-                  ),
-                ),
+              child: _WordSwipePickerPanel(
+                completed: completed,
+                known: known,
+                total: total,
+                onStart: widget.onStart,
               ),
             ),
           ),
@@ -344,51 +311,23 @@ class _SentenceGroupPickerOverlayState extends State<_SentenceGroupPickerOverlay
   }
 }
 
-class _SentenceGroupPickerPanel extends StatelessWidget {
-  final List<SentenceCategoryGroupInfo> groups;
-  final ({int mastered, int total, bool allMastered}) Function(String fullCategory)
-      groupProgress;
-  final ValueChanged<SentenceCategoryGroupInfo> onSelect;
-
-  const _SentenceGroupPickerPanel({
-    required this.groups,
-    required this.groupProgress,
-    required this.onSelect,
+class _WordSwipePickerPanel extends StatelessWidget {
+  const _WordSwipePickerPanel({
+    required this.completed,
+    required this.known,
+    required this.total,
+    required this.onStart,
   });
 
-  static const _dividerColor = Color(0x120F172A);
-  static const _dividerInset = 12.0;
-  static const _sentenceAccent = Color(0xFFE11D48);
+  final bool completed;
+  final int known;
+  final int total;
+  final VoidCallback onStart;
+
+  static const _wordAccent = Color(0xFFE67E22);
 
   @override
   Widget build(BuildContext context) {
-    final panelBody = Column(
-      mainAxisSize: MainAxisSize.min,
-      crossAxisAlignment: CrossAxisAlignment.stretch,
-      children: [
-        HubModePickerHeader(
-          icon: Icons.view_carousel_rounded,
-          title: '문장 주제 선택',
-          accent: _sentenceAccent,
-          guideBuilder: (dismiss) =>
-              BasicSentenceModeGuideCard(onDismiss: dismiss),
-        ),
-        for (var i = 0; i < groups.length; i++) ...[
-          _SentenceGroupPickerRow(
-            index: i + 1,
-            group: groups[i],
-            progress: groupProgress(groups[i].fullCategory),
-            onTap: () => onSelect(groups[i]),
-          ),
-          if (i < groups.length - 1)
-            const Padding(
-              padding: EdgeInsets.symmetric(horizontal: _dividerInset),
-              child: Divider(height: 1, thickness: 1, color: _dividerColor),
-            ),
-        ],
-      ],
-    );
-
     return Material(
       color: Colors.transparent,
       child: DecoratedBox(
@@ -410,7 +349,52 @@ class _SentenceGroupPickerPanel extends StatelessWidget {
               borderRadius: BorderRadius.circular(16),
               border: Border.all(color: Colors.white, width: 1.2),
             ),
-            child: panelBody,
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
+                HubModePickerHeader(
+                  icon: Icons.style_rounded,
+                  title: '단어 스와이프',
+                  accent: _wordAccent,
+                  guideBuilder: (dismiss) =>
+                      WordSwipeModeGuideCard(onDismiss: dismiss),
+                ),
+                InkWell(
+                  onTap: onStart,
+                  child: Padding(
+                    padding: const EdgeInsets.fromLTRB(12, 7, 10, 7),
+                    child: Row(
+                      children: [
+                        const Expanded(
+                          child: Text(
+                            '시작하기',
+                            maxLines: 2,
+                            overflow: TextOverflow.ellipsis,
+                            style: TextStyle(
+                              fontSize: 12,
+                              fontWeight: FontWeight.w700,
+                              height: 1.25,
+                              color: DashboardPalette.navy,
+                            ),
+                          ),
+                        ),
+                        if (completed)
+                          Padding(
+                            padding: const EdgeInsets.only(left: 6, right: 6),
+                            child: Icon(
+                              Icons.check_circle_rounded,
+                              size: 17,
+                              color: DashboardPalette.teal.withValues(alpha: 0.88),
+                            ),
+                          ),
+                        _WordSwipeProgressRing(known: known, total: total),
+                      ],
+                    ),
+                  ),
+                ),
+              ],
+            ),
           ),
         ),
       ),
@@ -418,76 +402,21 @@ class _SentenceGroupPickerPanel extends StatelessWidget {
   }
 }
 
-class _SentenceGroupPickerRow extends StatelessWidget {
-  final int index;
-  final SentenceCategoryGroupInfo group;
-  final ({int mastered, int total, bool allMastered}) progress;
-  final VoidCallback onTap;
-
-  const _SentenceGroupPickerRow({
-    required this.index,
-    required this.group,
-    required this.progress,
-    required this.onTap,
-  });
-
-  @override
-  Widget build(BuildContext context) {
-    return InkWell(
-      onTap: onTap,
-      child: Padding(
-        padding: const EdgeInsets.fromLTRB(12, 7, 10, 7),
-        child: Row(
-          children: [
-            Expanded(
-              child: Text(
-                '$index. ${group.label}',
-                maxLines: 2,
-                overflow: TextOverflow.ellipsis,
-                style: const TextStyle(
-                  fontSize: 12,
-                  fontWeight: FontWeight.w700,
-                  height: 1.25,
-                  color: DashboardPalette.navy,
-                ),
-              ),
-            ),
-            if (progress.allMastered && progress.total > 0)
-              Padding(
-                padding: const EdgeInsets.only(left: 6, right: 6),
-                child: Icon(
-                  Icons.check_circle_rounded,
-                  size: 17,
-                  color: DashboardPalette.teal.withValues(alpha: 0.88),
-                ),
-              ),
-            _SentenceGroupProgressRing(
-              mastered: progress.mastered,
-              total: progress.total,
-            ),
-          ],
-        ),
-      ),
-    );
-  }
-}
-
-/// 시나리오 선택의 최근 점수 링과 동일한 크기·여백의 문장 학습 진척도 링.
-class _SentenceGroupProgressRing extends StatelessWidget {
-  final int mastered;
-  final int total;
-
-  const _SentenceGroupProgressRing({
-    required this.mastered,
+class _WordSwipeProgressRing extends StatelessWidget {
+  const _WordSwipeProgressRing({
+    required this.known,
     required this.total,
   });
+
+  final int known;
+  final int total;
 
   @override
   Widget build(BuildContext context) {
     const size = 34.0;
     const stroke = 3.5;
     const track = Color(0xFFE2E8F0);
-    final ratio = total <= 0 ? 0.0 : (mastered / total).clamp(0.0, 1.0);
+    final ratio = total <= 0 ? 0.0 : (known / total).clamp(0.0, 1.0);
 
     return SizedBox(
       width: size,
@@ -497,14 +426,14 @@ class _SentenceGroupProgressRing extends StatelessWidget {
         children: [
           CustomPaint(
             size: const Size(size, size),
-            painter: _SentenceGroupProgressRingPainter(
+            painter: _WordSwipeProgressRingPainter(
               ratio: ratio,
               trackColor: track,
               strokeWidth: stroke,
             ),
           ),
           Text(
-            total <= 0 ? '' : '$mastered',
+            total <= 0 ? '' : '$known',
             style: TextStyle(
               fontSize: 9.5,
               fontWeight: FontWeight.w800,
@@ -518,16 +447,16 @@ class _SentenceGroupProgressRing extends StatelessWidget {
   }
 }
 
-class _SentenceGroupProgressRingPainter extends CustomPainter {
-  final double ratio;
-  final Color trackColor;
-  final double strokeWidth;
-
-  const _SentenceGroupProgressRingPainter({
+class _WordSwipeProgressRingPainter extends CustomPainter {
+  const _WordSwipeProgressRingPainter({
     required this.ratio,
     required this.trackColor,
     required this.strokeWidth,
   });
+
+  final double ratio;
+  final Color trackColor;
+  final double strokeWidth;
 
   @override
   void paint(Canvas canvas, Size size) {
@@ -550,7 +479,7 @@ class _SentenceGroupProgressRingPainter extends CustomPainter {
 
     final sweep = fullSweep * ratio;
     if (sweep <= 0.001) return;
-    const colors = [Color(0xFFE11D48), Color(0xFFFB7185)];
+    const colors = [Color(0xFFE67E22), Color(0xFFF59E0B)];
     canvas.drawArc(
       rect,
       startAngle,
@@ -569,6 +498,6 @@ class _SentenceGroupProgressRingPainter extends CustomPainter {
   }
 
   @override
-  bool shouldRepaint(covariant _SentenceGroupProgressRingPainter oldDelegate) =>
+  bool shouldRepaint(covariant _WordSwipeProgressRingPainter oldDelegate) =>
       oldDelegate.ratio != ratio;
 }

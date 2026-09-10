@@ -5,6 +5,7 @@ import 'package:go_router/go_router.dart';
 import '../../app/dictionary_providers.dart';
 import '../../app/learning_hub_language_provider.dart';
 import '../../app/learning_providers.dart';
+import '../../app/shell_providers.dart';
 import '../../core/config/active5_layout.dart';
 import '../../core/theme/animated_language_scope.dart';
 import '../../shared/widgets/app_header.dart';
@@ -25,9 +26,12 @@ class MainShellTabHeader extends ConsumerStatefulWidget {
   static const kMyPageTabIndex = 3;
 
   /// 헤더 오버레이 높이 — 탭 본문 top padding.
-  static double reservedHeight(BuildContext context) {
+  static double reservedHeight(BuildContext context, {int? tabIndex}) {
+    final slot = tabIndex == null
+        ? AppHeader.slotHeight
+        : AppHeader.slotHeightForTab(tabIndex);
     return MediaQuery.paddingOf(context).top +
-        AppHeader.slotHeight +
+        slot +
         AppHeader.bodyGap;
   }
 
@@ -332,10 +336,11 @@ class _MainShellTabHeaderState extends ConsumerState<MainShellTabHeader>
 
     final trailingTab = _trailingTabIndexForDisplay();
     final mountTrailing = _shouldMountTrailingLayer();
+    final slotHeight = AppHeader.slotHeightForTab(widget.tabIndex);
 
     // 타이틀만 크로스페이드하고, 언어 스위치·즐겨찾기는 Stack 최상단에 고정.
     return SizedBox(
-      height: AppHeader.slotHeight,
+      height: slotHeight,
       width: double.infinity,
       child: Stack(
         clipBehavior: Clip.none,
@@ -343,11 +348,11 @@ class _MainShellTabHeaderState extends ConsumerState<MainShellTabHeader>
           buildTitleLayers(progressT),
           if (mountTrailing && trailingTab != null)
             Positioned(
-              top: AppHeader.topInset,
+              top: AppHeader.trailingBandTop,
               right: inset,
-              height: AppHeader.barContentHeight,
+              height: AppHeader.trailingBandHeight,
               child: Align(
-                alignment: Alignment.topRight,
+                alignment: Alignment.centerRight,
                 child: FadeTransition(
                   opacity: _trailingFade,
                   child: IgnorePointer(
@@ -380,16 +385,20 @@ class _MainShellTabHeaderState extends ConsumerState<MainShellTabHeader>
 }
 
 /// Shell 헤더 아래 본문 — 헤더 오버레이만큼 top padding.
-class MainShellTabBody extends StatelessWidget {
+class MainShellTabBody extends ConsumerWidget {
   final Widget child;
 
   const MainShellTabBody({super.key, required this.child});
 
   @override
-  Widget build(BuildContext context) {
+  Widget build(BuildContext context, WidgetRef ref) {
+    final tabIndex = ref.watch(shellTabIndexProvider);
     return Padding(
       padding: EdgeInsets.only(
-        top: MainShellTabHeader.reservedHeight(context),
+        top: MainShellTabHeader.reservedHeight(
+          context,
+          tabIndex: tabIndex,
+        ),
       ),
       child: child,
     );

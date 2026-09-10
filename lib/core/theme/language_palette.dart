@@ -30,6 +30,12 @@ class LanguagePalette extends ThemeExtension<LanguagePalette> {
   final Color todayPickMeshStart;
   final Color todayPickMeshEnd;
 
+  /// JSPEAK 로고 — 말풍선 왼쪽 + 3선 + 마침표.
+  final Color brandLogoAccent;
+
+  /// JSPEAK 워드마크 + 말풍선 오른쪽 (채도 낮은 네이비).
+  final Color brandWordmark;
+
   const LanguagePalette({
     required this.language,
     required this.primary,
@@ -46,7 +52,12 @@ class LanguagePalette extends ThemeExtension<LanguagePalette> {
     required this.softFill,
     required this.todayPickMeshStart,
     required this.todayPickMeshEnd,
+    required this.brandLogoAccent,
+    required this.brandWordmark,
   });
+
+  /// SVG FRAME_NAVY(#191F50) — JSPEAK·말풍선 오른쪽 공통, 채도 낮춘 슬레이트 네이비.
+  static const brandWordmarkColor = Color(0xFF424962);
 
   /// Today's Pick 보딩패스 카드 배경 그라데이션.
   List<Color> todayPickMeshGradient() => [
@@ -71,6 +82,8 @@ class LanguagePalette extends ThemeExtension<LanguagePalette> {
     softFill: Color(0xFFE8EEF5),
     todayPickMeshStart: Color(0xFFBAE6FD),
     todayPickMeshEnd: Color(0xFFE0F2FE),
+    brandLogoAccent: Color(0xFF0755B8),
+    brandWordmark: brandWordmarkColor,
   );
 
   /// JP — 뮤트 로즈 / 더스티 핑크 (사탕색 핑크 지양).
@@ -90,6 +103,8 @@ class LanguagePalette extends ThemeExtension<LanguagePalette> {
     softFill: Color(0xFFF0E4E8),
     todayPickMeshStart: Color(0xFFF5C6D0),
     todayPickMeshEnd: Color(0xFFFCE8EE),
+    brandLogoAccent: Color(0xFFC4788A),
+    brandWordmark: brandWordmarkColor,
   );
 
   /// CN — 소프트 플럼, 과하지 않은 바이올렛.
@@ -109,6 +124,8 @@ class LanguagePalette extends ThemeExtension<LanguagePalette> {
     softFill: Color(0xFFEBE6F2),
     todayPickMeshStart: Color(0xFFD4C8E8),
     todayPickMeshEnd: Color(0xFFEDE8F4),
+    brandLogoAccent: Color(0xFF7A6499),
+    brandWordmark: brandWordmarkColor,
   );
 
   static LanguagePalette forLanguage(String language) {
@@ -207,6 +224,8 @@ class LanguagePalette extends ThemeExtension<LanguagePalette> {
     Color? softFill,
     Color? todayPickMeshStart,
     Color? todayPickMeshEnd,
+    Color? brandLogoAccent,
+    Color? brandWordmark,
   }) {
     return LanguagePalette(
       language: language ?? this.language,
@@ -224,6 +243,8 @@ class LanguagePalette extends ThemeExtension<LanguagePalette> {
       softFill: softFill ?? this.softFill,
       todayPickMeshStart: todayPickMeshStart ?? this.todayPickMeshStart,
       todayPickMeshEnd: todayPickMeshEnd ?? this.todayPickMeshEnd,
+      brandLogoAccent: brandLogoAccent ?? this.brandLogoAccent,
+      brandWordmark: brandWordmark ?? this.brandWordmark,
     );
   }
 
@@ -247,6 +268,9 @@ class LanguagePalette extends ThemeExtension<LanguagePalette> {
       todayPickMeshStart:
           Color.lerp(todayPickMeshStart, other.todayPickMeshStart, t)!,
       todayPickMeshEnd: Color.lerp(todayPickMeshEnd, other.todayPickMeshEnd, t)!,
+      brandLogoAccent:
+          Color.lerp(brandLogoAccent, other.brandLogoAccent, t)!,
+      brandWordmark: Color.lerp(brandWordmark, other.brandWordmark, t)!,
     );
   }
 }

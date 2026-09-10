@@ -3,10 +3,18 @@ import 'package:jspeak/core/utils/chapter_asset_path.dart';
 
 void main() {
   group('resolveChapterAssetPath', () {
-    test('keeps full assets path', () {
+    test('maps language-prefixed sheet filenames to bundled assets', () {
       expect(
         resolveChapterAssetPath('assets/images/ch_boarding.png'),
-        'assets/images/ch_boarding.png',
+        'assets/images/boarding.png',
+      );
+      expect(
+        resolveChapterAssetPath('sent_ch_boarding.png'),
+        'assets/images/boarding.png',
+      );
+      expect(
+        resolveChapterAssetPath('word_ch_meal.png'),
+        'assets/images/meal.png',
       );
     });
 

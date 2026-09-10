@@ -44,6 +44,15 @@ class SwipeCategoryProgress {
     return (knownCount / totalCount).clamp(0.0, 1.0);
   }
 
+  /// 허브·도크 UI — 안다/모른다 집계 기준 (0~1).
+  double knownRatioForDisplay({required int fallbackTotal}) {
+    if (!played) return 0;
+    if (isMastered) return 1;
+    final total = totalCount > 0 ? totalCount : fallbackTotal;
+    if (total <= 0) return 0;
+    return (knownCount.clamp(0, total) / total).clamp(0.0, 1.0);
+  }
+
   SwipeCategoryProgress copyWith({
     bool? played,
     int? totalCount,

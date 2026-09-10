@@ -1,93 +1,64 @@
+import 'dart:async' show unawaited;
 import 'dart:math' as math;
 
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
-import '../../../app/providers.dart';
-import '../../../app/sentence_progress_providers.dart';
-import '../../../core/utils/sentence_category_grouping.dart';
+import '../../../app/scenario_providers.dart';
+import '../../../data/models/scenario.dart';
 import '../../dashboard/dashboard_palette.dart';
+import '../../scenarios/widgets/scenario_bubble_avatar.dart';
 import '../../shell/floating_island_nav_bar.dart';
 import 'hub_mode_picker_shared.dart';
 import 'mode_guide_cards.dart';
 
-/// 문장 스피킹 진입 — 괄호 그룹이 2개 이상이면 시나리오와 동일한 오버레이 피커.
-void openSentenceTraining(
+/// 시나리오 롤플레잉 진입 — 문장 스피킹과 동일한 오버레이 피커.
+void openScenarioPicker(
   BuildContext context, {
   required WidgetRef ref,
-  required String language,
-  required String category,
-  int? chapterNo,
+  required List<Scenario> scenarios,
+  required bool Function(String scenarioId) isCompleted,
   GlobalKey? popupAnchorKey,
 }) {
-  final bundle = ref.read(contentProvider).value?.bundle;
-  if (bundle == null) return;
-
-  final groups = bundle.sentenceGroupsFor(
-    language,
-    category,
-    chapterNo: chapterNo,
-  );
-  if (groups.isEmpty) {
-    ScaffoldMessenger.of(context).showSnackBar(
-      const SnackBar(content: Text('이 주제에 학습할 문장이 없어요.')),
-    );
-    return;
-  }
-
-  void navigate(String fullCategory) {
-    if (!context.mounted) return;
-    context.push(
-      '/scenarios/sentences/play'
-      '?lang=${Uri.encodeComponent(language)}'
-      '&category=${Uri.encodeComponent(fullCategory)}',
-    );
-  }
-
-  if (groups.length == 1) {
-    navigate(groups.first.fullCategory);
-    return;
-  }
+  if (scenarios.isEmpty) return;
 
   final resolved = popupAnchorKey == null
       ? null
       : popupAnchorFor(context, anchorKey: popupAnchorKey);
   if (resolved == null) {
-    navigate(groups.first.fullCategory);
+    if (!context.mounted) return;
+    context.push(
+      '/scenarios/train/${Uri.encodeComponent(scenarios.first.id)}',
+      extra: scenarios.first,
+    );
     return;
   }
 
   final parent = context;
+  final language =
+      scenarios.isEmpty ? 'English' : scenarios.first.language;
   late final OverlayEntry entry;
   entry = OverlayEntry(
     builder: (overlayContext) => Consumer(
       builder: (context, ref, _) {
-        final stats = ref.watch(sentenceProgressProvider).stats;
-        final repo = ref.watch(sentenceProgressRepositoryProvider);
-        return _SentenceGroupPickerOverlay(
+        final stats = ref.watch(scenarioProgressProvider).stats;
+        return _ScenarioPickerOverlay(
           anchor: resolved.anchor,
           anchorSize: resolved.size,
-          groups: groups,
-          groupProgress: (fullCategory) {
-            final sentences = bundle.sentencesFor(language, fullCategory);
-            final summary = repo.categorySummary(
-              sentences: sentences,
-              stats: stats,
-            );
-            return (
-              mastered: summary.masteredCount,
-              total: summary.total,
-              allMastered: summary.allMastered,
-            );
-          },
+          scenarios: scenarios,
+          isCompleted: (id) => stats.isCompleted(language, id),
+          lastPerformance: (id) => stats.lastPerformance(language, id),
           onDismiss: () {
             if (entry.mounted) entry.remove();
           },
-          onSelect: (group) {
+          onSelect: (scenario) {
             if (entry.mounted) entry.remove();
             if (!parent.mounted) return;
-            navigate(group.fullCategory);
+            parent.push(
+              '/scenarios/train/${Uri.encodeComponent(scenario.id)}',
+              extra: scenario,
+            );
           },
         );
       },
@@ -96,30 +67,30 @@ void openSentenceTraining(
   resolved.overlay.insert(entry);
 }
 
-class _SentenceGroupPickerOverlay extends StatefulWidget {
-  final Offset anchor;
-  final Size anchorSize;
-  final List<SentenceCategoryGroupInfo> groups;
-  final ({int mastered, int total, bool allMastered}) Function(String fullCategory)
-      groupProgress;
-  final VoidCallback onDismiss;
-  final ValueChanged<SentenceCategoryGroupInfo> onSelect;
-
-  const _SentenceGroupPickerOverlay({
+class _ScenarioPickerOverlay extends StatefulWidget {
+  const _ScenarioPickerOverlay({
     required this.anchor,
     required this.anchorSize,
-    required this.groups,
-    required this.groupProgress,
+    required this.scenarios,
+    required this.isCompleted,
+    required this.lastPerformance,
     required this.onDismiss,
     required this.onSelect,
   });
 
+  final Offset anchor;
+  final Size anchorSize;
+  final List<Scenario> scenarios;
+  final bool Function(String scenarioId) isCompleted;
+  final int? Function(String scenarioId) lastPerformance;
+  final VoidCallback onDismiss;
+  final ValueChanged<Scenario> onSelect;
+
   @override
-  State<_SentenceGroupPickerOverlay> createState() =>
-      _SentenceGroupPickerOverlayState();
+  State<_ScenarioPickerOverlay> createState() => _ScenarioPickerOverlayState();
 }
 
-class _SentenceGroupPickerOverlayState extends State<_SentenceGroupPickerOverlay>
+class _ScenarioPickerOverlayState extends State<_ScenarioPickerOverlay>
     with SingleTickerProviderStateMixin {
   late final AnimationController _entry;
   late final Animation<double> _dimOpacity;
@@ -134,7 +105,6 @@ class _SentenceGroupPickerOverlayState extends State<_SentenceGroupPickerOverlay
   static const _preferredPopupWidth = 292.0;
   static const _screenMargin = 14.0;
   static const _anchorGap = 8.0;
-  static const _sentenceAccent = Color(0xFFE11D48);
 
   @override
   void initState() {
@@ -173,6 +143,11 @@ class _SentenceGroupPickerOverlayState extends State<_SentenceGroupPickerOverlay
     ]).animate(_entry);
 
     _entry.forward();
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      unawaited(
+        ScenarioBubbleAvatar.precacheScenarios(context, widget.scenarios),
+      );
+    });
   }
 
   void _ensureDirectionalMotion(bool opensBelow) {
@@ -223,7 +198,7 @@ class _SentenceGroupPickerOverlayState extends State<_SentenceGroupPickerOverlay
       math.max(1.0, size.width - _screenMargin * 2),
     );
     final estimatedHeight = math.min(
-      widget.groups.length * 46.0 + 62,
+      widget.scenarios.length * 46.0 + 62,
       math.max(120.0, size.height * 0.52),
     );
     final bottomObstruction =
@@ -237,8 +212,6 @@ class _SentenceGroupPickerOverlayState extends State<_SentenceGroupPickerOverlay
     final anchorBottom = widget.anchor.dy + widget.anchorSize.height;
     final spaceAbove = math.max(0.0, anchorTop - safeTop - _anchorGap);
     final spaceBelow = math.max(0.0, safeBottom - anchorBottom - _anchorGap);
-    // 일부만 들어가는 경우 아래로 열면 하단 네비게이션 바에 가려진다.
-    // 전체 목록 높이를 확보할 수 있을 때에만 아래로 열고, 그 외에는 위로 연다.
     final showBelow = spaceBelow >= estimatedHeight;
     final availableHeight = math.max(
       120.0,
@@ -310,7 +283,7 @@ class _SentenceGroupPickerOverlayState extends State<_SentenceGroupPickerOverlay
                           offset: Offset(0, 5 + 14 * lift),
                         ),
                         BoxShadow(
-                          color: _sentenceAccent.withValues(
+                          color: DashboardPalette.teal.withValues(
                             alpha: 0.04 + 0.08 * lift,
                           ),
                           blurRadius: 18 + 12 * lift,
@@ -329,9 +302,10 @@ class _SentenceGroupPickerOverlayState extends State<_SentenceGroupPickerOverlay
               child: ConstrainedBox(
                 constraints: BoxConstraints(maxHeight: availableHeight),
                 child: SingleChildScrollView(
-                  child: _SentenceGroupPickerPanel(
-                    groups: widget.groups,
-                    groupProgress: widget.groupProgress,
+                  child: _ScenarioPickerPanel(
+                    scenarios: widget.scenarios,
+                    isCompleted: widget.isCompleted,
+                    lastPerformance: widget.lastPerformance,
                     onSelect: widget.onSelect,
                   ),
                 ),
@@ -344,21 +318,21 @@ class _SentenceGroupPickerOverlayState extends State<_SentenceGroupPickerOverlay
   }
 }
 
-class _SentenceGroupPickerPanel extends StatelessWidget {
-  final List<SentenceCategoryGroupInfo> groups;
-  final ({int mastered, int total, bool allMastered}) Function(String fullCategory)
-      groupProgress;
-  final ValueChanged<SentenceCategoryGroupInfo> onSelect;
-
-  const _SentenceGroupPickerPanel({
-    required this.groups,
-    required this.groupProgress,
+class _ScenarioPickerPanel extends StatelessWidget {
+  const _ScenarioPickerPanel({
+    required this.scenarios,
+    required this.isCompleted,
+    required this.lastPerformance,
     required this.onSelect,
   });
 
+  final List<Scenario> scenarios;
+  final bool Function(String scenarioId) isCompleted;
+  final int? Function(String scenarioId) lastPerformance;
+  final ValueChanged<Scenario> onSelect;
+
   static const _dividerColor = Color(0x120F172A);
   static const _dividerInset = 12.0;
-  static const _sentenceAccent = Color(0xFFE11D48);
 
   @override
   Widget build(BuildContext context) {
@@ -367,20 +341,20 @@ class _SentenceGroupPickerPanel extends StatelessWidget {
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
         HubModePickerHeader(
-          icon: Icons.view_carousel_rounded,
-          title: '문장 주제 선택',
-          accent: _sentenceAccent,
-          guideBuilder: (dismiss) =>
-              BasicSentenceModeGuideCard(onDismiss: dismiss),
+          icon: Icons.forum_rounded,
+          title: '시나리오 선택',
+          accent: DashboardPalette.teal,
+          guideBuilder: (dismiss) => ScenarioModeGuideCard(onDismiss: dismiss),
         ),
-        for (var i = 0; i < groups.length; i++) ...[
-          _SentenceGroupPickerRow(
+        for (var i = 0; i < scenarios.length; i++) ...[
+          _ScenarioPickerRow(
             index: i + 1,
-            group: groups[i],
-            progress: groupProgress(groups[i].fullCategory),
-            onTap: () => onSelect(groups[i]),
+            scenario: scenarios[i],
+            completed: isCompleted(scenarios[i].id),
+            lastScore: lastPerformance(scenarios[i].id),
+            onTap: () => onSelect(scenarios[i]),
           ),
-          if (i < groups.length - 1)
+          if (i < scenarios.length - 1)
             const Padding(
               padding: EdgeInsets.symmetric(horizontal: _dividerInset),
               child: Divider(height: 1, thickness: 1, color: _dividerColor),
@@ -418,18 +392,20 @@ class _SentenceGroupPickerPanel extends StatelessWidget {
   }
 }
 
-class _SentenceGroupPickerRow extends StatelessWidget {
-  final int index;
-  final SentenceCategoryGroupInfo group;
-  final ({int mastered, int total, bool allMastered}) progress;
-  final VoidCallback onTap;
-
-  const _SentenceGroupPickerRow({
+class _ScenarioPickerRow extends StatelessWidget {
+  const _ScenarioPickerRow({
     required this.index,
-    required this.group,
-    required this.progress,
+    required this.scenario,
+    required this.completed,
+    required this.lastScore,
     required this.onTap,
   });
+
+  final int index;
+  final Scenario scenario;
+  final bool completed;
+  final int? lastScore;
+  final VoidCallback onTap;
 
   @override
   Widget build(BuildContext context) {
@@ -441,7 +417,7 @@ class _SentenceGroupPickerRow extends StatelessWidget {
           children: [
             Expanded(
               child: Text(
-                '$index. ${group.label}',
+                '$index. ${scenario.title.isNotEmpty ? scenario.title : scenario.flightStage}',
                 maxLines: 2,
                 overflow: TextOverflow.ellipsis,
                 style: const TextStyle(
@@ -452,7 +428,19 @@ class _SentenceGroupPickerRow extends StatelessWidget {
                 ),
               ),
             ),
-            if (progress.allMastered && progress.total > 0)
+            if (scenario.isNewContent && !completed)
+              const Padding(
+                padding: EdgeInsets.only(left: 6, right: 4),
+                child: Text(
+                  'NEW',
+                  style: TextStyle(
+                    fontSize: 9,
+                    fontWeight: FontWeight.w900,
+                    color: Color(0xFFFF5252),
+                  ),
+                ),
+              ),
+            if (completed)
               Padding(
                 padding: const EdgeInsets.only(left: 6, right: 6),
                 child: Icon(
@@ -461,10 +449,10 @@ class _SentenceGroupPickerRow extends StatelessWidget {
                   color: DashboardPalette.teal.withValues(alpha: 0.88),
                 ),
               ),
-            _SentenceGroupProgressRing(
-              mastered: progress.mastered,
-              total: progress.total,
-            ),
+            if (lastScore != null)
+              _ScenarioLastScoreRing(score: lastScore!)
+            else
+              const _ScenarioLastScoreRing.empty(),
           ],
         ),
       ),
@@ -472,22 +460,40 @@ class _SentenceGroupPickerRow extends StatelessWidget {
   }
 }
 
-/// 시나리오 선택의 최근 점수 링과 동일한 크기·여백의 문장 학습 진척도 링.
-class _SentenceGroupProgressRing extends StatelessWidget {
-  final int mastered;
-  final int total;
+class _ScenarioLastScoreRing extends StatelessWidget {
+  const _ScenarioLastScoreRing({required this.score});
 
-  const _SentenceGroupProgressRing({
-    required this.mastered,
-    required this.total,
-  });
+  const _ScenarioLastScoreRing.empty() : score = null;
+
+  final int? score;
 
   @override
   Widget build(BuildContext context) {
     const size = 34.0;
     const stroke = 3.5;
     const track = Color(0xFFE2E8F0);
-    final ratio = total <= 0 ? 0.0 : (mastered / total).clamp(0.0, 1.0);
+
+    if (score == null) {
+      return SizedBox(
+        width: size,
+        height: size,
+        child: CustomPaint(
+          painter: _MiniScoreRingPainter(
+            ratio: 0,
+            fillColors: const [track, track],
+            trackColor: track,
+            strokeWidth: stroke,
+          ),
+        ),
+      );
+    }
+
+    final ratio = (score! / 100).clamp(0.0, 1.0);
+    final fillColors = switch (score!) {
+      >= 85 => const [Color(0xFF10B981), Color(0xFF06B6D4)],
+      >= 55 => const [Color(0xFF0284C7), Color(0xFF38BDF8)],
+      _ => const [Color(0xFFF43F5E), Color(0xFFFB7185)],
+    };
 
     return SizedBox(
       width: size,
@@ -497,14 +503,15 @@ class _SentenceGroupProgressRing extends StatelessWidget {
         children: [
           CustomPaint(
             size: const Size(size, size),
-            painter: _SentenceGroupProgressRingPainter(
+            painter: _MiniScoreRingPainter(
               ratio: ratio,
+              fillColors: fillColors,
               trackColor: track,
               strokeWidth: stroke,
             ),
           ),
           Text(
-            total <= 0 ? '' : '$mastered',
+            '$score',
             style: TextStyle(
               fontSize: 9.5,
               fontWeight: FontWeight.w800,
@@ -518,16 +525,18 @@ class _SentenceGroupProgressRing extends StatelessWidget {
   }
 }
 
-class _SentenceGroupProgressRingPainter extends CustomPainter {
-  final double ratio;
-  final Color trackColor;
-  final double strokeWidth;
-
-  const _SentenceGroupProgressRingPainter({
+class _MiniScoreRingPainter extends CustomPainter {
+  const _MiniScoreRingPainter({
     required this.ratio,
+    required this.fillColors,
     required this.trackColor,
     required this.strokeWidth,
   });
+
+  final double ratio;
+  final List<Color> fillColors;
+  final Color trackColor;
+  final double strokeWidth;
 
   @override
   void paint(Canvas canvas, Size size) {
@@ -536,6 +545,7 @@ class _SentenceGroupProgressRingPainter extends CustomPainter {
     final rect = Rect.fromCircle(center: center, radius: radius);
     const startAngle = -math.pi / 2;
     const fullSweep = 2 * math.pi;
+    final fillSweep = fullSweep * ratio.clamp(0.0, 1.0);
 
     canvas.drawArc(
       rect,
@@ -548,20 +558,21 @@ class _SentenceGroupProgressRingPainter extends CustomPainter {
         ..strokeWidth = strokeWidth,
     );
 
-    final sweep = fullSweep * ratio;
-    if (sweep <= 0.001) return;
-    const colors = [Color(0xFFE11D48), Color(0xFFFB7185)];
+    if (fillSweep <= 0.001) return;
+
+    final gradient = SweepGradient(
+      colors: fillColors,
+      startAngle: startAngle,
+      endAngle: startAngle + math.max(fillSweep, 0.001),
+    );
+
     canvas.drawArc(
       rect,
       startAngle,
-      sweep,
+      fillSweep,
       false,
       Paint()
-        ..shader = SweepGradient(
-          colors: colors,
-          startAngle: startAngle,
-          endAngle: startAngle + math.max(sweep, 0.001),
-        ).createShader(rect)
+        ..shader = gradient.createShader(rect)
         ..style = PaintingStyle.stroke
         ..strokeWidth = strokeWidth
         ..strokeCap = StrokeCap.round,
@@ -569,6 +580,7 @@ class _SentenceGroupProgressRingPainter extends CustomPainter {
   }
 
   @override
-  bool shouldRepaint(covariant _SentenceGroupProgressRingPainter oldDelegate) =>
-      oldDelegate.ratio != ratio;
+  bool shouldRepaint(covariant _MiniScoreRingPainter oldDelegate) {
+    return oldDelegate.ratio != ratio || oldDelegate.fillColors != fillColors;
+  }
 }

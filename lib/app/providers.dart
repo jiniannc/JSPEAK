@@ -21,7 +21,7 @@ final contentRepositoryProvider = Provider<ContentRepository>((ref) {
     remote: ContentRemoteDataSource(),
     local: ContentLocalDataSource(),
     audioCache: AudioCacheDataSource(),
-    contentUrl: AppConfig.contentUrl,
+    contentUrl: AppConfig.normalizedContentUrl,
   );
 });
 
@@ -120,7 +120,7 @@ void _warmAudioAfterLoad(ContentBundle bundle) {
 }
 
 void _warmAppsScriptProxy() {
-  final base = AppConfig.contentUrl;
+  final base = AppConfig.normalizedContentUrl;
   if (base.isEmpty) return;
   final uri = Uri.parse(base);
   final ping = uri.replace(

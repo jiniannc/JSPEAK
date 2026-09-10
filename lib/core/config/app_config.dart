@@ -14,7 +14,16 @@ class AppConfig {
     defaultValue: '',
   );
 
-  static bool get isConfigured => contentUrl.isNotEmpty;
+  /// 빌드 시 .../exe 오타를 .../exec 로 보정한다.
+  static String get normalizedContentUrl {
+    if (contentUrl.isEmpty) return contentUrl;
+    if (contentUrl.endsWith('/exe') && !contentUrl.endsWith('/exec')) {
+      return '${contentUrl}c';
+    }
+    return contentUrl;
+  }
+
+  static bool get isConfigured => normalizedContentUrl.isNotEmpty;
 
   static const String appName = 'JSPEAK';
   static const String appSubtitle = 'Global Communication Onboard';

@@ -21,7 +21,7 @@ void main() {
 
       expect(line.chapterNo, 2);
       expect(line.chapterName, '기내 식사 서비스');
-      expect(line.chapterImage, 'assets/images/ch_meal.png');
+      expect(line.chapterImage, 'assets/images/meal.png');
       expect(line.isNewContent, isTrue);
     });
   });
