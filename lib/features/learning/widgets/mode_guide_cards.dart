@@ -239,7 +239,7 @@ class WordSwipeModeGuideCard extends StatelessWidget {
                     ),
                     SizedBox(height: 4),
                     Text(
-                      '아는 단어와 헷갈리는 단어를 가르고,\n모르는 것만 다시 복습해요.',
+                      '아는 단어와 모르는 단어를 구분하고,\n나만의 단어장을 만들어 복습해요.',
                       style: TextStyle(
                         fontSize: 11.5,
                         fontWeight: FontWeight.w500,
@@ -328,7 +328,7 @@ class BasicSentenceModeGuideCard extends StatelessWidget {
                     ),
                     SizedBox(height: 4),
                     Text(
-                      '표준 발음을 듣고 입 밖으로 소리 내어 따라 말해보세요.\n내 발음 점수를 바로 분석해 드립니다.',
+                      '표준 문장을 익히고 소리 내어 따라 말해보세요.\n내 발음 점수를 바로 분석해 드립니다.',
                       style: TextStyle(
                         fontSize: 11.5,
                         fontWeight: FontWeight.w500,

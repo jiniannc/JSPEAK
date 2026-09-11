@@ -3,7 +3,9 @@ import 'dart:math' as math;
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
+import '../../../app/router.dart';
 import '../../../app/scenario_providers.dart';
+import '../../../app/shell_providers.dart';
 import '../../../app/sentence_progress_providers.dart';
 import '../../../app/swipe_progress_providers.dart';
 import '../../../data/datasources/local/swipe_progress_local_datasource.dart';
@@ -115,6 +117,7 @@ class _ChapterModeDockState extends ConsumerState<ChapterModeDock> {
 
   @override
   Widget build(BuildContext context) {
+    final resync = ref.watch(hubDockResyncProvider);
     final swipeStats = ref.watch(swipeProgressProvider).stats;
     final swipeCat = swipeStats.forCategory(
       widget.language,
@@ -155,6 +158,8 @@ class _ChapterModeDockState extends ConsumerState<ChapterModeDock> {
             key: _wordAnchorKey,
             child: _MacDockIcon(
               staggerIndex: 0,
+              resyncEpoch: resync.epoch,
+              resyncFullReveal: resync.fullReveal,
               revealAnimation: widget.revealAnimation,
               assetPath: 'assets/images/icon_word.png',
               label: '단어 스와이프',
@@ -184,6 +189,8 @@ class _ChapterModeDockState extends ConsumerState<ChapterModeDock> {
             key: _sentenceAnchorKey,
             child: _MacDockIcon(
               staggerIndex: 1,
+              resyncEpoch: resync.epoch,
+              resyncFullReveal: resync.fullReveal,
               revealAnimation: widget.revealAnimation,
               assetPath: 'assets/images/icon_sentence.png',
               label: '문장 스피킹',
@@ -213,6 +220,8 @@ class _ChapterModeDockState extends ConsumerState<ChapterModeDock> {
             key: _scenarioAnchorKey,
             child: _MacDockIcon(
               staggerIndex: 2,
+              resyncEpoch: resync.epoch,
+              resyncFullReveal: resync.fullReveal,
               revealAnimation: widget.revealAnimation,
               assetPath: 'assets/images/icon_scenario.png',
               label: '실전 롤플레잉',
@@ -353,6 +362,8 @@ class _DockProgressTiming {
 class _MacDockIcon extends StatefulWidget {
   const _MacDockIcon({
     required this.staggerIndex,
+    required this.resyncEpoch,
+    required this.resyncFullReveal,
     required this.revealAnimation,
     required this.assetPath,
     required this.label,
@@ -365,6 +376,8 @@ class _MacDockIcon extends StatefulWidget {
   });
 
   final int staggerIndex;
+  final int resyncEpoch;
+  final bool resyncFullReveal;
   final Animation<double> revealAnimation;
   final String assetPath;
   final String label;
@@ -388,8 +401,15 @@ class _MacDockIconState extends State<_MacDockIcon>
   double _settledProgress = 0;
   double _deltaFrom = 0;
   double _deltaTarget = 0;
+  int _deltaFillGeneration = 0;
   bool _dockRevealed = false;
   bool _checkPinned = false;
+
+  /// 학습·결과 화면 등 루트 오버레이가 허브 위에 있을 때는 delta를 돌리지 않는다.
+  bool _isHubExposed() {
+    final root = rootNavigatorKey.currentState;
+    return root == null || !root.canPop();
+  }
 
   static const _deltaFillDuration = Duration(milliseconds: 880);
   static const _returnCheckDuration = Duration(milliseconds: 560);
@@ -413,27 +433,109 @@ class _MacDockIconState extends State<_MacDockIcon>
     widget.revealAnimation.addStatusListener(_onRevealStatus);
     if (widget.revealAnimation.value >= 0.995) {
       _dockRevealed = true;
-      _settledProgress = widget.progress;
-      _checkPinned = widget.progress >= 0.999;
+      if (!widget.resyncFullReveal) {
+        _settledProgress = widget.progress;
+        _checkPinned = widget.progress >= 0.999;
+      }
     }
+    if (widget.resyncFullReveal) {
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (mounted) _applyFullRevealAnimation();
+      });
+    }
+  }
+
+  @override
+  void activate() {
+    super.activate();
+    // 학습 화면(루트 라우트) 위에 있을 때 티커가 멈춰 delta가 완료되지 않을 수 있음.
+    // 허브로 돌아올 때 최신 진행률로 다시 동기화한다.
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (mounted) _syncProgressToTarget();
+    });
   }
 
   @override
   void didUpdateWidget(covariant _MacDockIcon oldWidget) {
     super.didUpdateWidget(oldWidget);
-    final revealOpen = widget.revealAnimation.value >= 0.95;
-    final increased = widget.progress > _settledProgress + 0.001;
+    if (oldWidget.resyncEpoch != widget.resyncEpoch) {
+      if (widget.resyncFullReveal) {
+        _applyFullRevealAnimation();
+      } else if (_isHubExposed()) {
+        _syncProgressToTarget();
+      }
+      return;
+    }
+    if ((widget.progress - oldWidget.progress).abs() > 0.001) {
+      if (_isHubExposed()) {
+        _syncProgressToTarget();
+      }
+    }
+  }
 
-    if (revealOpen && increased) {
-      _scheduleDeltaFill(from: _settledProgress, to: widget.progress);
-    } else if (widget.progress < _settledProgress - 0.001) {
+  /// 학습 탭 재진입 등 — 0부터 현재 진척도까지 전체 채움.
+  void _applyFullRevealAnimation() {
+    if (!_dockRevealed && widget.revealAnimation.value < 0.95) return;
+
+    _deltaFillGeneration++;
+    _deltaFill.stop();
+    _returnCheck.stop();
+    setState(() {
+      _settledProgress = 0;
+      _checkPinned = false;
+      _dockRevealed = true;
+    });
+    _scheduleDeltaFill(from: 0, to: widget.progress.clamp(0.0, 1.0));
+  }
+
+  void _syncProgressToTarget() {
+    final target = widget.progress.clamp(0.0, 1.0);
+    final diff = target - _settledProgress;
+
+    if (diff.abs() <= 0.001) {
+      if (_deltaFill.isAnimating) return;
+      if ((target - _displayProgress(widget.revealAnimation.value)).abs() >
+          0.001) {
+        setState(() => _settledProgress = target);
+      }
+      return;
+    }
+
+    // 티커가 멈춘 동안 delta가 끝까지 갔으면 재생 없이 스냅.
+    if (!_deltaFill.isAnimating &&
+        _deltaFill.status == AnimationStatus.completed &&
+        (_deltaTarget - target).abs() <= 0.001) {
+      setState(() {
+        _settledProgress = target;
+        _checkPinned = target >= 0.999;
+      });
+      return;
+    }
+
+    if (diff < 0) {
+      _deltaFillGeneration++;
       _deltaFill.stop();
       _returnCheck.stop();
       setState(() {
-        _settledProgress = widget.progress;
-        _checkPinned = widget.progress >= 0.999;
+        _settledProgress = target;
+        _checkPinned = target >= 0.999;
       });
+      return;
     }
+
+    if (!_dockRevealed && widget.revealAnimation.value < 0.95) return;
+
+    // 이미 같은 목표로 delta가 진행 중이면 재시작하지 않는다.
+    if (_deltaFill.isAnimating && (_deltaTarget - target).abs() <= 0.001) {
+      return;
+    }
+
+    final from = _deltaFill.isAnimating
+        ? _deltaFrom +
+            (_deltaTarget - _deltaFrom) *
+                Curves.easeOutCubic.transform(_deltaFill.value)
+        : _settledProgress;
+    _scheduleDeltaFill(from: from, to: target);
   }
 
   @override
@@ -483,8 +585,19 @@ class _MacDockIconState extends State<_MacDockIcon>
   }
 
   void _scheduleDeltaFill({required double from, required double to}) {
-    _deltaFrom = from.clamp(0.0, 1.0);
-    _deltaTarget = to.clamp(0.0, 1.0);
+    final clampedFrom = from.clamp(0.0, 1.0);
+    final clampedTo = to.clamp(0.0, 1.0);
+
+    if (_deltaFill.isAnimating &&
+        (_deltaTarget - clampedTo).abs() <= 0.001 &&
+        (_deltaFrom - clampedFrom).abs() <= 0.001) {
+      return;
+    }
+
+    _deltaFrom = clampedFrom;
+    _deltaTarget = clampedTo;
+    _deltaFillGeneration++;
+    final generation = _deltaFillGeneration;
     _deltaFill.stop();
     _returnCheck.stop();
 
@@ -494,7 +607,7 @@ class _MacDockIconState extends State<_MacDockIcon>
       return;
     }
     Future<void>.delayed(Duration(milliseconds: delayMs), () {
-      if (!mounted) return;
+      if (!mounted || generation != _deltaFillGeneration) return;
       if ((widget.progress - _deltaTarget).abs() > 0.001) {
         _deltaTarget = widget.progress.clamp(0.0, 1.0);
       }

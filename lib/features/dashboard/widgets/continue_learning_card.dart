@@ -3,12 +3,10 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
 import '../../../app/continue_learning_provider.dart';
-import '../../../app/learning_hub_language_provider.dart';
-import '../../../app/scenario_providers.dart';
-import '../../../app/sentence_progress_providers.dart';
-import '../../../app/swipe_progress_providers.dart';
+import '../../../app/learning_providers.dart';
 import '../../../core/constants/labels.dart';
 import '../../word_swipe/word_swipe_training_screen.dart';
+import '../dashboard_palette.dart';
 import 'dashboard_compact_link_card.dart';
 
 /// 홈 — 컴팩트 링크형 Continue Learning 카드.
@@ -36,6 +34,7 @@ class ContinueLearningCard extends ConsumerWidget {
                 const DashboardSectionLabel(
                   icon: Icons.bolt_rounded,
                   label: 'CONTINUE LEARNING',
+                  accent: DashboardPalette.sectionContinue,
                 ),
                 const Spacer(),
                 if (target.hasProgress)
@@ -139,8 +138,7 @@ class ContinueLearningCard extends ConsumerWidget {
   ) {
     switch (target.kind) {
       case ContinueLearningKind.wordSwipe:
-        ref.read(swipeLanguageProvider.notifier).set(target.language);
-        ref.read(learningHubLanguageProvider.notifier).set(target.language);
+        selectLearningLanguage(ref, target.language);
         context.push(
           '/scenarios/swipe/play',
           extra: WordSwipeArgs(
@@ -150,16 +148,14 @@ class ContinueLearningCard extends ConsumerWidget {
           ),
         );
       case ContinueLearningKind.basicSentence:
-        ref.read(basicSentenceLanguageProvider.notifier).set(target.language);
-        ref.read(learningHubLanguageProvider.notifier).set(target.language);
+        selectLearningLanguage(ref, target.language);
         context.push(
           '/scenarios/sentences/play'
           '?lang=${Uri.encodeComponent(target.language)}'
           '&category=${Uri.encodeComponent(target.category ?? '')}',
         );
       case ContinueLearningKind.scenario:
-        ref.read(scenarioLanguageProvider.notifier).set(target.language);
-        ref.read(learningHubLanguageProvider.notifier).set(target.language);
+        selectLearningLanguage(ref, target.language);
         final scenario = target.scenario;
         if (scenario != null) {
           context.push('/scenarios/train/${scenario.id}', extra: scenario);

@@ -105,7 +105,7 @@ class AppHeader extends StatelessWidget {
   static const homeBrandBlockTopPadding = 8.0;
 
   /// 로고+텍스트 락업 실제 높이 — trailing 세로 정렬 기준.
-  static const homeBrandLockupHeight = 57.0;
+  static const homeBrandLockupHeight = 54.0;
 
   /// 별·언어 pill — JSPEAK 타이틀 행과 같은 높이 밴드.
   static const trailingBandHeight = 32.0;
@@ -141,17 +141,17 @@ class AppHeader extends StatelessWidget {
   static const iconSize = 21.0;
   static const homeBrandLogoAsset = 'assets/images/JSPEAKLOGO.svg';
   static const homeBrandLogoAspect = 320 / 300;
-  static const homeBrandIconHeight = 54.0;
+  static const homeBrandIconHeight = 44.0;
   static const homeBrandLogoLift = -3.0;
 
-  /// 로고는 고정, JSPEAK·섭텍스트만 살짝 아래로.
-  static const homeBrandTextDrop = 2.5;
+  /// 로고는 고정, JSPEAK·섭텍스트 세로 오프셋(음수 = 위).
+  static const homeBrandTextOffsetY = -1.0;
 
   /// 언어 전환 시 로고 바운스.
   static const brandLogoBounceDuration = Duration(milliseconds: 400);
 
   static const homeBrandIconGap = 6.0;
-  static const homeBrandTextSize = 26.0;
+  static const homeBrandTextSize = 23.5;
   static const homeBrandBadgeGap = 4.0;
   static const homeBrandBadgeLift = 0.0;
   static const homeBrandTaglineGap = 0.0;
@@ -159,6 +159,7 @@ class AppHeader extends StatelessWidget {
   /// 태그라인·섹션 라벨 공통 슬롯 — JSPEAK 세로 위치 고정.
   static const homeBrandContextSlotHeight = 24.0;
   static const homeBrandSectionTitleSize = 10.5;
+  static const homeBrandSectionTitleIndent = 6.0;
   static const headerSwitchDuration = Duration(milliseconds: 420);
   static const switchInCurve = Curves.easeOutQuart;
   static const switchOutCurve = Curves.easeOutCubic;
@@ -462,15 +463,13 @@ class _AppHeaderBrandLockup extends StatelessWidget {
   }
 
   Widget _buildAnimatedContextLine() {
-    final stackAlign =
-        usesGlobalTagline ? Alignment.topLeft : Alignment.topCenter;
     return AnimatedSwitcher(
       duration: AppHeader.headerSwitchDuration,
       switchInCurve: AppHeader.switchInCurve,
       switchOutCurve: AppHeader.switchOutCurve,
       layoutBuilder: (currentChild, previousChildren) {
         return Stack(
-          alignment: stackAlign,
+          alignment: Alignment.topLeft,
           clipBehavior: Clip.none,
           children: [...previousChildren, ?currentChild],
         );
@@ -496,8 +495,7 @@ class _AppHeaderBrandLockup extends StatelessWidget {
       height: AppHeader.homeBrandContextSlotHeight,
       width: double.infinity,
       child: Align(
-        alignment:
-            usesGlobalTagline ? Alignment.topLeft : Alignment.topCenter,
+        alignment: Alignment.topLeft,
         child: child,
       ),
     );
@@ -526,8 +524,8 @@ class _AppHeaderBrandLockup extends StatelessWidget {
         const SizedBox(width: AppHeader.homeBrandIconGap),
         Flexible(
           fit: FlexFit.loose,
-          child: Padding(
-            padding: const EdgeInsets.only(top: AppHeader.homeBrandTextDrop),
+          child: Transform.translate(
+            offset: const Offset(0, AppHeader.homeBrandTextOffsetY),
             child: Align(
               alignment: Alignment.topLeft,
               child: IntrinsicWidth(
@@ -563,34 +561,39 @@ class _AppHeaderSectionLabel extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return Text.rich(
-      maxLines: 1,
-      overflow: TextOverflow.ellipsis,
-      textAlign: TextAlign.center,
-      TextSpan(
-        children: [
-          TextSpan(
-            text: title,
-            style: const TextStyle(
-              fontFamily: 'SUIT',
-              fontSize: AppHeader.homeBrandSectionTitleSize,
-              fontWeight: FontWeight.w700,
-              color: AppHeader._subtitleColor,
-              letterSpacing: 0.12,
-              height: 1.15,
+    return Padding(
+      padding: const EdgeInsets.only(
+        left: AppHeader.homeBrandSectionTitleIndent,
+      ),
+      child: Text.rich(
+        maxLines: 1,
+        overflow: TextOverflow.ellipsis,
+        textAlign: TextAlign.left,
+        TextSpan(
+          children: [
+            TextSpan(
+              text: title,
+              style: const TextStyle(
+                fontFamily: 'SUIT',
+                fontSize: AppHeader.homeBrandSectionTitleSize,
+                fontWeight: FontWeight.w700,
+                color: AppHeader._subtitleColor,
+                letterSpacing: 0.12,
+                height: 1.15,
+              ),
             ),
-          ),
-          TextSpan(
-            text: '.',
-            style: TextStyle(
-              fontFamily: 'SUIT',
-              fontSize: AppHeader.homeBrandSectionTitleSize,
-              fontWeight: FontWeight.w900,
-              color: accent,
-              height: 1.15,
+            TextSpan(
+              text: '.',
+              style: TextStyle(
+                fontFamily: 'SUIT',
+                fontSize: AppHeader.homeBrandSectionTitleSize,
+                fontWeight: FontWeight.w900,
+                color: accent,
+                height: 1.15,
+              ),
             ),
-          ),
-        ],
+          ],
+        ),
       ),
     );
   }

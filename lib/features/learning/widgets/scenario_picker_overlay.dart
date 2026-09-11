@@ -265,9 +265,9 @@ class _ScenarioPickerOverlayState extends State<_ScenarioPickerOverlay>
                 alignment: panelAlignment,
                 transform: Matrix4.identity()
                   ..setEntry(3, 2, 0.00115)
-                  ..translateByDouble(0, _slideY!.value, 0, 1)
+                  ..translate(0.0, _slideY!.value)
                   ..rotateX(_tiltX!.value)
-                  ..scaleByDouble(_scale.value, _scale.value, 1, 1),
+                  ..scale(_scale.value, _scale.value, 1.0),
                 child: Opacity(
                   opacity: _panelOpacity.value,
                   child: DecoratedBox(
@@ -449,10 +449,10 @@ class _ScenarioPickerRow extends StatelessWidget {
                   color: DashboardPalette.teal.withValues(alpha: 0.88),
                 ),
               ),
-            if (lastScore != null)
-              _ScenarioLastScoreRing(score: lastScore!)
-            else
-              const _ScenarioLastScoreRing.empty(),
+            if (!completed && lastScore == null)
+              const HubPickerStartCue(accent: DashboardPalette.teal)
+            else if (lastScore != null)
+              _ScenarioLastScoreRing(score: lastScore!),
           ],
         ),
       ),

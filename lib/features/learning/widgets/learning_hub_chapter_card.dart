@@ -279,7 +279,8 @@ class _LearningHubChapterCardState extends State<LearningHubChapterCard>
   bool _expandShimmerArmed = false;
   int _lastSnapToken = 0;
 
-  static const _fallbackAspectRatio = 3 / 2;
+  static const fallbackAspectRatio = 3 / 2;
+  static const _fallbackAspectRatio = fallbackAspectRatio;
 
   @override
   void initState() {
@@ -540,7 +541,7 @@ class _LearningHubChapterCardState extends State<LearningHubChapterCard>
                               child: Stack(
                                 clipBehavior: Clip.hardEdge,
                                 children: [
-                                  if (t > 0.02)
+                                  if (widget.isExpanded || t > 0)
                                     Positioned(
                                       top: 0,
                                       left: 0,
@@ -635,9 +636,9 @@ class _ChapterHeroImageLayer extends StatelessWidget {
         alignment: Alignment.center,
         filterQuality: FilterQuality.high,
         transform: Matrix4.identity()
-          ..translateByDouble(motionDx, motionDy, 0, 1)
+          ..translate(motionDx, motionDy)
           ..rotateZ(motionAngle)
-          ..scaleByDouble(1.04, 1.04, 1, 1),
+          ..scale(1.04, 1.04, 1.0),
         child: ChapterHeroImage(
           assetPath: assetPath,
           width: width,

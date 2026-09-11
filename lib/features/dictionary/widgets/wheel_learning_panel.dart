@@ -65,7 +65,9 @@ class _WheelLearningPanelState extends ConsumerState<WheelLearningPanel> {
   }) {
     if (!isThisSpeech) return PlayheadVoiceMode.playback;
     if (speech.isListening) return PlayheadVoiceMode.listening;
-    if (speech.isRecognizing || _resultPending) {
+    if (speech.isRecognizing ||
+        _resultPending ||
+        _analyzingStartedAt != null) {
       return PlayheadVoiceMode.analyzing;
     }
     return PlayheadVoiceMode.playback;
@@ -81,7 +83,7 @@ class _WheelLearningPanelState extends ConsumerState<WheelLearningPanel> {
 
   Future<void> _completePipelineAndShowResult() async {
     if (_coachingDialogOpen || _resultPending || !mounted) return;
-    _resultPending = true;
+    setState(() => _resultPending = true);
 
     _analyzingStartedAt ??= DateTime.now();
     final started = _analyzingStartedAt ?? DateTime.now();
@@ -90,13 +92,13 @@ class _WheelLearningPanelState extends ConsumerState<WheelLearningPanel> {
       await Future<void>.delayed(_analyzingBridgeDuration - elapsed);
     }
     if (!mounted) {
-      _resultPending = false;
+      setState(() => _resultPending = false);
       return;
     }
 
     _analyzingStartedAt = null;
     _openPronunciationResultSheet();
-    _resultPending = false;
+    if (mounted) setState(() => _resultPending = false);
   }
 
   int _accuracyFor(String spokenText) {
@@ -222,10 +224,7 @@ class _WheelLearningPanelState extends ConsumerState<WheelLearningPanel> {
       final wasBusy = prev.isListening || prev.isRecognizing;
       final isIdle = !next.isListening && !next.isRecognizing;
       if (wasBusy && isIdle && !_coachingDialogOpen && !next.abortedNoSpeech) {
-        _analyzingStartedAt = DateTime.now();
-        if (!_resultPending) {
-          setState(() => _resultPending = true);
-        }
+        setState(() => _analyzingStartedAt = DateTime.now());
         WidgetsBinding.instance.addPostFrameCallback((_) {
           if (!mounted) return;
           _completePipelineAndShowResult();

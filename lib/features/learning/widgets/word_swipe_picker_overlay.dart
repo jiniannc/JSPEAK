@@ -49,7 +49,7 @@ void openWordSwipePicker(
           onDismiss: () {
             if (entry.mounted) entry.remove();
           },
-          onStart: () {
+          onStartFull: () {
             if (entry.mounted) entry.remove();
             if (!parent.mounted) return;
             openWordSwipeFromHub(
@@ -58,6 +58,18 @@ void openWordSwipePicker(
               category: category,
             );
           },
+          onStartReview: progress.played && progress.unknownCount > 0
+              ? () {
+                  if (entry.mounted) entry.remove();
+                  if (!parent.mounted) return;
+                  openWordSwipeFromHub(
+                    parent,
+                    language: language,
+                    category: category,
+                    reviewOnly: true,
+                  );
+                }
+              : null,
         );
       },
     ),
@@ -72,7 +84,8 @@ class _WordSwipePickerOverlay extends StatefulWidget {
     required this.wordCount,
     required this.progress,
     required this.onDismiss,
-    required this.onStart,
+    required this.onStartFull,
+    this.onStartReview,
   });
 
   final Offset anchor;
@@ -80,7 +93,8 @@ class _WordSwipePickerOverlay extends StatefulWidget {
   final int wordCount;
   final SwipeCategoryProgress progress;
   final VoidCallback onDismiss;
-  final VoidCallback onStart;
+  final VoidCallback onStartFull;
+  final VoidCallback? onStartReview;
 
   @override
   State<_WordSwipePickerOverlay> createState() =>
@@ -184,7 +198,9 @@ class _WordSwipePickerOverlayState extends State<_WordSwipePickerOverlay>
     final size = media.size;
     final pad = media.padding;
     const popupWidth = HubPickerLayout.preferredPopupWidth;
-    const estimatedHeight = 108.0;
+    final hasReviewQueue =
+        widget.progress.played && widget.progress.unknownCount > 0;
+    final estimatedHeight = hasReviewQueue ? 118.0 : 108.0;
     final bottomObstruction = HubPickerLayout.bottomObstruction(context);
     final safeTop = pad.top + HubPickerLayout.screenMargin;
     final safeBottom = math.max(
@@ -263,9 +279,9 @@ class _WordSwipePickerOverlayState extends State<_WordSwipePickerOverlay>
                 alignment: panelAlignment,
                 transform: Matrix4.identity()
                   ..setEntry(3, 2, 0.00115)
-                  ..translateByDouble(0, _slideY!.value, 0, 1)
+                  ..translate(0.0, _slideY!.value)
                   ..rotateX(_tiltX!.value)
-                  ..scaleByDouble(_scale.value, _scale.value, 1, 1),
+                  ..scale(_scale.value, _scale.value, 1.0),
                 child: Opacity(
                   opacity: _panelOpacity.value,
                   child: DecoratedBox(
@@ -301,7 +317,9 @@ class _WordSwipePickerOverlayState extends State<_WordSwipePickerOverlay>
                 completed: completed,
                 known: known,
                 total: total,
-                onStart: widget.onStart,
+                unknownCount: widget.progress.unknownCount,
+                onStartFull: widget.onStartFull,
+                onStartReview: widget.onStartReview,
               ),
             ),
           ),
@@ -316,15 +334,78 @@ class _WordSwipePickerPanel extends StatelessWidget {
     required this.completed,
     required this.known,
     required this.total,
-    required this.onStart,
+    required this.unknownCount,
+    required this.onStartFull,
+    this.onStartReview,
   });
 
   final bool completed;
   final int known;
   final int total;
-  final VoidCallback onStart;
+  final int unknownCount;
+  final VoidCallback onStartFull;
+  final VoidCallback? onStartReview;
 
   static const _wordAccent = Color(0xFFE67E22);
+
+  bool get _hasReviewQueue => onStartReview != null && unknownCount > 0;
+
+  bool get _isFreshStart => known <= 0 && !completed;
+
+  String get _startLabel => completed ? '처음부터 시작' : '시작하기';
+
+  Widget _buildReviewBadge() {
+    return DecoratedBox(
+      decoration: BoxDecoration(
+        color: _wordAccent.withValues(alpha: 0.12),
+        borderRadius: BorderRadius.circular(8),
+      ),
+      child: Padding(
+        padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 4),
+        child: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Icon(
+              Icons.menu_book_outlined,
+              size: 13,
+              color: _wordAccent.withValues(alpha: 0.92),
+            ),
+            const SizedBox(width: 4),
+            Text(
+              '$unknownCount',
+              style: TextStyle(
+                fontSize: 10.5,
+                fontWeight: FontWeight.w800,
+                height: 1,
+                color: _wordAccent.withValues(alpha: 0.95),
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _buildStartTrailing() {
+    if (_isFreshStart) {
+      return const HubPickerStartCue(accent: _wordAccent);
+    }
+    return Row(
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        if (completed)
+          Padding(
+            padding: const EdgeInsets.only(right: 6),
+            child: Icon(
+              Icons.check_circle_rounded,
+              size: 17,
+              color: DashboardPalette.teal.withValues(alpha: 0.88),
+            ),
+          ),
+        _WordSwipeProgressRing(known: known, total: total),
+      ],
+    );
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -360,42 +441,135 @@ class _WordSwipePickerPanel extends StatelessWidget {
                   guideBuilder: (dismiss) =>
                       WordSwipeModeGuideCard(onDismiss: dismiss),
                 ),
-                InkWell(
-                  onTap: onStart,
-                  child: Padding(
-                    padding: const EdgeInsets.fromLTRB(12, 7, 10, 7),
-                    child: Row(
-                      children: [
-                        const Expanded(
-                          child: Text(
-                            '시작하기',
-                            maxLines: 2,
-                            overflow: TextOverflow.ellipsis,
-                            style: TextStyle(
-                              fontSize: 12,
-                              fontWeight: FontWeight.w700,
-                              height: 1.25,
-                              color: DashboardPalette.navy,
-                            ),
-                          ),
-                        ),
-                        if (completed)
-                          Padding(
-                            padding: const EdgeInsets.only(left: 6, right: 6),
-                            child: Icon(
-                              Icons.check_circle_rounded,
-                              size: 17,
-                              color: DashboardPalette.teal.withValues(alpha: 0.88),
-                            ),
-                          ),
-                        _WordSwipeProgressRing(known: known, total: total),
-                      ],
+                if (_hasReviewQueue) ...[
+                  _WordSwipePickerActionRow(
+                    label: '틀린 단어장 복습',
+                    subtitle: '$unknownCount개 남음',
+                    accentSubtitle: true,
+                    onTap: onStartReview!,
+                    trailing: _buildReviewBadge(),
+                  ),
+                  Padding(
+                    padding: const EdgeInsets.fromLTRB(12, 0, 10, 6),
+                    child: Align(
+                      alignment: Alignment.centerRight,
+                      child: _WordSwipePickerSecondaryLink(
+                        label: '처음부터 시작',
+                        onTap: onStartFull,
+                      ),
                     ),
                   ),
-                ),
+                ] else
+                  _WordSwipePickerActionRow(
+                    label: _startLabel,
+                    subtitle: _isFreshStart ? '탭해서 학습을 시작해 보세요' : null,
+                    onTap: onStartFull,
+                    trailing: _buildStartTrailing(),
+                  ),
               ],
             ),
           ),
+        ),
+      ),
+    );
+  }
+}
+
+class _WordSwipePickerSecondaryLink extends StatelessWidget {
+  const _WordSwipePickerSecondaryLink({
+    required this.label,
+    required this.onTap,
+  });
+
+  final String label;
+  final VoidCallback onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    return Material(
+      color: Colors.transparent,
+      child: InkWell(
+        onTap: onTap,
+        borderRadius: BorderRadius.circular(6),
+        child: Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 2),
+          child: Text(
+            label,
+            style: TextStyle(
+              fontSize: 10,
+              fontWeight: FontWeight.w600,
+              height: 1.1,
+              color: DashboardPalette.textMuted.withValues(alpha: 0.92),
+              decoration: TextDecoration.underline,
+              decorationColor:
+                  DashboardPalette.textMuted.withValues(alpha: 0.45),
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+class _WordSwipePickerActionRow extends StatelessWidget {
+  const _WordSwipePickerActionRow({
+    required this.label,
+    required this.onTap,
+    required this.trailing,
+    this.subtitle,
+    this.accentSubtitle = false,
+  });
+
+  final String label;
+  final String? subtitle;
+  final bool accentSubtitle;
+  final VoidCallback onTap;
+  final Widget trailing;
+
+  @override
+  Widget build(BuildContext context) {
+    return InkWell(
+      onTap: onTap,
+      child: Padding(
+        padding: const EdgeInsets.fromLTRB(12, 8, 10, 8),
+        child: Row(
+          children: [
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Text(
+                    label,
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: const TextStyle(
+                      fontSize: 12,
+                      fontWeight: FontWeight.w700,
+                      height: 1.2,
+                      color: DashboardPalette.navy,
+                    ),
+                  ),
+                  if (subtitle != null) ...[
+                    const SizedBox(height: 1),
+                    Text(
+                      subtitle!,
+                      style: TextStyle(
+                        fontSize: 10,
+                        fontWeight: FontWeight.w600,
+                        height: 1.1,
+                        color: accentSubtitle
+                            ? const Color(0xFFE67E22).withValues(alpha: 0.82)
+                            : DashboardPalette.textMuted,
+                      ),
+                    ),
+                  ],
+                ],
+              ),
+            ),
+            const SizedBox(width: 8),
+            trailing,
+          ],
         ),
       ),
     );

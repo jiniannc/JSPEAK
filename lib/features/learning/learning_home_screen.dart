@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:math' as math;
 
 import 'package:flutter/material.dart';
@@ -20,9 +21,9 @@ import '../../features/dashboard/dashboard_palette.dart';
 import '../shell/floating_island_nav_bar.dart';
 import '../shell/main_shell_tab_header.dart';
 import '../../shared/widgets/app_header.dart';
-import '../../shared/widgets/chapter_hero_image.dart';
 import '../../shared/widgets/cascade_entrance.dart';
 import '../../shared/widgets/flight_progress_bar.dart';
+import 'widgets/chapter_image_preloader.dart';
 import 'widgets/learning_hub_chapter_card.dart';
 
 /// 학습 탭 메인 — 비행 단계별 허브 카드에서 3모드로 진입.
@@ -48,7 +49,8 @@ class _LearningHomeScreenState extends ConsumerState<LearningHomeScreen> {
   final GlobalKey _viewportKey = GlobalKey();
   final Map<String, double> _chapterHeights = {};
   int _listEpoch = 0;
-  String? _precachedImagesLanguage;
+  String? _imageWarmUpKey;
+  List<LearningHubChapter> _currentChapters = const [];
   bool _compactScrollMode = false;
   bool _isUserDragScroll = false;
   List<String> _orderedChapterKeys = const [];
@@ -478,7 +480,8 @@ class _LearningHomeScreenState extends ConsumerState<LearningHomeScreen> {
     _transientBottomSlack = 0;
     _initialFocusPending = true;
     _initialFocusQueued = false;
-    _precachedImagesLanguage = null;
+    _imageWarmUpKey = null;
+    ChapterImagePreloader.resetSession();
     _compactScrollMode = false;
     _scrollGeneration++;
     _scrollFinalizeToken = null;
@@ -505,30 +508,31 @@ class _LearningHomeScreenState extends ConsumerState<LearningHomeScreen> {
     });
   }
 
-  void _precacheChapterHeroImages(
-    BuildContext context,
-    String language,
-    List<LearningHubChapter> chapters,
-  ) {
-    if (_precachedImagesLanguage == language) return;
-    _precachedImagesLanguage = language;
+  void _scheduleChapterImageWarmUp(
+    BuildContext context, {
+    required String language,
+    required List<LearningHubChapter> chapters,
+    Iterable<String> priorityChapterKeys = const [],
+  }) {
     final cardWidth = _chapterCardWidth(context);
-    final dpr = MediaQuery.devicePixelRatioOf(context);
-    for (final chapter in chapters) {
-      final path = resolveHubChapterIcon(
-        chapterImage: chapter.chapterImage,
-        category: chapter.name,
-      );
-      if (path.isEmpty) continue;
-      precacheImage(
-        ChapterHeroImage.heroProvider(
-          path,
-          displayWidth: cardWidth,
-          devicePixelRatio: dpr,
+    final priorityLabel = priorityChapterKeys.join('|');
+    final warmUpKey =
+        '$language|${cardWidth.toStringAsFixed(1)}|${chapters.length}|$priorityLabel';
+    if (_imageWarmUpKey == warmUpKey) return;
+    _imageWarmUpKey = warmUpKey;
+
+    scheduleMicrotask(() {
+      if (!mounted) return;
+      unawaited(
+        ChapterImagePreloader.warmUpChapters(
+          context,
+          language: language,
+          chapters: chapters,
+          cardWidth: cardWidth,
+          priorityChapterKeys: priorityChapterKeys,
         ),
-        context,
       );
-    }
+    });
   }
 
   @override
@@ -540,6 +544,27 @@ class _LearningHomeScreenState extends ConsumerState<LearningHomeScreen> {
       if (previous == next) return;
       _onHubLanguageChanged(next);
     });
+    ref.listenManual(contentProvider, (previous, next) {
+      final bundle = next.asData?.value?.bundle;
+      if (bundle == null) return;
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (!mounted) return;
+        _kickOffChapterImageWarmUp(bundle);
+      });
+    });
+  }
+
+  void _kickOffChapterImageWarmUp(ContentBundle bundle) {
+    final chapters = bundle.learningHubChaptersFor(_displayLanguage);
+    if (chapters.isEmpty) return;
+    _scheduleChapterImageWarmUp(
+      context,
+      language: _displayLanguage,
+      chapters: chapters,
+      priorityChapterKeys: chapters
+          .take(3)
+          .map(_hubChapterKey),
+    );
   }
 
   @override
@@ -548,22 +573,11 @@ class _LearningHomeScreenState extends ConsumerState<LearningHomeScreen> {
     super.dispose();
   }
 
-  double _chapterCardWidth(BuildContext context) {
-    final inset = Active5Layout.of(context).pagePadding.left;
-    final viewportBox =
-        _viewportKey.currentContext?.findRenderObject() as RenderBox?;
-    if (viewportBox != null && viewportBox.hasSize) {
-      return math.max(0, viewportBox.size.width - inset * 2);
-    }
-
-    // DeviceScaffold가 Fold의 넓은 화면을 600dp로 제한하므로 MediaQuery
-    // 전체 폭을 사용하면 실제 카드보다 큰 높이를 예측해 스크롤이 과도해진다.
-    final mediaWidth = MediaQuery.sizeOf(context).width;
-    final maxDeviceWidth = Active5Layout.of(context).isLandscape
-        ? Active5Layout.logicalWidthLandscape
-        : Active5Layout.logicalWidthPortrait;
-    return math.max(0, math.min(mediaWidth, maxDeviceWidth) - inset * 2);
-  }
+  double _chapterCardWidth(BuildContext context) =>
+      ChapterImagePreloader.hubCardWidth(
+        context,
+        viewportKey: _viewportKey,
+      );
 
   /// 모든 히어로 카드는 Canva 1920×1280 표준(3:2) 높이로 계산한다.
   /// 원본 비율과 무관하게 실제 렌더 높이와 스크롤 예측값이 항상 동일하다.
@@ -772,6 +786,16 @@ class _LearningHomeScreenState extends ConsumerState<LearningHomeScreen> {
       // 이전 전환의 finalize가 취소돼 남은 slack을 새 전환에 누적하지 않는다.
       _transientBottomSlack = slack;
     });
+    if (_currentChapters.isNotEmpty) {
+      unawaited(
+        ChapterImagePreloader.precacheNeighbors(
+          context,
+          chapters: _currentChapters,
+          focusChapterKey: chapterKey,
+          cardWidth: _chapterCardWidth(context),
+        ),
+      );
+    }
     if (!animateScroll) return;
     _startParallelCenterScroll(chapterKey);
   }
@@ -795,7 +819,8 @@ class _LearningHomeScreenState extends ConsumerState<LearningHomeScreen> {
       data: (content) {
         final bundle = content.bundle;
         final chapters = bundle.learningHubChaptersFor(language);
-        _precacheChapterHeroImages(context, language, chapters);
+        _currentChapters = chapters;
+        final hubCardWidth = _chapterCardWidth(context);
         final modeProgress = _hubTripleModeProgress(
           language: language,
           bundle: bundle,
@@ -828,6 +853,16 @@ class _LearningHomeScreenState extends ConsumerState<LearningHomeScreen> {
         _orderedChapterKeys = chapters
             .map(_hubChapterKey)
             .toList(growable: false);
+        _scheduleChapterImageWarmUp(
+          context,
+          language: language,
+          chapters: chapters,
+          priorityChapterKeys: [
+            if (expandedChapterKey != null) expandedChapterKey,
+            for (var i = 0; i < math.min(3, chapters.length); i++)
+              _hubChapterKey(chapters[i]),
+          ],
+        );
 
         return Stack(
           clipBehavior: Clip.none,
@@ -880,6 +915,7 @@ class _LearningHomeScreenState extends ConsumerState<LearningHomeScreen> {
                                   'hub_card_${_listEpoch}_${chapters[i].chapterNo}_${chapters[i].name}',
                                 ),
                                 chapter: chapters[i],
+                                cardWidth: hubCardWidth,
                                 language: language,
                                 bundle: bundle,
                                 sentenceProgress: sentenceProgress,
@@ -1097,6 +1133,7 @@ class _LearningHubSectionHeader extends StatelessWidget {
 
 class _HubChapterCardLoader extends StatefulWidget {
   final LearningHubChapter chapter;
+  final double cardWidth;
   final String language;
   final ContentBundle bundle;
   final SentenceProgressState sentenceProgress;
@@ -1112,6 +1149,7 @@ class _HubChapterCardLoader extends StatefulWidget {
   const _HubChapterCardLoader({
     super.key,
     required this.chapter,
+    required this.cardWidth,
     required this.language,
     required this.bundle,
     required this.sentenceProgress,
@@ -1129,47 +1167,11 @@ class _HubChapterCardLoader extends StatefulWidget {
   State<_HubChapterCardLoader> createState() => _HubChapterCardLoaderState();
 }
 
-class _HubChapterCardLoaderState extends State<_HubChapterCardLoader>
-    with SingleTickerProviderStateMixin {
-  static const _revealDuration = Duration(milliseconds: 280);
-
-  bool _heroReady = false;
-  bool _loadInFlight = false;
-  Object? _loadToken;
-  late final AnimationController _reveal;
-  late final Animation<double> _revealT;
-
+class _HubChapterCardLoaderState extends State<_HubChapterCardLoader> {
   @override
   void initState() {
     super.initState();
-    _reveal = AnimationController(vsync: this, duration: _revealDuration);
-    _revealT = CurvedAnimation(parent: _reveal, curve: Curves.easeOut);
-    // 이 에셋이 이미 한 번 실측된 적이 있다면(다른 카드가 먼저 로드했거나,
-    // 스크롤로 이 카드가 재활용되어 다시 만들어진 경우) 굳이 다시
-    // precacheImage를 기다릴 필요 없이 바로 표시한다. 그렇지 않으면
-    // 재활용될 때마다 카드가 잠깐 0 높이("로딩 중")로 접혔다가 다시
-    // 펼쳐지면서 리스트 스크롤 범위 계산이 흔들린다.
-    if (_isAssetAlreadyKnown()) {
-      _heroReady = true;
-      _reveal.value = 1;
-    } else {
-      WidgetsBinding.instance.addPostFrameCallback((_) => _loadHeroImage());
-    }
-  }
-
-  bool _isAssetAlreadyKnown() {
-    final path = resolveHubChapterIcon(
-      chapterImage: widget.chapter.chapterImage,
-      category: widget.chapter.name,
-    );
-    return path.isEmpty ||
-        LearningHubChapterCard.aspectRatioCache.containsKey(path);
-  }
-
-  @override
-  void dispose() {
-    _reveal.dispose();
-    super.dispose();
+    WidgetsBinding.instance.addPostFrameCallback((_) => _reportHeight());
   }
 
   void _reportHeight() {
@@ -1184,14 +1186,6 @@ class _HubChapterCardLoaderState extends State<_HubChapterCardLoader>
   @override
   void didUpdateWidget(covariant _HubChapterCardLoader oldWidget) {
     super.didUpdateWidget(oldWidget);
-    if (oldWidget.chapter.chapterImage != widget.chapter.chapterImage ||
-        oldWidget.chapter.name != widget.chapter.name) {
-      _loadToken = Object();
-      _heroReady = false;
-      _loadInFlight = false;
-      _reveal.reset();
-      _loadHeroImage();
-    }
     if (oldWidget.isExpanded != widget.isExpanded ||
         oldWidget.isLast != widget.isLast ||
         oldWidget.snapToken != widget.snapToken) {
@@ -1199,55 +1193,8 @@ class _HubChapterCardLoaderState extends State<_HubChapterCardLoader>
     }
   }
 
-  Future<void> _loadHeroImage() async {
-    if (_loadInFlight || _heroReady) return;
-    _loadInFlight = true;
-
-    final path = resolveHubChapterIcon(
-      chapterImage: widget.chapter.chapterImage,
-      category: widget.chapter.name,
-    );
-
-    if (path.isEmpty) {
-      _markHeroReady();
-      return;
-    }
-
-    final token = Object();
-    _loadToken = token;
-    try {
-      final metrics = Active5Layout.of(context);
-      final cardWidth = math.max(
-        0.0,
-        MediaQuery.sizeOf(context).width - metrics.pagePadding.horizontal,
-      );
-      await precacheImage(
-        ChapterHeroImage.heroProvider(
-          path,
-          displayWidth: cardWidth,
-          devicePixelRatio: MediaQuery.devicePixelRatioOf(context),
-        ),
-        context,
-      );
-    } catch (_) {
-      // errorBuilder 폴백으로 카드는 표시
-    }
-
-    if (!mounted || _loadToken != token) return;
-    _markHeroReady();
-  }
-
-  void _markHeroReady() {
-    if (!mounted || _heroReady) return;
-    setState(() => _heroReady = true);
-    _reveal.forward(from: 0);
-    WidgetsBinding.instance.addPostFrameCallback((_) => _reportHeight());
-  }
-
   @override
   Widget build(BuildContext context) {
-    if (!_heroReady) return const SizedBox.shrink();
-
     final category = widget.chapter.name;
     final words = widget.bundle.wordsFor(widget.language, category);
     final sentences = widget.bundle.sentencesForHubChapter(
@@ -1276,37 +1223,34 @@ class _HubChapterCardLoaderState extends State<_HubChapterCardLoader>
         return false;
       },
       child: SizeChangedLayoutNotifier(
-        child: FadeTransition(
-          opacity: _revealT,
-          child: LearningHubChapterCard(
-            chapter: widget.chapter,
-            language: widget.language,
-            wordCount: words.length,
-            isExpanded: widget.isExpanded,
-            isLast: widget.isLast,
-            snapToken: widget.snapToken,
-            onExpandRequested: widget.onExpandRequested,
-            swipeProgress: words.isEmpty ? null : swipeCat,
-            sentenceSummary: sentences.isEmpty ? null : sentenceSummary,
-            sentences: sentences,
-            scenarios: scenarios,
-            isScenarioCompleted: isScenarioCompleted,
-            onWordPlay: words.isEmpty
-                ? null
-                : () => openWordSwipeFromHub(
-                    context,
-                    language: widget.language,
-                    category: category,
-                  ),
-            onWordReview: !swipeCat.played || swipeCat.unknownCount == 0
-                ? null
-                : () => openWordSwipeFromHub(
-                    context,
-                    language: widget.language,
-                    category: category,
-                    reviewOnly: true,
-                  ),
-          ),
+        child: LearningHubChapterCard(
+          chapter: widget.chapter,
+          language: widget.language,
+          wordCount: words.length,
+          isExpanded: widget.isExpanded,
+          isLast: widget.isLast,
+          snapToken: widget.snapToken,
+          onExpandRequested: widget.onExpandRequested,
+          swipeProgress: words.isEmpty ? null : swipeCat,
+          sentenceSummary: sentences.isEmpty ? null : sentenceSummary,
+          sentences: sentences,
+          scenarios: scenarios,
+          isScenarioCompleted: isScenarioCompleted,
+          onWordPlay: words.isEmpty
+              ? null
+              : () => openWordSwipeFromHub(
+                  context,
+                  language: widget.language,
+                  category: category,
+                ),
+          onWordReview: !swipeCat.played || swipeCat.unknownCount == 0
+              ? null
+              : () => openWordSwipeFromHub(
+                  context,
+                  language: widget.language,
+                  category: category,
+                  reviewOnly: true,
+                ),
         ),
       ),
     );

@@ -10,6 +10,7 @@ import '../../data/datasources/local/learning_tour_local_datasource.dart';
 import '../../app/learning_tour_providers.dart';
 import '../../app/providers.dart';
 import '../../app/scenario_providers.dart';
+import '../../app/shell_providers.dart';
 import '../../app/vocabulary_providers.dart';
 import '../../core/config/active5_layout.dart';
 import '../../core/theme/language_palette.dart';
@@ -237,9 +238,11 @@ class _ScenarioTrainingScreenState extends ConsumerState<ScenarioTrainingScreen>
     if (!mounted) return;
     if (context.canPop()) {
       context.pop();
+      ref.read(hubDockResyncProvider.notifier).bumpDelta();
       return;
     }
     context.go('/scenarios');
+    ref.read(hubDockResyncProvider.notifier).bumpDelta();
   }
 
   List<Scenario> get _orderedScenarios {

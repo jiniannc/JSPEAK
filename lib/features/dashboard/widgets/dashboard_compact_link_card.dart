@@ -127,29 +127,30 @@ class DashboardCompactLink extends StatelessWidget {
 class DashboardSectionLabel extends StatelessWidget {
   final IconData icon;
   final String label;
+  final Color accent;
 
   const DashboardSectionLabel({
     super.key,
     required this.icon,
     required this.label,
+    required this.accent,
   });
-
-  static const _inkSoft = Color(0x800F172A);
 
   @override
   Widget build(BuildContext context) {
     return Row(
       mainAxisSize: MainAxisSize.min,
       children: [
-        Icon(icon, size: 11, color: _inkSoft),
+        Icon(icon, size: 13, color: accent),
         const SizedBox(width: 5),
         Text(
           label,
-          style: const TextStyle(
-            fontSize: 9,
-            fontWeight: FontWeight.w800,
-            letterSpacing: 0.7,
-            color: _inkSoft,
+          style: TextStyle(
+            fontSize: 10.5,
+            fontWeight: FontWeight.w900,
+            letterSpacing: 0.75,
+            color: accent,
+            height: 1,
           ),
         ),
       ],

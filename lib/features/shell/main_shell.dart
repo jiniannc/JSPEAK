@@ -1,10 +1,16 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
 import '../../app/dictionary_providers.dart';
+import '../../app/learning_hub_language_provider.dart';
+import '../../app/learning_providers.dart';
+import '../../app/providers.dart';
 import '../../app/shell_providers.dart';
 import '../../app/title_badge_providers.dart';
+import '../learning/widgets/chapter_image_preloader.dart';
 import 'floating_island_nav_bar.dart';
 import 'main_shell_tab_header.dart';
 
@@ -39,6 +45,15 @@ class MainShell extends ConsumerWidget {
 
   void _onTabSelected(WidgetRef ref, int index) {
     final isReselect = index == navigationShell.currentIndex;
+    if (index == kLearningShellTabIndex) {
+      ref.read(hubDockResyncProvider.notifier).bumpFullReveal();
+    }
+    if (index == kDictionaryShellTabIndex) {
+      final hubLanguage = ref.read(learningHubLanguageProvider);
+      if (ref.read(selectedLanguageProvider) != hubLanguage) {
+        syncAppLanguage(ref, hubLanguage);
+      }
+    }
     if (isReselect && index == kDictionaryShellTabIndex) {
       resetDictionaryHome(ref);
     }
@@ -54,6 +69,28 @@ class MainShell extends ConsumerWidget {
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
+    ref.listen(contentProvider, (previous, next) {
+      next.whenData((content) {
+        WidgetsBinding.instance.addPostFrameCallback((_) {
+          if (!context.mounted) return;
+          final language = ref.read(learningHubLanguageProvider);
+          final chapters = content.bundle.learningHubChaptersFor(language);
+          if (chapters.isEmpty) return;
+          unawaited(
+            ChapterImagePreloader.warmUpChapters(
+              context,
+              language: language,
+              chapters: chapters,
+              cardWidth: ChapterImagePreloader.hubCardWidth(context),
+              priorityChapterKeys: chapters
+                  .take(3)
+                  .map(ChapterImagePreloader.chapterKey),
+            ),
+          );
+        });
+      });
+    });
+
     final tabIndex = navigationShell.currentIndex;
     final hasPendingTitleUnlock =
         ref.watch(titleBadgeUnlockProvider).pendingCelebrations.isNotEmpty;

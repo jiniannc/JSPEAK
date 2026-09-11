@@ -6,6 +6,7 @@ import 'package:go_router/go_router.dart';
 import '../../app/learning_tour_providers.dart';
 import '../../app/providers.dart';
 import '../../app/sentence_progress_providers.dart';
+import '../../app/shell_providers.dart';
 import '../../core/theme/language_palette.dart';
 import '../../core/widgets/device_scaffold.dart';
 import '../../data/models/sentence.dart';
@@ -38,12 +39,20 @@ class _BasicSentenceTrainingScreenState
   int _currentIndex = 0;
   bool _showCelebration = false;
 
+  void _leaveTraining() {
+    if (!mounted) return;
+    if (context.canPop()) {
+      context.pop();
+      ref.read(hubDockResyncProvider.notifier).bumpDelta();
+    }
+  }
+
   void _onWheelCompleted() {
     if (_showCelebration || !mounted) return;
     setState(() => _showCelebration = true);
     HapticFeedback.heavyImpact();
     Future.delayed(ScoreCelebrationTier.perfect.duration, () {
-      if (mounted) context.pop();
+      _leaveTraining();
     });
   }
 
@@ -69,7 +78,7 @@ class _BasicSentenceTrainingScreenState
       child: PopScope(
         canPop: false,
         onPopInvokedWithResult: (didPop, result) {
-          if (!didPop) context.pop();
+          if (!didPop) _leaveTraining();
         },
         child: DeviceScaffold(
           body: contentAsync.when(
@@ -87,7 +96,7 @@ class _BasicSentenceTrainingScreenState
                     children: [
                       const Text('문장이 없습니다.'),
                       TextButton(
-                        onPressed: () => context.pop(),
+                        onPressed: _leaveTraining,
                         child: const Text('돌아가기'),
                       ),
                     ],
@@ -141,7 +150,7 @@ class _BasicSentenceTrainingScreenState
                           progress: progress.clamp(0.0, 1.0),
                           metaLabel: metaLabel,
                           accentColor: palette.primary,
-                          onBack: () => context.pop(),
+                          onBack: _leaveTraining,
                           onOptions: () {
                             showModalBottomSheet<void>(
                               context: context,
@@ -215,7 +224,7 @@ class _BasicSentenceTrainingScreenState
                                       title: const Text('학습 종료'),
                                       onTap: () {
                                         Navigator.pop(ctx);
-                                        context.pop();
+                                        _leaveTraining();
                                       },
                                     ),
                                   ],

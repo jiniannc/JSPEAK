@@ -311,9 +311,9 @@ class _SyncActionList extends StatelessWidget {
                   size: 22,
                   color: GlassSurfaceStyle.iconColor,
                 ),
-          title: const Text('최신 표현 데이터 동기화', style: _titleStyle),
+          title: const Text('최신 데이터 동기화', style: _titleStyle),
           subtitle: Text(
-            syncing ? '동기화 중...' : '구글 시트 최신 콘텐츠를 받아옵니다',
+            syncing ? '동기화 중...' : '최신 콘텐츠를 업데이트 합니다',
             style: _subtitleStyle,
           ),
           trailing: syncing

@@ -28,3 +28,37 @@ class HomeEntranceEpochNotifier extends Notifier<int> {
 
 /// 기내사전 탭 branch index.
 const kDictionaryShellTabIndex = 2;
+
+/// 학습 탭 branch index.
+const kLearningShellTabIndex = 1;
+
+/// 챕터 도크 프로그레스 재동기화 신호.
+///
+/// - [fullReveal] false: 학습 화면 복귀 — 기존 진척도에서 delta만 애니메이션.
+/// - [fullReveal] true: 학습 탭 재진입 — 0부터 현재 진척도까지 채움.
+class HubDockResyncSignal {
+  final int epoch;
+  final bool fullReveal;
+
+  const HubDockResyncSignal({
+    required this.epoch,
+    this.fullReveal = false,
+  });
+
+  HubDockResyncSignal next({required bool fullReveal}) =>
+      HubDockResyncSignal(epoch: epoch + 1, fullReveal: fullReveal);
+}
+
+final hubDockResyncProvider =
+    NotifierProvider<HubDockResyncNotifier, HubDockResyncSignal>(
+  HubDockResyncNotifier.new,
+);
+
+class HubDockResyncNotifier extends Notifier<HubDockResyncSignal> {
+  @override
+  HubDockResyncSignal build() => const HubDockResyncSignal(epoch: 0);
+
+  void bumpDelta() => state = state.next(fullReveal: false);
+
+  void bumpFullReveal() => state = state.next(fullReveal: true);
+}

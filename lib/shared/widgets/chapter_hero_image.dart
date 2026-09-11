@@ -83,6 +83,25 @@ class ChapterHeroImage extends StatelessWidget {
     );
   }
 
+  static ImageProvider thumbProvider(
+    String assetPath, {
+    required double displayWidth,
+    required double displayHeight,
+    required double devicePixelRatio,
+  }) {
+    final resolved = resolveChapterAssetPath(assetPath);
+    final cache = thumbCacheDimensions(
+      displayWidth: displayWidth,
+      displayHeight: displayHeight,
+      devicePixelRatio: devicePixelRatio,
+    );
+    return ResizeImage(
+      AssetImage(resolved),
+      width: cache.width,
+      height: cache.height,
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     final resolved = resolveChapterAssetPath(assetPath);
@@ -92,30 +111,37 @@ class ChapterHeroImage extends StatelessWidget {
       );
     }
 
-    final isHero = profile == ChapterImageProfile.hero;
     final dpr = MediaQuery.devicePixelRatioOf(context);
-    ({int? width, int? height})? thumbCache;
-    if (!isHero) {
-      thumbCache = thumbCacheDimensions(
-        displayWidth: width,
-        displayHeight: height,
-        devicePixelRatio: dpr,
-      );
-    }
+    final isHero = profile == ChapterImageProfile.hero;
+    final provider = isHero
+        ? heroProvider(
+            assetPath,
+            displayWidth: width,
+            devicePixelRatio: dpr,
+          )
+        : thumbProvider(
+            assetPath,
+            displayWidth: width,
+            displayHeight: height,
+            devicePixelRatio: dpr,
+          );
 
-    final image = Image.asset(
-      resolved,
+    final image = Image(
+      image: provider,
       width: width,
       height: height,
       fit: fit,
       alignment: alignment,
-      cacheWidth: isHero
-          ? heroCacheWidth(displayWidth: width, devicePixelRatio: dpr)
-          : thumbCache?.width,
-      cacheHeight: thumbCache?.height,
       filterQuality: isHero ? FilterQuality.high : FilterQuality.medium,
       isAntiAlias: true,
       gaplessPlayback: true,
+      frameBuilder: (context, child, frame, wasSynchronouslyLoaded) {
+        if (wasSynchronouslyLoaded || frame != null) return child;
+        return ColoredBox(
+          color: const Color(0xFFF1F5F9),
+          child: SizedBox(width: width, height: height),
+        );
+      },
       errorBuilder:
           errorBuilder ??
           (context, error, stackTrace) =>

@@ -85,8 +85,8 @@ class WordSwipeResultModal extends ConsumerStatefulWidget {
   final List<WordModel> unknownWords;
   final String category;
   final String language;
-  final VoidCallback onRetryLimited;
-  final VoidCallback onRetryFull;
+  final VoidCallback onRetryReview;
+  final VoidCallback onRetryFromScratch;
   final VoidCallback onExit;
 
   const WordSwipeResultModal({
@@ -95,8 +95,8 @@ class WordSwipeResultModal extends ConsumerStatefulWidget {
     required this.unknownWords,
     required this.category,
     required this.language,
-    required this.onRetryLimited,
-    required this.onRetryFull,
+    required this.onRetryReview,
+    required this.onRetryFromScratch,
     required this.onExit,
   });
 
@@ -106,8 +106,8 @@ class WordSwipeResultModal extends ConsumerStatefulWidget {
     required List<WordModel> unknownWords,
     required String category,
     required String language,
-    required VoidCallback onRetryLimited,
-    required VoidCallback onRetryFull,
+    required VoidCallback onRetryReview,
+    required VoidCallback onRetryFromScratch,
     required VoidCallback onExit,
   }) {
     final knownCount = allWords.length - unknownWords.length;
@@ -151,13 +151,13 @@ class WordSwipeResultModal extends ConsumerStatefulWidget {
                 unknownWords: unknownWords,
                 category: category,
                 language: language,
-                onRetryLimited: () {
+                onRetryReview: () {
                   Navigator.of(sheetContext).pop();
-                  onRetryLimited();
+                  onRetryReview();
                 },
-                onRetryFull: () {
+                onRetryFromScratch: () {
                   Navigator.of(sheetContext).pop();
-                  onRetryFull();
+                  onRetryFromScratch();
                 },
                 onExit: () {
                   Navigator.of(sheetContext).pop();
@@ -436,13 +436,28 @@ class _WordSwipeResultModalState extends ConsumerState<WordSwipeResultModal>
                       children: [
                         if (!_allMastered) ...[
                           _LiquidGlassActionButton(
-                            onPressed: widget.onRetryLimited,
-                            label: '모르는 단어 $retryCount개만 재도전',
+                            onPressed: widget.onRetryReview,
+                            label: '틀린 단어장 복습 · ${retryCount}개',
+                          ),
+                          const SizedBox(height: 6),
+                          TextButton(
+                            onPressed: widget.onRetryFromScratch,
+                            style: TextButton.styleFrom(
+                              foregroundColor: _slate.withValues(alpha: 0.72),
+                              minimumSize: const Size.fromHeight(40),
+                            ),
+                            child: const Text(
+                              '처음부터 다시',
+                              style: TextStyle(
+                                fontSize: 13,
+                                fontWeight: FontWeight.w700,
+                              ),
+                            ),
                           ),
                         ] else ...[
                           _LiquidGlassActionButton(
-                            onPressed: widget.onRetryFull,
-                            label: '복습',
+                            onPressed: widget.onRetryFromScratch,
+                            label: '처음부터 다시',
                           ),
                         ],
                         const SizedBox(height: 6),

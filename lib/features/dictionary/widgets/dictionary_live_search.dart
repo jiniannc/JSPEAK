@@ -424,7 +424,7 @@ class _DictionaryLiveSearchViewState extends ConsumerState<DictionaryLiveSearchV
                         ? Padding(
                             padding: EdgeInsets.fromLTRB(
                               contentInset,
-                              expandedBarHeight + 8,
+                              expandedBarHeight + 20,
                               contentInset,
                               0,
                             ),
@@ -640,7 +640,7 @@ class _DictionaryLiveSearchViewState extends ConsumerState<DictionaryLiveSearchV
 /// 콘텐츠 양에 따라 단어·문장 영역 높이를 동적으로 배분.
 class _AdaptiveSplitSearchResults extends StatelessWidget {
   static const _sectionHeaderHeight = 34.0;
-  static const _dividerBlockHeight = 13.0;
+  static const _dividerBlockHeight = 25.0;
   static const _wordGridColumns = 3;
   static const _wordGridRowHeight = 110.0;
   static const _wordGridSpacing = 6.0;
@@ -703,7 +703,7 @@ class _AdaptiveSplitSearchResults extends StatelessWidget {
         final bothAreLong = !wordIsShort && !sentenceIsShort;
 
         final divider = Padding(
-          padding: const EdgeInsets.fromLTRB(12, 6, 12, 6),
+          padding: const EdgeInsets.fromLTRB(12, 12, 12, 12),
           child: Divider(
             height: 1,
             thickness: 1,
@@ -1010,7 +1010,7 @@ class _SearchResultSectionHeader extends StatelessWidget {
     final accent = DictionaryItemKindColors.accent(kind);
 
     return Padding(
-      padding: const EdgeInsets.only(bottom: 8, top: 2),
+      padding: const EdgeInsets.only(bottom: 8, top: 4),
       child: Row(
         children: [
           Icon(

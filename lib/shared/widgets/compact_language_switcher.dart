@@ -219,7 +219,8 @@ class CompactLanguageDropdown extends StatelessWidget {
   static const _menuItemPadding =
       EdgeInsets.symmetric(horizontal: _pillHorizontalPadding);
 
-  static BoxDecoration _pillDecoration({required bool isOpen}) {
+  /// 헤더 언어 pill · 홈 체크인 배너 등 동일 frosted pill 표면.
+  static BoxDecoration pillDecoration({bool isOpen = false}) {
     return BoxDecoration(
       color: Colors.white.withValues(alpha: isOpen ? 0.58 : 0.42),
       borderRadius: BorderRadius.circular(16),
@@ -307,7 +308,7 @@ class CompactLanguageDropdown extends StatelessWidget {
         width: outerWidth,
         height: pillHeight,
         child: DecoratedBox(
-          decoration: _pillDecoration(isOpen: false),
+          decoration: pillDecoration(isOpen: false),
           child: Padding(
             padding: const EdgeInsets.symmetric(horizontal: _pillHorizontalPadding),
             child: _buildPillRow(

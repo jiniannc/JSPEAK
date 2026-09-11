@@ -164,6 +164,53 @@ class _HubPickerGuideInfoMarkState extends State<HubPickerGuideInfoMark> {
   }
 }
 
+/// 학습 전 — 프로그레스 링 대신 표시하는 ▶ 시작 cue.
+class HubPickerStartCue extends StatelessWidget {
+  const HubPickerStartCue({
+    super.key,
+    required this.accent,
+    this.label = '시작',
+  });
+
+  final Color accent;
+  final String label;
+
+  @override
+  Widget build(BuildContext context) {
+    return DecoratedBox(
+      decoration: BoxDecoration(
+        color: accent.withValues(alpha: 0.12),
+        borderRadius: BorderRadius.circular(999),
+      ),
+      child: Padding(
+        padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+        child: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Icon(
+              Icons.play_arrow_rounded,
+              size: 16,
+              color: accent.withValues(alpha: 0.9),
+            ),
+            if (label.isNotEmpty) ...[
+              const SizedBox(width: 1),
+              Text(
+                label,
+                style: TextStyle(
+                  fontSize: 10,
+                  fontWeight: FontWeight.w700,
+                  height: 1,
+                  color: accent.withValues(alpha: 0.92),
+                ),
+              ),
+            ],
+          ],
+        ),
+      ),
+    );
+  }
+}
+
 /// 피커 팝업 위치 계산 공통값.
 class HubPickerLayout {
   const HubPickerLayout._();

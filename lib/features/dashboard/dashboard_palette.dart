@@ -10,6 +10,9 @@ abstract final class DashboardPalette {
   static const Color tealDeep = Color(0xFF0D7A7E);
   static const Color navy = Color(0xFF0F1B2D);
   static const Color textMuted = Color(0xFF8A94A6);
+  /// 홈 섹션 라벨 — 슬레이트 톤 위 은은한 hue.
+  static const Color sectionContinue = Color(0xFF5E7084);
+  static const Color sectionNewUpdate = Color(0xFF6F6A7E);
   static const Color borderLight = Color(0xFFE2E8F0);
   static const Color shadow = Color(0x1A0F1B2D);
 

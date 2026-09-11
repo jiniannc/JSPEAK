@@ -292,9 +292,9 @@ class _SentenceGroupPickerOverlayState extends State<_SentenceGroupPickerOverlay
                 alignment: panelAlignment,
                 transform: Matrix4.identity()
                   ..setEntry(3, 2, 0.00115)
-                  ..translateByDouble(0, _slideY!.value, 0, 1)
+                  ..translate(0.0, _slideY!.value)
                   ..rotateX(_tiltX!.value)
-                  ..scaleByDouble(_scale.value, _scale.value, 1, 1),
+                  ..scale(_scale.value, _scale.value, 1.0),
                 child: Opacity(
                   opacity: _panelOpacity.value,
                   child: DecoratedBox(
@@ -419,6 +419,8 @@ class _SentenceGroupPickerPanel extends StatelessWidget {
 }
 
 class _SentenceGroupPickerRow extends StatelessWidget {
+  static const _accent = Color(0xFFE11D48);
+
   final int index;
   final SentenceCategoryGroupInfo group;
   final ({int mastered, int total, bool allMastered}) progress;
@@ -461,10 +463,13 @@ class _SentenceGroupPickerRow extends StatelessWidget {
                   color: DashboardPalette.teal.withValues(alpha: 0.88),
                 ),
               ),
-            _SentenceGroupProgressRing(
-              mastered: progress.mastered,
-              total: progress.total,
-            ),
+            if (progress.total > 0 && progress.mastered <= 0)
+              const HubPickerStartCue(accent: _SentenceGroupPickerRow._accent)
+            else
+              _SentenceGroupProgressRing(
+                mastered: progress.mastered,
+                total: progress.total,
+              ),
           ],
         ),
       ),

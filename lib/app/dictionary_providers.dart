@@ -76,12 +76,6 @@ final dictionarySentencesProvider = Provider<List<Sentence>>((ref) {
   return content.bundle.sentencesFor(language, category);
 });
 
-/// 언어 변경 시 카테고리를 첫 항목으로 리셋.
-void selectDictionaryLanguage(WidgetRef ref, String language) {
-  ref.read(selectedLanguageProvider.notifier).set(language);
-  ref.read(selectedCategoryProvider.notifier).set(null);
-}
-
 void selectDictionaryCategory(WidgetRef ref, String category) {
   ref.read(selectedCategoryProvider.notifier).set(category);
 }

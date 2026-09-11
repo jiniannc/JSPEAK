@@ -9,6 +9,7 @@ import 'package:go_router/go_router.dart';
 import '../../app/dictionary_favorite_providers.dart';
 import '../../app/learning_tour_providers.dart';
 import '../../app/providers.dart';
+import '../../app/shell_providers.dart';
 import '../../app/swipe_progress_providers.dart';
 import '../../app/tts_providers.dart';
 import '../../core/constants/labels.dart';
@@ -215,18 +216,7 @@ class _WordSwipeTrainingScreenState
       unknownWords: List.unmodifiable(_unknownWords),
       category: _category,
       language: _language,
-      onRetryLimited: () {
-        _resultPresented = false;
-        final retryDeck = List<WordModel>.from(_unknownWords);
-        if (retryDeck.isEmpty) return;
-        _startSession(
-          language: _language,
-          category: _category,
-          reviewOnly: _reviewOnly,
-          overrideDeck: retryDeck,
-        );
-      },
-      onRetryFull: () {
+      onRetryReview: () {
         _resultPresented = false;
         _startSession(
           language: _language,
@@ -234,8 +224,18 @@ class _WordSwipeTrainingScreenState
           reviewOnly: true,
         );
       },
+      onRetryFromScratch: () {
+        _resultPresented = false;
+        _startSession(
+          language: _language,
+          category: _category,
+          reviewOnly: false,
+        );
+      },
       onExit: () {
-        if (mounted) context.pop();
+        if (!mounted) return;
+        context.pop();
+        ref.read(hubDockResyncProvider.notifier).bumpDelta();
       },
     );
 
@@ -410,7 +410,9 @@ class _WordSwipeTrainingScreenState
 
   Future<void> _exitScreen() async {
     await _persistProgressIfNeeded();
-    if (mounted) context.pop();
+    if (!mounted) return;
+    context.pop();
+    ref.read(hubDockResyncProvider.notifier).bumpDelta();
   }
 
   void _showOptions(BuildContext context) {

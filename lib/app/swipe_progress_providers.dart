@@ -2,8 +2,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../data/datasources/local/swipe_progress_local_datasource.dart';
 import '../data/repositories/swipe_progress_repository.dart';
-import 'dictionary_providers.dart';
-import 'learning_hub_language_provider.dart';
+import 'app_language_sync.dart';
 
 final swipeProgressLocalDataSourceProvider =
     Provider<SwipeProgressLocalDataSource>(
@@ -31,9 +30,7 @@ final swipeLanguageProvider =
 );
 
 void selectSwipeLanguage(WidgetRef ref, String language) {
-  ref.read(swipeLanguageProvider.notifier).set(language);
-  ref.read(selectedLanguageProvider.notifier).set(language);
-  ref.read(learningHubLanguageProvider.notifier).set(language);
+  syncAppLanguage(ref, language);
 }
 
 class SwipeProgressState {

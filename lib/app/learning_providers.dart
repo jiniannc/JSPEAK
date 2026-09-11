@@ -1,16 +1,15 @@
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
-import 'dictionary_providers.dart';
-import 'learning_hub_language_provider.dart';
-import 'scenario_providers.dart';
-import 'sentence_progress_providers.dart';
-import 'swipe_progress_providers.dart';
+import 'app_language_sync.dart';
 
-/// 학습 허브 언어 → 시나리오·기본문장·스와이프·사전 언어 동기화.
+export 'app_language_sync.dart' show syncAppLanguage;
+
+/// 홈·학습 헤더 언어 선택.
 void selectLearningLanguage(WidgetRef ref, String language) {
-  ref.read(learningHubLanguageProvider.notifier).set(language);
-  ref.read(scenarioLanguageProvider.notifier).set(language);
-  ref.read(basicSentenceLanguageProvider.notifier).set(language);
-  ref.read(swipeLanguageProvider.notifier).set(language);
-  ref.read(selectedLanguageProvider.notifier).set(language);
+  syncAppLanguage(ref, language);
+}
+
+/// 기내사전 헤더 언어 선택 — 홈·학습과 동기화, 카테고리는 리셋.
+void selectDictionaryLanguage(WidgetRef ref, String language) {
+  syncAppLanguage(ref, language, resetDictionaryCategory: true);
 }

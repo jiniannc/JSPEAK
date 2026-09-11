@@ -15,6 +15,8 @@ import '../data/repositories/content_repository.dart';
 import '../data/repositories/scenario_progress_repository.dart';
 import 'dictionary_providers.dart';
 import 'learning_hub_language_provider.dart';
+import 'sentence_progress_providers.dart';
+import 'swipe_progress_providers.dart';
 import 'providers.dart';
 import 'speech_providers.dart';
 import '../core/network/apps_script_fetch.dart';
@@ -1987,4 +1989,7 @@ final scenarioTrainingProvider =
 void selectScenarioLanguage(WidgetRef ref, String language) {
   ref.read(scenarioLanguageProvider.notifier).set(language);
   ref.read(learningHubLanguageProvider.notifier).set(language);
+  ref.read(basicSentenceLanguageProvider.notifier).set(language);
+  ref.read(swipeLanguageProvider.notifier).set(language);
+  ref.read(selectedLanguageProvider.notifier).set(language);
 }

@@ -4,6 +4,7 @@ import 'package:go_router/go_router.dart';
 
 import '../../../app/learning_providers.dart';
 import '../../../app/new_update_scenario_provider.dart';
+import '../dashboard_palette.dart';
 import 'dashboard_compact_link_card.dart';
 
 /// 홈 — 컴팩트 링크형 New Update 카드.
@@ -45,6 +46,7 @@ class NewUpdateScenarioCard extends ConsumerWidget {
                 const DashboardSectionLabel(
                   icon: Icons.auto_awesome_rounded,
                   label: 'NEW UPDATE',
+                  accent: DashboardPalette.sectionNewUpdate,
                 ),
                 const Spacer(),
                 DashboardMetaChip(

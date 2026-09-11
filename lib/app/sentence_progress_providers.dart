@@ -2,8 +2,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../data/datasources/local/sentence_progress_local_datasource.dart';
 import '../data/repositories/sentence_progress_repository.dart';
-import 'dictionary_providers.dart';
-import 'learning_hub_language_provider.dart';
+import 'app_language_sync.dart';
 
 final sentenceProgressLocalDataSourceProvider =
     Provider<SentenceProgressLocalDataSource>(
@@ -30,9 +29,7 @@ final basicSentenceLanguageProvider =
 );
 
 void selectBasicSentenceLanguage(WidgetRef ref, String language) {
-  ref.read(basicSentenceLanguageProvider.notifier).set(language);
-  ref.read(selectedLanguageProvider.notifier).set(language);
-  ref.read(learningHubLanguageProvider.notifier).set(language);
+  syncAppLanguage(ref, language);
 }
 
 class SentenceProgressState {
