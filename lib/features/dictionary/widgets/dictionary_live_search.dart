@@ -9,7 +9,6 @@ import '../../../app/dictionary_favorite_providers.dart';
 import '../../../app/dictionary_providers.dart';
 import '../../../app/providers.dart';
 import '../../../app/search_providers.dart';
-import '../../../app/shell_providers.dart';
 import '../../../core/services/audio_prefetch.dart';
 import '../../../core/theme/language_palette.dart';
 import '../../../data/models/sentence.dart';
@@ -338,14 +337,10 @@ class _DictionaryLiveSearchViewState extends ConsumerState<DictionaryLiveSearchV
 
   @override
   Widget build(BuildContext context) {
-    ref.listen<int>(shellTabIndexProvider, (previous, next) {
-      if (next == kDictionaryShellTabIndex && previous != kDictionaryShellTabIndex) {
-        _replayEntryAnimation();
-      }
-    });
-
     ref.listen(dictionaryHomeResetProvider, (previous, next) {
-      if (previous != next) _clearSearch();
+      if (previous == next) return;
+      _clearSearch();
+      _replayEntryAnimation();
     });
     ref.listen(dictionarySearchJumpProvider, (previous, next) {
       if (next != null && next.isNotEmpty && next != previous) {

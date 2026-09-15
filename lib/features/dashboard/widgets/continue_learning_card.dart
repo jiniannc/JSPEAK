@@ -145,20 +145,32 @@ class ContinueLearningCard extends ConsumerWidget {
             language: target.language,
             category: target.category ?? '',
             reviewOnly: target.reviewOnly,
+            initialCardIndex: target.swipeCardIndex ?? 0,
+            initialUnknownWordIds: target.swipeUnknownWordIds,
           ),
         );
       case ContinueLearningKind.basicSentence:
         selectLearningLanguage(ref, target.language);
+        final sentenceQuery = target.sentenceId == null
+            ? ''
+            : '&sentenceId=${Uri.encodeComponent(target.sentenceId!)}';
         context.push(
           '/scenarios/sentences/play'
           '?lang=${Uri.encodeComponent(target.language)}'
-          '&category=${Uri.encodeComponent(target.category ?? '')}',
+          '&category=${Uri.encodeComponent(target.category ?? '')}'
+          '$sentenceQuery',
         );
       case ContinueLearningKind.scenario:
         selectLearningLanguage(ref, target.language);
         final scenario = target.scenario;
         if (scenario != null) {
-          context.push('/scenarios/train/${scenario.id}', extra: scenario);
+          final lineQuery = target.scenarioLineIndex == null
+              ? ''
+              : '?line=${target.scenarioLineIndex}';
+          context.push(
+            '/scenarios/train/${scenario.id}$lineQuery',
+            extra: scenario,
+          );
         } else {
           context.go('/scenarios');
         }

@@ -3,6 +3,7 @@ import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
+import '../../app/last_learning_session_providers.dart';
 import '../../app/learning_tour_providers.dart';
 import '../../app/providers.dart';
 import '../../app/sentence_progress_providers.dart';
@@ -38,6 +39,7 @@ class _BasicSentenceTrainingScreenState
     extends ConsumerState<BasicSentenceTrainingScreen> {
   int _currentIndex = 0;
   bool _showCelebration = false;
+  bool _initialSessionRecorded = false;
 
   void _leaveTraining() {
     if (!mounted) return;
@@ -109,6 +111,15 @@ class _BasicSentenceTrainingScreenState
                 stats: progressState.stats,
               );
               final startIndex = _initialIndexFor(sentences);
+              if (!_initialSessionRecorded && sentences.isNotEmpty) {
+                _initialSessionRecorded = true;
+                recordBasicSentenceSession(
+                  ref,
+                  language: widget.language,
+                  category: widget.category,
+                  sentenceId: sentences[startIndex].id,
+                );
+              }
               final progress = sentences.isEmpty
                   ? 0.0
                   : (_currentIndex + 1) / sentences.length;
@@ -135,6 +146,14 @@ class _BasicSentenceTrainingScreenState
                         onIndexChanged: (i) {
                           if (_currentIndex != i) {
                             setState(() => _currentIndex = i);
+                          }
+                          if (i >= 0 && i < sentences.length) {
+                            recordBasicSentenceSession(
+                              ref,
+                              language: widget.language,
+                              category: widget.category,
+                              sentenceId: sentences[i].id,
+                            );
                           }
                         },
                         onCompleted: _onWheelCompleted,

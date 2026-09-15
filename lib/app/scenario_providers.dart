@@ -566,15 +566,54 @@ class ScenarioTrainingController extends Notifier<ScenarioTrainingState> {
     return const ScenarioTrainingState(scenarioId: '', language: 'English');
   }
 
-  void init(Scenario scenario) {
+  void init(Scenario scenario, {int resumeLineIndex = 0}) {
     _sessionActive = true;
     _msgSeq = 0;
     _turnPerformance.clear();
     _scenario = scenario;
     _prefetchedHintUrls.clear();
+
+    final lines = scenario.lines;
+    final start = resumeLineIndex.clamp(0, lines.length);
+
+    if (start <= 0) {
+      state = ScenarioTrainingState(
+        scenarioId: scenario.id,
+        language: scenario.language,
+      );
+      unawaited(_prefetchScenarioHintAudio(scenario));
+      _beginCurrentLine();
+      return;
+    }
+
+    final messages = <ChatMessage>[];
+    for (var i = 0; i < start; i++) {
+      final line = lines[i];
+      if (line.isPassenger) {
+        messages.add(
+          ChatMessage(
+            id: _nextMsgId('pax'),
+            line: line,
+            kind: ChatBubbleKind.passenger,
+          ),
+        );
+      } else if (line.isCrew) {
+        messages.add(
+          ChatMessage(
+            id: _nextMsgId('crew'),
+            line: line,
+            kind: ChatBubbleKind.crewTurn,
+            isResolved: true,
+          ),
+        );
+      }
+    }
+
     state = ScenarioTrainingState(
       scenarioId: scenario.id,
       language: scenario.language,
+      messages: messages,
+      currentLineIndex: start,
     );
     unawaited(_prefetchScenarioHintAudio(scenario));
     _beginCurrentLine();

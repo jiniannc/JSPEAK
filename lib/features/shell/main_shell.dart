@@ -44,26 +44,24 @@ class MainShell extends ConsumerWidget {
   ];
 
   void _onTabSelected(WidgetRef ref, int index) {
-    final isReselect = index == navigationShell.currentIndex;
-    if (index == kLearningShellTabIndex) {
-      ref.read(hubDockResyncProvider.notifier).bumpFullReveal();
-    }
-    if (index == kDictionaryShellTabIndex) {
-      final hubLanguage = ref.read(learningHubLanguageProvider);
-      if (ref.read(selectedLanguageProvider) != hubLanguage) {
-        syncAppLanguage(ref, hubLanguage);
-      }
-    }
-    if (isReselect && index == kDictionaryShellTabIndex) {
-      resetDictionaryHome(ref);
-    }
-    if (index == 0) {
-      ref.read(homeEntranceEpochProvider.notifier).bump();
+    switch (index) {
+      case 0:
+        ref.read(homeEntranceEpochProvider.notifier).bump();
+      case kLearningShellTabIndex:
+        ref.read(hubDockResyncProvider.notifier).bumpFullReveal();
+      case kDictionaryShellTabIndex:
+        final hubLanguage = ref.read(learningHubLanguageProvider);
+        if (ref.read(selectedLanguageProvider) != hubLanguage) {
+          syncAppLanguage(ref, hubLanguage);
+        }
+        resetDictionaryHome(ref);
+      case MainShellTabHeader.kMyPageTabIndex:
+        ref.read(myPageEntranceEpochProvider.notifier).bump();
     }
     ref.read(shellTabIndexProvider.notifier).setIndex(index);
     navigationShell.goBranch(
       index,
-      initialLocation: isReselect,
+      initialLocation: true,
     );
   }
 

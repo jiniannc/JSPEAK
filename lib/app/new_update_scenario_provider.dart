@@ -1,23 +1,20 @@
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
+import '../core/utils/learning_hub_icon.dart';
+import '../data/models/content_bundle.dart';
 import '../data/models/scenario.dart';
 import 'learning_hub_language_provider.dart';
 import 'providers.dart';
 
-/// 홈 NEW UPDATE 카드에 표시할 신규 시나리오 스냅샷.
+/// 홈 NEW UPDATE 카드에 표시할 신규 시나리오 목록.
 class NewUpdateScenarioSnapshot {
-  final Scenario? featured;
-  final int totalNewCount;
+  final List<Scenario> scenarios;
 
-  const NewUpdateScenarioSnapshot({
-    this.featured,
-    this.totalNewCount = 0,
-  });
+  const NewUpdateScenarioSnapshot({this.scenarios = const []});
 
-  bool get hasUpdates => featured != null && totalNewCount > 0;
+  bool get hasUpdates => scenarios.isNotEmpty;
 
-  int get additionalCount =>
-      totalNewCount > 1 ? totalNewCount - 1 : 0;
+  int get count => scenarios.length;
 }
 
 /// 홈 상단 언어 스위치(`learningHubLanguageProvider`)와 동기화되어,
@@ -39,15 +36,12 @@ final newUpdateScenarioProvider = Provider<NewUpdateScenarioSnapshot>((ref) {
   }
 
   newScenarios.sort((a, b) {
-    final byChapter = b.chapterNo.compareTo(a.chapterNo);
+    final byChapter = a.chapterNo.compareTo(b.chapterNo);
     if (byChapter != 0) return byChapter;
-    return b.id.compareTo(a.id);
+    return a.id.compareTo(b.id);
   });
 
-  return NewUpdateScenarioSnapshot(
-    featured: newScenarios.first,
-    totalNewCount: newScenarios.length,
-  );
+  return NewUpdateScenarioSnapshot(scenarios: newScenarios);
 });
 
 String scenarioLanguageShortTag(String language) => switch (language) {
@@ -62,10 +56,30 @@ String scenarioLevelLabel(String level) {
   return trimmed;
 }
 
-String scenarioMetaLine(Scenario scenario, {int additionalCount = 0}) {
-  final level = scenarioLevelLabel(scenario.level);
-  final lineCount = scenario.lines.length;
-  final base = '$level · ${lineCount}문장';
-  if (additionalCount <= 0) return base;
-  return '$base · 외 $additionalCount개 더보기';
+/// NEW UPDATE 서브카드 — sentences 시트 기준 챕터명.
+String newUpdateChapterLabel(ContentBundle bundle, Scenario scenario) {
+  final hub = bundle.hubChapterForScenario(scenario);
+  final name = hub?.name ?? ContentBundle.scenarioHubCategoryName(scenario);
+  if (name.isEmpty) return 'Chapter ${scenario.chapterNo}';
+  return 'Chapter ${scenario.chapterNo}. $name';
+}
+
+/// NEW UPDATE 서브카드 — 짧은 챕터 라벨 (2줄 wrap용).
+String newUpdateChapterShortLabel(ContentBundle bundle, Scenario scenario) {
+  final hub = bundle.hubChapterForScenario(scenario);
+  final name = hub?.name ?? ContentBundle.scenarioHubCategoryName(scenario);
+  if (name.isEmpty) return 'Ch.${scenario.chapterNo}';
+  return 'Ch.${scenario.chapterNo} · $name';
+}
+
+/// NEW UPDATE 서브카드 — sentences 시트 [chapter_image] 우선 썸네일 경로.
+String newUpdateChapterImageAsset(ContentBundle bundle, Scenario scenario) {
+  final hub = bundle.hubChapterForScenario(scenario);
+  final chapterImage = hub?.chapterImage ?? scenario.chapterImage;
+  final category =
+      hub?.name ?? ContentBundle.scenarioHubCategoryName(scenario);
+  return resolveHubChapterIcon(
+    chapterImage: chapterImage,
+    category: category,
+  );
 }

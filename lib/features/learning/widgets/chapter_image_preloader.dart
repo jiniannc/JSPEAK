@@ -210,6 +210,40 @@ abstract final class ChapterImagePreloader {
     }
   }
 
+  static Future<void> warmUpNewUpdateThumbs(
+    BuildContext context, {
+    required List<String> assetPaths,
+    required double displayWidth,
+    required double displayHeight,
+  }) async {
+    if (!context.mounted || assetPaths.isEmpty || displayWidth <= 0) {
+      return;
+    }
+
+    final dpr = MediaQuery.devicePixelRatioOf(context);
+    final uniquePaths = assetPaths
+        .map((path) => path.trim())
+        .where((path) => path.isNotEmpty)
+        .toSet();
+
+    for (final path in uniquePaths) {
+      if (!context.mounted) return;
+      try {
+        await precacheImage(
+          ChapterHeroImage.thumbProvider(
+            path,
+            displayWidth: displayWidth,
+            displayHeight: displayHeight,
+            devicePixelRatio: dpr,
+          ),
+          context,
+        );
+      } catch (_) {
+        // errorBuilder 폴백
+      }
+    }
+  }
+
   static Future<void> _precacheChapter(
     BuildContext context, {
     required LearningHubChapter chapter,

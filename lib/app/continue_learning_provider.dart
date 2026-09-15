@@ -2,11 +2,14 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../core/constants/labels.dart';
+import '../data/datasources/local/last_learning_session_local_datasource.dart';
 import '../data/datasources/local/scenario_progress_local_datasource.dart';
 import '../data/datasources/local/sentence_progress_local_datasource.dart';
 import '../data/datasources/local/swipe_progress_local_datasource.dart';
 import '../data/models/content_bundle.dart';
 import '../data/models/scenario.dart';
+import '../data/models/sentence.dart';
+import 'last_learning_session_providers.dart';
 import 'providers.dart';
 import 'scenario_providers.dart';
 import 'sentence_progress_providers.dart';
@@ -31,6 +34,10 @@ class ContinueLearningTarget {
   final bool reviewOnly;
   final int completed;
   final int total;
+  final int? swipeCardIndex;
+  final List<String> swipeUnknownWordIds;
+  final String? sentenceId;
+  final int? scenarioLineIndex;
 
   const ContinueLearningTarget({
     required this.kind,
@@ -43,6 +50,10 @@ class ContinueLearningTarget {
     this.reviewOnly = false,
     this.completed = 0,
     this.total = 0,
+    this.swipeCardIndex,
+    this.swipeUnknownWordIds = const [],
+    this.sentenceId,
+    this.scenarioLineIndex,
   });
 
   bool get hasProgress => total > 0;
@@ -66,8 +77,22 @@ final continueLearningProvider = Provider<ContinueLearningTarget>((ref) {
   final swipeStats = ref.watch(swipeProgressProvider).stats;
   final sentenceStats = ref.watch(sentenceProgressProvider).stats;
   final scenarioProgress = ref.watch(scenarioProgressProvider);
+  final lastSession = ref.watch(lastLearningSessionProvider);
 
   if (content != null && !content.bundle.isEmpty) {
+    if (lastSession != null) {
+      final fromSession = _targetFromLastSession(
+        session: lastSession,
+        bundle: content.bundle,
+        swipeStats: swipeStats,
+        sentenceStats: sentenceStats,
+        scenarioStats: scenarioProgress.stats,
+      );
+      if (fromSession != null) {
+        return fromSession;
+      }
+    }
+
     final swipe = _latestSwipeTarget(swipeStats);
     if (swipe != null) {
       return swipe;
@@ -98,6 +123,142 @@ final continueLearningProvider = Provider<ContinueLearningTarget>((ref) {
     language: 'English',
   );
 });
+
+ContinueLearningTarget? _targetFromLastSession({
+  required LastLearningSession session,
+  required ContentBundle bundle,
+  required SwipeProgressStats swipeStats,
+  required SentenceProgressStats sentenceStats,
+  required ScenarioProgressStats scenarioStats,
+}) {
+  switch (session.mode) {
+    case LastLearningMode.wordSwipe:
+      return _wordSwipeTargetFromSession(session, bundle, swipeStats);
+    case LastLearningMode.basicSentence:
+      return _basicSentenceTargetFromSession(session, bundle, sentenceStats);
+    case LastLearningMode.scenario:
+      return _scenarioTargetFromSession(session, bundle, scenarioStats);
+  }
+}
+
+ContinueLearningTarget? _wordSwipeTargetFromSession(
+  LastLearningSession session,
+  ContentBundle bundle,
+  SwipeProgressStats swipeStats,
+) {
+  final category = session.category?.trim();
+  if (category == null || category.isEmpty) return null;
+  if (!bundle.categoriesFor(session.language).contains(category)) {
+    return null;
+  }
+
+  final progress = swipeStats.forCategory(session.language, category);
+  final reviewOnly =
+      session.reviewOnly || (progress.played && progress.unknownCount > 0);
+
+  return ContinueLearningTarget(
+    kind: ContinueLearningKind.wordSwipe,
+    title: category,
+    subtitle: reviewOnly
+        ? '${languageLabel(session.language)} · 복습 모드'
+        : languageLabel(session.language),
+    icon: Icons.swipe_rounded,
+    language: session.language,
+    category: category,
+    reviewOnly: reviewOnly,
+    completed: progress.knownCount,
+    total: progress.totalCount,
+    swipeCardIndex: session.cardIndex,
+    swipeUnknownWordIds: session.unknownWordIds,
+  );
+}
+
+ContinueLearningTarget? _basicSentenceTargetFromSession(
+  LastLearningSession session,
+  ContentBundle bundle,
+  SentenceProgressStats sentenceStats,
+) {
+  final category = session.category?.trim();
+  if (category == null || category.isEmpty) return null;
+
+  final sentences = bundle.sentencesFor(session.language, category);
+  if (sentences.isEmpty) return null;
+
+  var masteredCount = 0;
+  var touchedCount = 0;
+  for (final sentence in sentences) {
+    final progress = sentenceStats.forSentence(sentence.id);
+    if (progress.isRead ||
+        progress.isAttempted ||
+        progress.isMastered ||
+        progress.hasListened) {
+      touchedCount += 1;
+    }
+    if (progress.isMastered) masteredCount += 1;
+  }
+  if (touchedCount == 0) return null;
+
+  final sentenceId = _resolveSentenceId(session.sentenceId, sentences);
+
+  return ContinueLearningTarget(
+    kind: ContinueLearningKind.basicSentence,
+    title: category,
+    subtitle: languageLabel(session.language),
+    icon: Icons.format_quote_rounded,
+    language: session.language,
+    category: category,
+    completed: masteredCount,
+    total: sentences.length,
+    sentenceId: sentenceId,
+  );
+}
+
+ContinueLearningTarget? _scenarioTargetFromSession(
+  LastLearningSession session,
+  ContentBundle bundle,
+  ScenarioProgressStats scenarioStats,
+) {
+  final scenarioId = session.scenarioId?.trim();
+  if (scenarioId == null || scenarioId.isEmpty) return null;
+
+  Scenario? scenario;
+  for (final candidate in bundle.scenarios) {
+    if (candidate.id == scenarioId && !candidate.isSheetHeaderRow) {
+      scenario = candidate;
+      break;
+    }
+  }
+  if (scenario == null) return null;
+  if (scenarioStats.isCompleted(scenario.language, scenario.id)) return null;
+
+  final scenarios = bundle
+      .scenariosFor(scenario.language)
+      .where((Scenario s) => !s.isSheetHeaderRow)
+      .toList();
+  final completedCount =
+      scenarios.where((s) => scenarioStats.isCompleted(scenario!.language, s.id)).length;
+
+  return ContinueLearningTarget(
+    kind: ContinueLearningKind.scenario,
+    title: scenario.title,
+    subtitle: languageLabel(scenario.language),
+    icon: Icons.theater_comedy_outlined,
+    language: scenario.language,
+    scenario: scenario,
+    completed: completedCount,
+    total: scenarios.length,
+    scenarioLineIndex: session.scenarioLineIndex,
+  );
+}
+
+String? _resolveSentenceId(String? savedId, List<Sentence> sentences) {
+  if (savedId != null && savedId.isNotEmpty) {
+    for (final sentence in sentences) {
+      if (sentence.id == savedId) return savedId;
+    }
+  }
+  return sentences.isNotEmpty ? sentences.first.id : null;
+}
 
 ContinueLearningTarget? _latestSwipeTarget(SwipeProgressStats stats) {
   DateTime? latestAt;
@@ -139,9 +300,6 @@ ContinueLearningTarget? _latestSwipeTarget(SwipeProgressStats stats) {
   );
 }
 
-/// 사용자가 실제로 "손댄 적 있는" (읽음/시도/듣기/마스터 중 하나라도 기록된)
-/// 미완료 카테고리만 "이어서 하기" 대상으로 인정한다.
-/// 단순히 마스터되지 않았다는 이유만으로 첫 카테고리를 기본 추천하지 않는다.
 ContinueLearningTarget? _firstIncompleteSentenceCategory({
   required ContentBundle bundle,
   required SentenceProgressStats stats,
@@ -165,7 +323,6 @@ ContinueLearningTarget? _firstIncompleteSentenceCategory({
           needsWork = true;
         }
       }
-      // 실제 학습 흔적이 전혀 없는 카테고리는 "이어서 하기" 대상이 아니다.
       if (touchedCount == 0 || !needsWork) continue;
 
       return ContinueLearningTarget(
@@ -197,8 +354,6 @@ ContinueLearningTarget? _firstIncompleteScenario({
     final completedCount =
         scenarios.where((s) => stats.isCompleted(lang, s.id)).length;
 
-    // 시나리오는 완료 여부만 기록되므로, 이 언어에서 완료한 시나리오가
-    // 하나도 없다면 "이어서 하기"가 아니라 첫 학습 시작일 뿐이다. 건너뛴다.
     if (completedCount == 0) continue;
 
     for (final scenario in scenarios) {

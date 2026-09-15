@@ -8,41 +8,55 @@ import '../../../shared/widgets/glass_surface.dart';
 class DashboardCompactLinkCard extends StatelessWidget {
   final List<Color> tintColors;
   final Widget child;
+  final bool showBorder;
+  final bool clipContent;
 
   const DashboardCompactLinkCard({
     super.key,
     required this.tintColors,
     required this.child,
+    this.showBorder = true,
+    this.clipContent = true,
   });
+
+  static const _radius = BorderRadius.all(Radius.circular(14));
 
   @override
   Widget build(BuildContext context) {
-    return Container(
+    final surface = DecoratedBox(
       decoration: BoxDecoration(
-        borderRadius: BorderRadius.circular(14),
-        boxShadow: GlassSurfaceStyle.cleanElevationShadow(blur: 12),
-      ),
-      child: ClipRRect(
-        borderRadius: BorderRadius.circular(14),
-        child: BackdropFilter(
-          filter: ImageFilter.blur(sigmaX: 10, sigmaY: 10),
-          child: DecoratedBox(
-            decoration: BoxDecoration(
-              borderRadius: BorderRadius.circular(14),
-              gradient: LinearGradient(
-                colors: tintColors,
-                begin: Alignment.centerLeft,
-                end: Alignment.centerRight,
-              ),
-              border: Border.all(
+        borderRadius: _radius,
+        gradient: LinearGradient(
+          colors: tintColors,
+          begin: Alignment.centerLeft,
+          end: Alignment.centerRight,
+        ),
+        border: showBorder
+            ? Border.all(
                 color: Colors.white.withValues(alpha: 0.72),
                 width: 1,
-              ),
-            ),
-            child: child,
-          ),
-        ),
+              )
+            : null,
       ),
+      child: child,
+    );
+
+    final blurred = BackdropFilter(
+      filter: ImageFilter.blur(sigmaX: 10, sigmaY: 10),
+      child: surface,
+    );
+
+    final body = clipContent
+        ? ClipRRect(borderRadius: _radius, child: blurred)
+        : blurred;
+
+    return Container(
+      clipBehavior: clipContent ? Clip.hardEdge : Clip.none,
+      decoration: BoxDecoration(
+        borderRadius: _radius,
+        boxShadow: GlassSurfaceStyle.cleanElevationShadow(blur: 12),
+      ),
+      child: body,
     );
   }
 }

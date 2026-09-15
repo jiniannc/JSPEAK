@@ -98,6 +98,9 @@ final router = GoRouter(
                                 language: extra.language,
                                 category: extra.category,
                                 reviewOnly: extra.reviewOnly,
+                                initialCardIndex: extra.initialCardIndex,
+                                initialUnknownWordIds:
+                                    extra.initialUnknownWordIds,
                               );
                             }
                             final lang =
@@ -121,10 +124,19 @@ final router = GoRouter(
                       builder: (context, state) {
                         final scenarioId = state.pathParameters['scenarioId']!;
                         final extra = state.extra;
+                        final lineIndex =
+                            int.tryParse(state.uri.queryParameters['line'] ?? '') ??
+                                0;
                         if (extra is Scenario) {
-                          return ScenarioTrainingScreen(scenario: extra);
+                          return ScenarioTrainingScreen(
+                            scenario: extra,
+                            initialLineIndex: lineIndex,
+                          );
                         }
-                        return _ScenarioTrainingLoader(scenarioId: scenarioId);
+                        return _ScenarioTrainingLoader(
+                          scenarioId: scenarioId,
+                          initialLineIndex: lineIndex,
+                        );
                       },
                     ),
                   ],
@@ -204,8 +216,12 @@ final router = GoRouter(
 /// extra 없이 진입한 경우 콘텐츠에서 시나리오를 찾는다.
 class _ScenarioTrainingLoader extends ConsumerWidget {
   final String scenarioId;
+  final int initialLineIndex;
 
-  const _ScenarioTrainingLoader({required this.scenarioId});
+  const _ScenarioTrainingLoader({
+    required this.scenarioId,
+    this.initialLineIndex = 0,
+  });
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
@@ -226,7 +242,10 @@ class _ScenarioTrainingLoader extends ConsumerWidget {
             body: Center(child: Text('시나리오를 찾을 수 없습니다: $scenarioId')),
           );
         }
-        return ScenarioTrainingScreen(scenario: matches.first);
+        return ScenarioTrainingScreen(
+          scenario: matches.first,
+          initialLineIndex: initialLineIndex,
+        );
       },
     );
   }

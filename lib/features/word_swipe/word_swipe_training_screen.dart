@@ -10,6 +10,7 @@ import '../../app/dictionary_favorite_providers.dart';
 import '../../app/learning_tour_providers.dart';
 import '../../app/providers.dart';
 import '../../app/shell_providers.dart';
+import '../../app/last_learning_session_providers.dart';
 import '../../app/swipe_progress_providers.dart';
 import '../../app/tts_providers.dart';
 import '../../core/constants/labels.dart';
@@ -27,11 +28,15 @@ class WordSwipeArgs {
   final String language; // English | Japanese | Chinese
   final String category;
   final bool reviewOnly;
+  final int initialCardIndex;
+  final List<String> initialUnknownWordIds;
 
   const WordSwipeArgs({
     required this.language,
     required this.category,
     this.reviewOnly = false,
+    this.initialCardIndex = 0,
+    this.initialUnknownWordIds = const [],
   });
 }
 
@@ -40,12 +45,16 @@ class WordSwipeTrainingScreen extends ConsumerStatefulWidget {
   final String language;
   final String category;
   final bool reviewOnly;
+  final int initialCardIndex;
+  final List<String> initialUnknownWordIds;
 
   const WordSwipeTrainingScreen({
     super.key,
     required this.language,
     required this.category,
     this.reviewOnly = false,
+    this.initialCardIndex = 0,
+    this.initialUnknownWordIds = const [],
   });
 
   @override
@@ -106,11 +115,24 @@ class _WordSwipeTrainingScreenState
 
   bool _bootstrapped = false;
 
+  void _persistLastSession() {
+    recordWordSwipeSession(
+      ref,
+      language: _language,
+      category: _category,
+      reviewOnly: _reviewOnly,
+      cardIndex: _index,
+      unknownWordIds: [for (final word in _unknownWords) word.id],
+    );
+  }
+
   void _startSession({
     required String language,
     required String category,
     bool reviewOnly = false,
     List<WordModel>? overrideDeck,
+    int initialCardIndex = 0,
+    List<String> initialUnknownWordIds = const [],
   }) {
     final content = ref.read(contentProvider).value;
     if (content == null) return;
@@ -140,13 +162,24 @@ class _WordSwipeTrainingScreenState
       ];
     }
 
+    final unknownIds = initialUnknownWordIds.toSet();
+    final restoredUnknown = [
+      for (final word in deck)
+        if (unknownIds.contains(word.id)) word,
+    ];
+    final resumeIndex = deck.isEmpty
+        ? 0
+        : initialCardIndex.clamp(0, deck.length - 1);
+
     setState(() {
       _language = language;
       _category = category;
       _reviewOnly = reviewOnly;
       _deck = deck;
-      _index = 0;
-      _unknownWords.clear();
+      _index = resumeIndex;
+      _unknownWords
+        ..clear()
+        ..addAll(restoredUnknown);
       _sessionComplete = false;
       _resultPresented = false;
       _isLimitedRetry = overrideDeck != null;
@@ -164,6 +197,7 @@ class _WordSwipeTrainingScreenState
         if (mounted) _presentResultModal();
       });
     } else {
+      _persistLastSession();
       WidgetsBinding.instance.addPostFrameCallback((_) {
         if (mounted) _scheduleInitialTour();
       });
@@ -387,6 +421,8 @@ class _WordSwipeTrainingScreenState
       WidgetsBinding.instance.addPostFrameCallback((_) {
         if (mounted) _presentResultModal();
       });
+    } else {
+      _persistLastSession();
     }
   }
 
@@ -409,6 +445,9 @@ class _WordSwipeTrainingScreenState
       (-_cardOffset.dx / _swipeThreshold).clamp(0.0, 1.0);
 
   Future<void> _exitScreen() async {
+    if (!_sessionComplete && _deck.isNotEmpty) {
+      _persistLastSession();
+    }
     await _persistProgressIfNeeded();
     if (!mounted) return;
     context.pop();
@@ -502,6 +541,8 @@ class _WordSwipeTrainingScreenState
                       language: _language,
                       category: _category,
                       reviewOnly: _reviewOnly,
+                      initialCardIndex: widget.initialCardIndex,
+                      initialUnknownWordIds: widget.initialUnknownWordIds,
                     );
                   });
                   return const Center(child: CircularProgressIndicator());

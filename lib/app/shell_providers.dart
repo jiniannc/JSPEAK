@@ -1,4 +1,6 @@
+import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:go_router/go_router.dart';
 
 /// StatefulShell 하단 탭 인덱스 (0: 홈, 1: 학습, 2: 기내사전, 3: 마이).
 final shellTabIndexProvider =
@@ -24,6 +26,29 @@ class HomeEntranceEpochNotifier extends Notifier<int> {
   int build() => 0;
 
   void bump() => state++;
+}
+
+/// 마이페이지 탭 진입(재선택 포함)마다 증가 — 스크롤 맨 위 등 리프레시 토큰.
+final myPageEntranceEpochProvider =
+    NotifierProvider<MyPageEntranceEpochNotifier, int>(
+  MyPageEntranceEpochNotifier.new,
+);
+
+class MyPageEntranceEpochNotifier extends Notifier<int> {
+  @override
+  int build() => 0;
+
+  void bump() => state++;
+}
+
+/// 브랜드 헤더 탭 — 항상 홈(/)으로 이동.
+void navigateShellHome(BuildContext context, WidgetRef ref) {
+  ref.read(homeEntranceEpochProvider.notifier).bump();
+  ref.read(shellTabIndexProvider.notifier).setIndex(0);
+  final path = GoRouterState.of(context).uri.path;
+  if (path != '/') {
+    context.go('/');
+  }
 }
 
 /// 기내사전 탭 branch index.

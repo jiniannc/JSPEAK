@@ -49,8 +49,14 @@ String _normalizeChapterImageBasename(String filename) {
   final lower = name.toLowerCase();
   for (final prefix in const ['sent_ch_', 'word_ch_', 'ch_']) {
     if (lower.startsWith(prefix)) {
-      return name.substring(prefix.length);
+      name = name.substring(prefix.length);
+      break;
     }
   }
+
+  // 시트 `ch_etc` → etc.png (번들에는 irre.png만 존재).
+  final baseLower = name.toLowerCase();
+  if (baseLower == 'etc.png' || baseLower == 'etc') return 'irre.png';
+
   return name;
 }

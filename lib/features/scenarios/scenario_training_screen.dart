@@ -9,6 +9,7 @@ import '../../app/dashboard_providers.dart';
 import '../../data/datasources/local/learning_tour_local_datasource.dart';
 import '../../app/learning_tour_providers.dart';
 import '../../app/providers.dart';
+import '../../app/last_learning_session_providers.dart';
 import '../../app/scenario_providers.dart';
 import '../../app/shell_providers.dart';
 import '../../app/vocabulary_providers.dart';
@@ -29,8 +30,13 @@ import 'widgets/scenario_result_modal.dart';
 /// 대화식 실전 훈련 — 미니멀 채팅 + 플로팅 컨트롤.
 class ScenarioTrainingScreen extends ConsumerStatefulWidget {
   final Scenario scenario;
+  final int initialLineIndex;
 
-  const ScenarioTrainingScreen({super.key, required this.scenario});
+  const ScenarioTrainingScreen({
+    super.key,
+    required this.scenario,
+    this.initialLineIndex = 0,
+  });
 
   @override
   ConsumerState<ScenarioTrainingScreen> createState() =>
@@ -87,7 +93,16 @@ class _ScenarioTrainingScreenState extends ConsumerState<ScenarioTrainingScreen>
     }
     if (!mounted) return;
 
-    ref.read(scenarioTrainingProvider.notifier).init(widget.scenario);
+    ref.read(scenarioTrainingProvider.notifier).init(
+          widget.scenario,
+          resumeLineIndex: widget.initialLineIndex,
+        );
+    recordScenarioSession(
+      ref,
+      language: widget.scenario.language,
+      scenarioId: widget.scenario.id,
+      lineIndex: widget.initialLineIndex,
+    );
     unawaited(
       ScenarioBubbleAvatar.precacheScenarios(context, [widget.scenario]),
     );
@@ -273,6 +288,12 @@ class _ScenarioTrainingScreenState extends ConsumerState<ScenarioTrainingScreen>
     _typingController.clear();
     _typingFocus.unfocus();
     ref.read(scenarioTrainingProvider.notifier).init(widget.scenario);
+    recordScenarioSession(
+      ref,
+      language: widget.scenario.language,
+      scenarioId: widget.scenario.id,
+      lineIndex: 0,
+    );
     if (_scrollController.hasClients) {
       _scrollController.jumpTo(0);
     }
@@ -332,6 +353,16 @@ class _ScenarioTrainingScreenState extends ConsumerState<ScenarioTrainingScreen>
     });
 
     ref.listen(scenarioTrainingProvider, (prev, next) {
+      if (next.scenarioId == widget.scenario.id &&
+          !next.isCompleted &&
+          prev?.currentLineIndex != next.currentLineIndex) {
+        recordScenarioSession(
+          ref,
+          language: widget.scenario.language,
+          scenarioId: widget.scenario.id,
+          lineIndex: next.currentLineIndex,
+        );
+      }
       if (prev?.messages.length != next.messages.length ||
           prev?.currentLineIndex != next.currentLineIndex) {
         _scrollToBottom();

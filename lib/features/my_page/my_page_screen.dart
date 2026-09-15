@@ -32,11 +32,18 @@ class MyPageScreen extends ConsumerStatefulWidget {
 class _MyPageScreenState extends ConsumerState<MyPageScreen> {
   bool _celebrationShowing = false;
   bool _celebrationQueued = false;
+  final _scrollController = ScrollController();
 
   @override
   void initState() {
     super.initState();
     WidgetsBinding.instance.addPostFrameCallback((_) => _tryShowCelebration());
+  }
+
+  @override
+  void dispose() {
+    _scrollController.dispose();
+    super.dispose();
   }
 
   bool get _isMyPageTabVisible =>
@@ -140,6 +147,14 @@ class _MyPageScreenState extends ConsumerState<MyPageScreen> {
         });
       }
     });
+    ref.listen<int>(myPageEntranceEpochProvider, (previous, next) {
+      if (previous == next || !_scrollController.hasClients) return;
+      _scrollController.animateTo(
+        0,
+        duration: const Duration(milliseconds: 300),
+        curve: Curves.easeOutCubic,
+      );
+    });
 
     final metrics = Active5Layout.of(context);
     final language = ref.watch(learningHubLanguageProvider);
@@ -157,6 +172,7 @@ class _MyPageScreenState extends ConsumerState<MyPageScreen> {
         child: AnimatedLanguageScope(
           language: language,
           builder: (context, palette) => SingleChildScrollView(
+            controller: _scrollController,
             padding: EdgeInsets.fromLTRB(
               metrics.pagePadding.left,
               0,

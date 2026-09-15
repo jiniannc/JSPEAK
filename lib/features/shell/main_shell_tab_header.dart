@@ -204,6 +204,7 @@ class _MainShellTabHeaderState extends ConsumerState<MainShellTabHeader>
               ? AppHeaderTransitionAxis.vertical
               : AppHeaderTransitionAxis.horizontal,
           trailingSlotWidth: trailingSlotWidth,
+          onBrandTap: () => navigateShellHome(context, ref),
         ),
       );
     }
@@ -230,15 +231,7 @@ class _MainShellTabHeaderState extends ConsumerState<MainShellTabHeader>
         accent: palette.primary,
         animateTitle: false,
         trailingSlotWidth: trailingSlotWidth,
-        onBrandTap: tabIndex == 2
-            ? () {
-                resetDictionaryHome(ref);
-                final path = GoRouterState.of(context).uri.path;
-                if (path != '/dictionary') {
-                  context.go('/dictionary');
-                }
-              }
-            : null,
+        onBrandTap: () => navigateShellHome(context, ref),
       ),
     );
   }

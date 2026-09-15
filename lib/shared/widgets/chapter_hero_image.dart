@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:math' as math;
 
 import 'package:flutter/material.dart';
@@ -50,14 +51,16 @@ class ChapterHeroImage extends StatelessWidget {
     required double displayHeight,
     required double devicePixelRatio,
   }) {
+    final safeWidth = displayWidth.isFinite ? displayWidth : displayHeight;
+    final safeHeight = displayHeight.isFinite ? displayHeight : displayWidth;
     final longEdge =
-        (math.max(displayWidth, displayHeight) *
+        (math.max(safeWidth, safeHeight) *
                 devicePixelRatio *
                 _thumbCacheMultiplier)
             .round()
             .clamp(1, _maxThumbCacheEdge);
 
-    if (displayWidth >= displayHeight) {
+    if (safeWidth >= safeHeight) {
       return (width: longEdge, height: null);
     }
     return (width: null, height: longEdge);
@@ -179,3 +182,81 @@ class ChapterHeroImage extends StatelessWidget {
 }
 
 enum ChapterImageProfile { hero, thumb }
+
+/// 챕터 PNG 실측 비율(width / height) — 레이아웃 높이 산출용.
+abstract final class ChapterImageAspect {
+  ChapterImageAspect._();
+
+  static const double fallback = 3 / 2;
+  static final Map<String, double> cache = {};
+  static final Map<String, Future<double>> _inflight = {};
+
+  static String _key(String assetPath) => resolveChapterAssetPath(assetPath);
+
+  static double ratioFor(String assetPath) {
+    final key = _key(assetPath);
+    if (key.isEmpty) return fallback;
+    return cache[key] ?? fallback;
+  }
+
+  static double displayHeight({
+    required String assetPath,
+    required double displayWidth,
+  }) {
+    if (displayWidth <= 0) return 0;
+    return displayWidth / ratioFor(assetPath);
+  }
+
+  static Future<double> resolveAsync(String assetPath) {
+    final key = _key(assetPath);
+    if (key.isEmpty) return Future.value(fallback);
+
+    final cached = cache[key];
+    if (cached != null) return Future.value(cached);
+
+    final existing = _inflight[key];
+    if (existing != null) return existing;
+
+    final future = _resolveRatio(key);
+    _inflight[key] = future;
+    return future.whenComplete(() => _inflight.remove(key));
+  }
+
+  static Future<double> _resolveRatio(String key) {
+    final stream = AssetImage(key).resolve(const ImageConfiguration());
+    final completer = Completer<double>();
+    late final ImageStreamListener listener;
+    listener = ImageStreamListener(
+      (ImageInfo info, _) {
+        stream.removeListener(listener);
+        final h = info.image.height.toDouble();
+        final w = info.image.width.toDouble();
+        final ratio = h <= 0 ? fallback : w / h;
+        cache[key] = ratio;
+        if (!completer.isCompleted) completer.complete(ratio);
+      },
+      onError: (Object error, StackTrace? stackTrace) {
+        stream.removeListener(listener);
+        cache[key] = fallback;
+        if (!completer.isCompleted) completer.complete(fallback);
+      },
+    );
+    stream.addListener(listener);
+    return completer.future;
+  }
+
+  static Future<void> resolveAll(Iterable<String> assetPaths) {
+    final unique = assetPaths.map(_key).where((key) => key.isNotEmpty).toSet();
+    if (unique.isEmpty) return Future.value();
+    return Future.wait(
+      unique.map((key) => resolveAsync(key)),
+    );
+  }
+
+  static void ensureResolved(String assetPath, VoidCallback onUpdated) {
+    final key = _key(assetPath);
+    if (key.isEmpty) return;
+    if (cache.containsKey(key)) return;
+    resolveAsync(assetPath).then((_) => onUpdated());
+  }
+}

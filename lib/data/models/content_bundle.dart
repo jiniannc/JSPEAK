@@ -410,6 +410,48 @@ class ContentBundle {
     return '';
   }
 
+  /// 시나리오가 속한 허브 챕터 — sentences 시트 [chapter_image] 우선.
+  LearningHubChapter? hubChapterForScenario(Scenario scenario) {
+    final language = scenario.language;
+    final hubName = SentenceCategoryGrouping.baseName(
+      scenarioHubCategoryName(scenario),
+    );
+    if (hubName.isEmpty && scenario.chapterNo <= 0) return null;
+
+    for (final chapter in sentenceChaptersFor(language)) {
+      if (chapter.chapterNo == scenario.chapterNo && chapter.name == hubName) {
+        return LearningHubChapter(
+          chapterNo: chapter.chapterNo,
+          name: chapter.name,
+          language: language,
+          chapterImage: chapter.chapterImage,
+        );
+      }
+    }
+
+    for (final chapter in learningHubChaptersFor(language)) {
+      if (chapter.chapterNo == scenario.chapterNo && chapter.name == hubName) {
+        return chapter;
+      }
+    }
+    if (hubName.isNotEmpty) {
+      for (final chapter in learningHubChaptersFor(language)) {
+        if (chapter.name == hubName) return chapter;
+      }
+    }
+    for (final chapter in learningHubChaptersFor(language)) {
+      if (chapter.chapterNo == scenario.chapterNo) return chapter;
+    }
+    return null;
+  }
+
+  static String scenarioHubCategoryName(Scenario scenario) {
+    if (scenario.chapterName.trim().isNotEmpty) {
+      return scenario.chapterName.trim();
+    }
+    return scenario.flightStage.trim();
+  }
+
   /// 학습 허브 챕터에 속하는 시나리오 (chapter_no · 이름 · flight_stage 매칭).
   List<Scenario> scenariosForHubChapter(
     String language,
