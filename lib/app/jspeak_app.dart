@@ -19,25 +19,31 @@ class JspeakApp extends ConsumerWidget {
       routerConfig: router,
       debugShowCheckedModeBanner: false,
       builder: (context, child) {
-        // Active 5 야외 사용: 시스템 글자 크기 과도 확대 방지
-        final mq = MediaQuery.of(context);
-        final app = MediaQuery(
-          data: mq.copyWith(
-            textScaler: mq.textScaler.clamp(
-              minScaleFactor: 0.95,
-              maxScaleFactor: 1.15,
-            ),
-          ),
-          child: Stack(
-            fit: StackFit.expand,
-            children: [
-              child ?? const SizedBox.shrink(),
-              const TitleBadgeUnlockBannerHost(),
-              const SplashOverlay(),
-            ],
+        // 웹: Active5WebViewport가 size를 고정한 뒤, 그 안에서만 textScaler 적용.
+        // (바깥 MediaQuery를 그대로 copy하면 브라우저 전체 크기로 다시 덮어씀)
+        return Active5WebViewport(
+          child: Builder(
+            builder: (context) {
+              final mq = MediaQuery.of(context);
+              return MediaQuery(
+                data: mq.copyWith(
+                  textScaler: mq.textScaler.clamp(
+                    minScaleFactor: 0.95,
+                    maxScaleFactor: 1.15,
+                  ),
+                ),
+                child: Stack(
+                  fit: StackFit.expand,
+                  children: [
+                    child ?? const SizedBox.shrink(),
+                    const TitleBadgeUnlockBannerHost(),
+                    const SplashOverlay(),
+                  ],
+                ),
+              );
+            },
           ),
         );
-        return Active5WebViewport(child: app);
       },
     );
   }
