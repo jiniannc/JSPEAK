@@ -28,8 +28,8 @@ class _NewUpdateScenarioCardState extends ConsumerState<NewUpdateScenarioCard> {
   static const _visibleCount = 3;
   static const _cardGap = 8.0;
   static const _arrowSize = 20.0;
-  static const _arrowLaneWidth = 22.0;
-  static const _arrowGap = 4.0;
+  static const _arrowLaneWidth = 24.0;
+  static const _arrowGap = 6.0;
 
   final _scrollController = ScrollController();
   bool _canScrollBack = false;
@@ -196,7 +196,7 @@ class _NewUpdateScenarioCardState extends ConsumerState<NewUpdateScenarioCard> {
         const Color(0xFFF5F5F4).withValues(alpha: 0.78),
       ],
       child: Padding(
-        padding: const EdgeInsets.fromLTRB(14, 11, 12, 12),
+        padding: const EdgeInsets.fromLTRB(12, 11, 12, 12),
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
@@ -344,8 +344,10 @@ class _CarouselArrow extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final size = _NewUpdateScenarioCardState._arrowSize;
+    final lane = _NewUpdateScenarioCardState._arrowLaneWidth;
+    final isLeft = icon == Icons.chevron_left_rounded;
     return SizedBox(
-      width: _NewUpdateScenarioCardState._arrowLaneWidth,
+      width: lane,
       child: Center(
         child: Material(
           color: DashboardPalette.cardWhite.withValues(
@@ -355,15 +357,21 @@ class _CarouselArrow extends StatelessWidget {
           clipBehavior: Clip.antiAlias,
           child: InkWell(
             onTap: enabled ? onPressed : null,
+            customBorder: const CircleBorder(),
             child: SizedBox(
               width: size,
               height: size,
-              child: Icon(
-                icon,
-                size: 15,
-                color: enabled
-                    ? DashboardPalette.sectionNewUpdate
-                    : DashboardPalette.textMuted.withValues(alpha: 0.38),
+              child: Center(
+                child: Transform.translate(
+                  offset: Offset(isLeft ? 0.5 : -0.5, 0),
+                  child: Icon(
+                    icon,
+                    size: 15,
+                    color: enabled
+                        ? DashboardPalette.sectionNewUpdate
+                        : DashboardPalette.textMuted.withValues(alpha: 0.38),
+                  ),
+                ),
               ),
             ),
           ),

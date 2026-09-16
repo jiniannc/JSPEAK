@@ -369,10 +369,7 @@ class _DictionaryLiveSearchViewState extends ConsumerState<DictionaryLiveSearchV
     final rawQuery = _controller.text.trim();
     final showLoading = rawQuery.isNotEmpty &&
         (contentLoading || (_showLoader && _isQueryPending));
-    final screenW = MediaQuery.sizeOf(context).width;
-    final compactW = (screenW * 0.72).clamp(220.0, 340.0);
     final contentInset = active ? 12.0 : widget.inset;
-    final fullW = screenW - contentInset * 2;
 
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
@@ -391,6 +388,16 @@ class _DictionaryLiveSearchViewState extends ConsumerState<DictionaryLiveSearchV
               final navBottom =
                   FloatingIslandNavBar.scrollBottomPadding(context) + 8;
 
+              // DeviceScaffold가 maxWidth로 본문을 가운데 가두므로,
+              // MediaQuery 전체 너비가 아니라 실제 스택 너비로 위치를 잡는다.
+              final stackW = constraints.maxWidth;
+              final maxBarW = math.max(0.0, stackW - contentInset * 2);
+              final compactW = math.min(
+                (stackW * 0.72).clamp(220.0, 340.0),
+                maxBarW,
+              );
+              final fullW = maxBarW;
+
               final idleHeroMaxHeight = math.max(
                 0.0,
                 constraints.maxHeight - favoritesReserve - navBottom,
@@ -408,7 +415,7 @@ class _DictionaryLiveSearchViewState extends ConsumerState<DictionaryLiveSearchV
               final compactTop =
                   idleHeroTopPadding + titleBlockHeight + heroGap;
               const expandedTop = 4.0;
-              final compactLeft = (screenW - compactW) / 2;
+              final compactLeft = (stackW - compactW) / 2;
               final expandedLeft = contentInset;
 
               return Stack(
@@ -520,11 +527,15 @@ class _DictionaryLiveSearchViewState extends ConsumerState<DictionaryLiveSearchV
                     ]),
                     builder: (context, child) {
                       final t = _expandAnimation.value;
-                      final width = lerpDouble(compactW, fullW, t)!;
+                      final width = lerpDouble(compactW, fullW, t)!
+                          .clamp(0.0, stackW)
+                          .toDouble();
                       final height =
                           lerpDouble(compactBarHeight, expandedBarHeight, t)!;
                       final top = lerpDouble(compactTop, expandedTop, t)!;
-                      final left = lerpDouble(compactLeft, expandedLeft, t)!;
+                      final left = lerpDouble(compactLeft, expandedLeft, t)!
+                          .clamp(0.0, math.max(0.0, stackW - width))
+                          .toDouble();
 
                       Widget bar = _LiveSearchPillBar(
                         key: const ValueKey('dictionary-live-search-bar'),

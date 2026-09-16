@@ -88,7 +88,6 @@ class DashboardScreen extends ConsumerWidget {
                           );
 
                     return SingleChildScrollView(
-                      clipBehavior: Clip.none,
                       padding: metrics.pagePadding.copyWith(
                         bottom:
                             metrics.pagePadding.bottom +

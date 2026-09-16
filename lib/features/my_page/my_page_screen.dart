@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:go_router/go_router.dart';
 
 import '../../app/learning_hub_language_provider.dart';
 import '../../app/learning_providers.dart';
@@ -339,6 +340,32 @@ class _SyncActionList extends StatelessWidget {
                   color: GlassSurfaceStyle.subtitleColor.withValues(alpha: 0.7),
                 ),
           onTap: syncing ? null : onSync,
+        ),
+        Divider(
+          height: 1,
+          thickness: 1,
+          color: GlassSurfaceStyle.dividerColor.withValues(alpha: 0.45),
+        ),
+        ListTile(
+          contentPadding: const EdgeInsets.symmetric(
+            horizontal: 0,
+            vertical: 4,
+          ),
+          leading: const Icon(
+            Icons.download_outlined,
+            size: 22,
+            color: GlassSurfaceStyle.iconColor,
+          ),
+          title: const Text('오디오 전체 다운로드', style: _titleStyle),
+          subtitle: const Text(
+            '비행 전 녹음 파일을 기기에 저장합니다',
+            style: _subtitleStyle,
+          ),
+          trailing: Icon(
+            Icons.chevron_right_rounded,
+            color: GlassSurfaceStyle.subtitleColor.withValues(alpha: 0.7),
+          ),
+          onTap: () => context.push('/settings'),
         ),
         Divider(
           height: 1,

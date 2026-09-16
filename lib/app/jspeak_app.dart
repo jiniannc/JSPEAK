@@ -3,6 +3,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../core/config/app_config.dart';
 import '../core/theme/app_theme.dart';
+import '../core/widgets/active5_web_viewport.dart';
 import '../features/shell/title_badge_unlock_banner.dart';
 import '../features/splash/splash_overlay.dart';
 import 'router.dart';
@@ -20,7 +21,7 @@ class JspeakApp extends ConsumerWidget {
       builder: (context, child) {
         // Active 5 야외 사용: 시스템 글자 크기 과도 확대 방지
         final mq = MediaQuery.of(context);
-        return MediaQuery(
+        final app = MediaQuery(
           data: mq.copyWith(
             textScaler: mq.textScaler.clamp(
               minScaleFactor: 0.95,
@@ -36,6 +37,7 @@ class JspeakApp extends ConsumerWidget {
             ],
           ),
         );
+        return Active5WebViewport(child: app);
       },
     );
   }

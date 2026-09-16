@@ -393,7 +393,7 @@ class MainShellTabBody extends ConsumerWidget {
           tabIndex: tabIndex,
         ),
       ),
-      child: child,
+      child: ClipRect(child: child),
     );
   }
 }
