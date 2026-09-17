@@ -2,7 +2,6 @@ import 'cjk_spoken_phonetic.dart';
 import 'cjk_stt_segments.dart';
 import 'japanese_number_normalizer.dart';
 import 'japanese_reading_fold.dart';
-import 'japanese_to_korean_converter.dart';
 import 'scenario_answer_compare.dart';
 import 'word_token_alignment.dart';
 import 'word_compare.dart';

@@ -1387,12 +1387,10 @@ class _PassportInkStamp extends StatelessWidget {
 class _PassportDashedStamp extends StatelessWidget {
   final _InkStampShape shape;
   final Color color;
-  final Widget? child;
 
   const _PassportDashedStamp({
     required this.shape,
     required this.color,
-    this.child,
   });
 
   @override
@@ -1410,7 +1408,6 @@ class _PassportDashedStamp extends StatelessWidget {
                 shape: shape,
                 color: color,
               ),
-              child: child,
             ),
           ),
         );

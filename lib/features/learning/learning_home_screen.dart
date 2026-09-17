@@ -11,7 +11,6 @@ import '../../app/sentence_progress_providers.dart';
 import '../../app/swipe_progress_providers.dart';
 import '../../core/config/active5_layout.dart';
 import '../../core/theme/language_palette.dart';
-import '../../core/utils/learning_hub_icon.dart';
 import '../../data/models/content_bundle.dart';
 import '../../data/models/learning_hub_chapter.dart';
 import '../../data/repositories/scenario_progress_repository.dart';
@@ -545,7 +544,7 @@ class _LearningHomeScreenState extends ConsumerState<LearningHomeScreen> {
       _onHubLanguageChanged(next);
     });
     ref.listenManual(contentProvider, (previous, next) {
-      final bundle = next.asData?.value?.bundle;
+      final bundle = next.asData?.value.bundle;
       if (bundle == null) return;
       WidgetsBinding.instance.addPostFrameCallback((_) {
         if (!mounted) return;
@@ -1142,7 +1141,6 @@ class _HubChapterCardLoader extends StatefulWidget {
   final SentenceProgressRepository sentenceRepo;
   final bool isExpanded;
   final bool isLast;
-  final int snapToken;
   final void Function(String chapterKey, double height)? onHeightChanged;
   final VoidCallback onExpandRequested;
 
@@ -1158,7 +1156,6 @@ class _HubChapterCardLoader extends StatefulWidget {
     required this.sentenceRepo,
     required this.isExpanded,
     required this.isLast,
-    this.snapToken = 0,
     this.onHeightChanged,
     required this.onExpandRequested,
   });
@@ -1187,8 +1184,7 @@ class _HubChapterCardLoaderState extends State<_HubChapterCardLoader> {
   void didUpdateWidget(covariant _HubChapterCardLoader oldWidget) {
     super.didUpdateWidget(oldWidget);
     if (oldWidget.isExpanded != widget.isExpanded ||
-        oldWidget.isLast != widget.isLast ||
-        oldWidget.snapToken != widget.snapToken) {
+        oldWidget.isLast != widget.isLast) {
       WidgetsBinding.instance.addPostFrameCallback((_) => _reportHeight());
     }
   }
@@ -1229,7 +1225,6 @@ class _HubChapterCardLoaderState extends State<_HubChapterCardLoader> {
           wordCount: words.length,
           isExpanded: widget.isExpanded,
           isLast: widget.isLast,
-          snapToken: widget.snapToken,
           onExpandRequested: widget.onExpandRequested,
           swipeProgress: words.isEmpty ? null : swipeCat,
           sentenceSummary: sentences.isEmpty ? null : sentenceSummary,

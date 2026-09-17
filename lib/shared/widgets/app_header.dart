@@ -845,7 +845,7 @@ class _TitleText extends StatelessWidget {
   final String title;
   final Color dotColor;
 
-  const _TitleText({super.key, required this.title, required this.dotColor});
+  const _TitleText({required this.title, required this.dotColor});
 
   @override
   Widget build(BuildContext context) {

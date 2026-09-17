@@ -56,6 +56,21 @@ String scenarioLevelLabel(String level) {
   return trimmed;
 }
 
+/// NEW UPDATE · 시나리오 목록용 메타 한 줄.
+String scenarioMetaLine(Scenario scenario, {int additionalCount = 0}) {
+  final parts = <String>[];
+  final level = scenario.level.trim();
+  if (level.isNotEmpty) parts.add(level);
+  if (scenario.lines.isNotEmpty) {
+    parts.add('${scenario.lines.length}문장');
+  }
+  var line = parts.join(' · ');
+  if (additionalCount > 0) {
+    line = '$line · 외 $additionalCount개 더보기';
+  }
+  return line;
+}
+
 /// NEW UPDATE 서브카드 — sentences 시트 기준 챕터명.
 String newUpdateChapterLabel(ContentBundle bundle, Scenario scenario) {
   final hub = bundle.hubChapterForScenario(scenario);

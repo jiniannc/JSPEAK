@@ -1,5 +1,3 @@
-import 'dart:async' show unawaited;
-
 import 'dart:math' as math;
 import 'dart:ui' show ImageFilter;
 
@@ -9,7 +7,6 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 import 'package:lottie/lottie.dart';
 
-import '../../../app/scenario_providers.dart';
 import '../../../core/constants/labels.dart';
 import '../../../core/utils/learning_hub_icon.dart';
 import '../../../data/datasources/local/swipe_progress_local_datasource.dart';
@@ -18,14 +15,9 @@ import '../../../data/models/scenario.dart';
 import '../../../data/models/sentence.dart';
 import '../../../data/repositories/sentence_progress_repository.dart';
 import '../../../shared/widgets/chapter_hero_image.dart';
-import '../../../shared/widgets/flight_progress_bar.dart';
-import '../../../shared/widgets/web_safe_backdrop_blur.dart';
 import '../../dashboard/dashboard_palette.dart';
-import '../../shell/floating_island_nav_bar.dart';
-import '../../scenarios/widgets/scenario_bubble_avatar.dart';
 import '../../word_swipe/word_swipe_training_screen.dart';
 import 'learning_hub_chapter_mode_dock.dart';
-import 'mode_guide_cards.dart';
 import 'sentence_group_picker.dart';
 
 enum _ChapterLearningStatus { notStarted, inProgress, completed }
@@ -146,7 +138,6 @@ class LearningHubChapterCard extends StatefulWidget {
 
   static const _compactHeight = 88.0;
   static const _outerRadius = 20.0;
-  static const _innerImageRadius = 20.0;
 
   /// 펼쳐진(포커스) 카드 — 존재감 있는 이중 드롭섀도우.
   static final _cardShadow = [
@@ -201,9 +192,7 @@ class LearningHubChapterCard extends StatefulWidget {
     ),
   ];
 
-  static const _dockBottomInset = ChapterModeDock.bottomInset;
   static const _dockRightInset = ChapterModeDock.rightInset;
-  static const _dockReservedWidth = ChapterModeDock.reservedWidth;
   static const _heroTextBottomInset = ChapterModeDock.bottomInset;
   static const _imageSlideMax = 10.0;
 
@@ -399,7 +388,7 @@ class _LearningHubChapterCardState extends State<LearningHubChapterCard>
         if (!mounted) return;
         setState(() => _imageAspectRatio = ratio);
       },
-      onError: (_, __) {
+      onError: (_, _) {
         if (!mounted) return;
         setState(() => _imageAspectRatio = _fallbackAspectRatio);
       },
@@ -655,7 +644,6 @@ class _ChapterHeroImageLayer extends StatelessWidget {
 /// 압축(Accordion Collapsed) 상태 — 88px 미니 타일. BackdropFilter/Lottie 없이 가벼움.
 class _ChapterCompactTile extends StatelessWidget {
   const _ChapterCompactTile({
-    super.key,
     required this.chapter,
     required this.language,
     required this.iconAsset,
@@ -861,7 +849,6 @@ class _HeroTapToRevealLayerState extends State<_HeroTapToRevealLayer> {
 /// 펼침(Accordion Expanded) 상태 — 기존 3D 일러스트 + 리빌 글래스모피즘 학습 모드 카드.
 class _ExpandedChapterVisual extends StatefulWidget {
   const _ExpandedChapterVisual({
-    super.key,
     required this.chapter,
     required this.language,
     required this.wordCount,
@@ -1226,7 +1213,6 @@ class _ChapterTapRevealHintState extends State<_ChapterTapRevealHint>
 
 class _HubChapterGoldTheme {
   static const amberDeep = Color(0xFFD97706);
-  static const amber = Color(0xFFF59E0B);
   static const hairline = Color(0xFFFDE68A);
 }
 

@@ -8,8 +8,6 @@ import 'word_compare.dart';
 class PronunciationTextTokenizer {
   PronunciationTextTokenizer._();
 
-  static final RegExp _cjkClauseDelimiter = RegExp(r'[、，,]');
-
   static bool hasSlashSegments(String text) => text.contains('/');
 
   static List<String> splitSlashSegments(String text) => text
@@ -80,13 +78,6 @@ class PronunciationTextTokenizer {
   static List<String> _tokenizeCjkSegment(String segment, String language) {
     return CjkPronunciationPhraseBuilder.segmentSurface(
       segment,
-      language: language,
-    );
-  }
-
-  static List<String> _meaningfulChars(String text, String language) {
-    return CjkPronunciationPhraseBuilder.segmentSurface(
-      text,
       language: language,
     );
   }

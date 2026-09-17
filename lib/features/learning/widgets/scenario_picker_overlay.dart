@@ -463,8 +463,6 @@ class _ScenarioPickerRow extends StatelessWidget {
 class _ScenarioLastScoreRing extends StatelessWidget {
   const _ScenarioLastScoreRing({required this.score});
 
-  const _ScenarioLastScoreRing.empty() : score = null;
-
   final int? score;
 
   @override

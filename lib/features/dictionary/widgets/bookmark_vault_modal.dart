@@ -10,7 +10,6 @@ import '../../../app/dictionary_providers.dart';
 import '../../../app/learning_providers.dart';
 import '../../../app/providers.dart';
 import '../../../app/tts_providers.dart';
-import '../../../core/constants/labels.dart';
 import '../../../core/theme/language_palette.dart';
 import '../../../data/models/sentence.dart';
 import '../../../data/models/vocabulary_entry.dart';
