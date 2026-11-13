@@ -90,6 +90,7 @@ class _DictionaryLiveSearchViewState extends ConsumerState<DictionaryLiveSearchV
     _chipRandom = math.Random();
     _controller = TextEditingController();
     _focusNode = FocusNode();
+    _focusNode.addListener(_onFocusChanged);
     _controller.addListener(_onTextChanged);
     _entryController = AnimationController(
       vsync: this,
@@ -207,8 +208,32 @@ class _DictionaryLiveSearchViewState extends ConsumerState<DictionaryLiveSearchV
     _expandController.dispose();
     _controller.removeListener(_onTextChanged);
     _controller.dispose();
+    _focusNode.removeListener(_onFocusChanged);
     _focusNode.dispose();
     super.dispose();
+  }
+
+  void _onFocusChanged() {
+    if (!_focusNode.hasFocus || _searchEngaged) return;
+    setState(() => _searchEngaged = true);
+    if (_expandController.value < 1) {
+      _expandController.forward();
+    }
+  }
+
+  void _requestSearchFieldFocus() {
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted) return;
+      if (!_focusNode.hasFocus) {
+        _focusNode.requestFocus();
+      }
+      if (_focusNode.hasFocus) return;
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (mounted && _searchEngaged) {
+          _focusNode.requestFocus();
+        }
+      });
+    });
   }
 
   void _scheduleLoaderReveal() {
@@ -251,14 +276,7 @@ class _DictionaryLiveSearchViewState extends ConsumerState<DictionaryLiveSearchV
     } else if (_expandController.value < 1) {
       _expandController.forward();
     }
-    WidgetsBinding.instance.addPostFrameCallback((_) {
-      if (!mounted) return;
-      _focusNode.requestFocus();
-      // Web에서 확장 직후 포커스가 한 프레임 늦는 경우 보정
-      WidgetsBinding.instance.addPostFrameCallback((_) {
-        if (mounted) _focusNode.requestFocus();
-      });
-    });
+    _requestSearchFieldFocus();
   }
 
   void _onTextChanged() {
@@ -288,9 +306,7 @@ class _DictionaryLiveSearchViewState extends ConsumerState<DictionaryLiveSearchV
     if (_expandController.value < 1) {
       _expandController.forward();
     }
-    WidgetsBinding.instance.addPostFrameCallback((_) {
-      if (mounted) _focusNode.requestFocus();
-    });
+    _requestSearchFieldFocus();
   }
 
   void _clearSearch() {
@@ -387,6 +403,10 @@ class _DictionaryLiveSearchViewState extends ConsumerState<DictionaryLiveSearchV
               const favoritesReserve = 76.0;
               final navBottom =
                   FloatingIslandNavBar.scrollBottomPadding(context) + 8;
+              final keyboardInset = MediaQuery.viewInsetsOf(context).bottom;
+              final searchDockBottom = keyboardInset > 0
+                  ? keyboardInset + 8
+                  : FloatingIslandNavBar.scrollBottomPadding(context) + 8;
 
               // DeviceScaffold가 maxWidth로 본문을 가운데 가두므로,
               // MediaQuery 전체 너비가 아니라 실제 스택 너비로 위치를 잡는다.
@@ -426,9 +446,9 @@ class _DictionaryLiveSearchViewState extends ConsumerState<DictionaryLiveSearchV
                         ? Padding(
                             padding: EdgeInsets.fromLTRB(
                               contentInset,
-                              expandedBarHeight + 20,
+                              8,
                               contentInset,
-                              0,
+                              expandedBarHeight + 12 + searchDockBottom,
                             ),
                             child: _buildResultsList(
                               wordResults: wordResults,
@@ -536,6 +556,25 @@ class _DictionaryLiveSearchViewState extends ConsumerState<DictionaryLiveSearchV
                       final left = lerpDouble(compactLeft, expandedLeft, t)!
                           .clamp(0.0, math.max(0.0, stackW - width))
                           .toDouble();
+
+                      if (active) {
+                        return Positioned(
+                          left: expandedLeft,
+                          width: fullW,
+                          height: expandedBarHeight,
+                          bottom: searchDockBottom,
+                          child: _LiveSearchPillBar(
+                            key: const ValueKey('dictionary-live-search-bar'),
+                            palette: widget.palette,
+                            controller: _controller,
+                            focusNode: _focusNode,
+                            expandProgress: 1,
+                            engaged: true,
+                            onClear: _clearSearch,
+                            onExpandTap: _enterSearch,
+                          ),
+                        );
+                      }
 
                       Widget bar = _LiveSearchPillBar(
                         key: const ValueKey('dictionary-live-search-bar'),
@@ -1106,31 +1145,26 @@ class _LiveSearchPillBarState extends ConsumerState<_LiveSearchPillBar> {
     final textAlpha = lerpDouble(0.72, 1.0, t)!;
     final hintAlpha = lerpDouble(0.65, 0.85, t)!;
 
-    return Material(
-      color: Colors.transparent,
-      child: InkWell(
-        borderRadius: BorderRadius.circular(radius),
-        onTap: expanded ? null : widget.onExpandTap,
-        child: DecoratedBox(
-          decoration: DictionaryItemKindColors.shadowField(radius: radius),
-          child: Padding(
-            padding: EdgeInsets.symmetric(horizontal: horizontalPadding),
-            child: Row(
-              children: [
-                Icon(
-                  Icons.search_rounded,
-                  size: iconSize,
-                  color: searchAccent,
-                ),
-                const SizedBox(width: 8),
-                Expanded(
-                  child: TextField(
-                    controller: widget.controller,
-                    focusNode: widget.focusNode,
-                    readOnly: !expanded,
-                    showCursor: expanded,
-                    enableInteractiveSelection: expanded,
-                    textInputAction: TextInputAction.search,
+    return DecoratedBox(
+      decoration: DictionaryItemKindColors.shadowField(radius: radius),
+      child: Padding(
+        padding: EdgeInsets.symmetric(horizontal: horizontalPadding),
+        child: Row(
+          children: [
+            Icon(
+              Icons.search_rounded,
+              size: iconSize,
+              color: searchAccent,
+            ),
+            const SizedBox(width: 8),
+            Expanded(
+              child: TextField(
+                controller: widget.controller,
+                focusNode: widget.focusNode,
+                readOnly: !expanded,
+                showCursor: expanded,
+                enableInteractiveSelection: expanded,
+                textInputAction: TextInputAction.search,
                     style: TextStyle(
                       fontSize: fontSize,
                       fontWeight: FontWeight.w600,
@@ -1153,54 +1187,54 @@ class _LiveSearchPillBarState extends ConsumerState<_LiveSearchPillBar> {
                         ),
                       ),
                     ),
-                    onTap: expanded ? null : widget.onExpandTap,
-                    onSubmitted: (_) {
-                      final q = widget.controller.text.trim();
-                      if (q.isNotEmpty) {
-                        ref
-                            .read(searchProvider.notifier)
-                            .submitSearch(q);
-                      }
-                    },
-                  ),
-                ),
-                if (expanded && widget.controller.text.isNotEmpty)
-                  IconButton(
-                    visualDensity: VisualDensity.compact,
-                    padding: EdgeInsets.zero,
-                    constraints: const BoxConstraints(
-                      minWidth: 32,
-                      minHeight: 32,
-                    ),
-                    icon: const Icon(
-                      Icons.close_rounded,
-                      size: 18,
-                      color: Color(0xFF64748B),
-                    ),
-                    onPressed: () {
-                      widget.controller.clear();
-                      ref.read(searchProvider.notifier).setQuery('');
-                      setState(() {});
-                    },
-                  )
-                else if (expanded)
-                  IconButton(
-                    visualDensity: VisualDensity.compact,
-                    padding: EdgeInsets.zero,
-                    constraints: const BoxConstraints(
-                      minWidth: 32,
-                      minHeight: 32,
-                    ),
-                    icon: const Icon(
-                      Icons.keyboard_arrow_down_rounded,
-                      size: 22,
-                      color: Color(0xFF64748B),
-                    ),
-                    onPressed: widget.onClear,
-                  ),
-              ],
+                onTap: () {
+                  if (!expanded) {
+                    widget.onExpandTap();
+                  }
+                },
+                onSubmitted: (_) {
+                  final q = widget.controller.text.trim();
+                  if (q.isNotEmpty) {
+                    ref.read(searchProvider.notifier).submitSearch(q);
+                  }
+                },
+              ),
             ),
-          ),
+            if (expanded && widget.controller.text.isNotEmpty)
+              IconButton(
+                visualDensity: VisualDensity.compact,
+                padding: EdgeInsets.zero,
+                constraints: const BoxConstraints(
+                  minWidth: 32,
+                  minHeight: 32,
+                ),
+                icon: const Icon(
+                  Icons.close_rounded,
+                  size: 18,
+                  color: Color(0xFF64748B),
+                ),
+                onPressed: () {
+                  widget.controller.clear();
+                  ref.read(searchProvider.notifier).setQuery('');
+                  setState(() {});
+                },
+              )
+            else if (expanded)
+              IconButton(
+                visualDensity: VisualDensity.compact,
+                padding: EdgeInsets.zero,
+                constraints: const BoxConstraints(
+                  minWidth: 32,
+                  minHeight: 32,
+                ),
+                icon: const Icon(
+                  Icons.keyboard_arrow_down_rounded,
+                  size: 22,
+                  color: Color(0xFF64748B),
+                ),
+                onPressed: widget.onClear,
+              ),
+          ],
         ),
       ),
     );

@@ -30,8 +30,8 @@ class FloatingIslandNavBar extends StatefulWidget {
 
   /// body 하단에 남겨둘 여백 (바 높이 + 하단 여백).
   static double reservedHeight(BuildContext context) {
-    final safe = MediaQuery.paddingOf(context).bottom;
-    return height + bottomInset + safe * 0.35;
+    final safe = MediaQuery.viewPaddingOf(context).bottom;
+    return height + bottomInset + safe;
   }
 
   /// 스크롤 콘텐츠 하단 패딩 — 네비 뒤로 비치되 마지막 카드는 가리지 않음.
@@ -91,7 +91,7 @@ class _FloatingIslandNavBarState extends State<FloatingIslandNavBar> {
         FloatingIslandNavBar.horizontalInset,
         0,
         FloatingIslandNavBar.horizontalInset,
-        FloatingIslandNavBar.bottomInset + bottomSafe * 0.35,
+        FloatingIslandNavBar.bottomInset + bottomSafe,
       ),
       child: LayoutBuilder(
         builder: (context, constraints) {

@@ -89,6 +89,8 @@ class MainShell extends ConsumerWidget {
         ref.watch(titleBadgeUnlockProvider).pendingCelebrations.isNotEmpty;
     final showMyPageBadge = hasPendingTitleUnlock &&
         tabIndex != MainShellTabHeader.kMyPageTabIndex;
+    final keyboardInset = MediaQuery.viewInsetsOf(context).bottom;
+    final hideBottomNav = keyboardInset > 0;
 
     return Scaffold(
       extendBody: true,
@@ -110,13 +112,25 @@ class MainShell extends ConsumerWidget {
             left: 0,
             right: 0,
             bottom: 0,
-            child: FloatingIslandNavBar(
-              selectedIndex: tabIndex,
-              onSelected: (index) => _onTabSelected(ref, index),
-              items: _items,
-              badgeTabIndices: showMyPageBadge
-                  ? {MainShellTabHeader.kMyPageTabIndex}
-                  : const {},
+            child: AnimatedSlide(
+              duration: const Duration(milliseconds: 220),
+              curve: Curves.easeOutCubic,
+              offset: hideBottomNav ? const Offset(0, 1.25) : Offset.zero,
+              child: AnimatedOpacity(
+                duration: const Duration(milliseconds: 180),
+                opacity: hideBottomNav ? 0 : 1,
+                child: IgnorePointer(
+                  ignoring: hideBottomNav,
+                  child: FloatingIslandNavBar(
+                    selectedIndex: tabIndex,
+                    onSelected: (index) => _onTabSelected(ref, index),
+                    items: _items,
+                    badgeTabIndices: showMyPageBadge
+                        ? {MainShellTabHeader.kMyPageTabIndex}
+                        : const {},
+                  ),
+                ),
+              ),
             ),
           ),
         ],
