@@ -3,6 +3,7 @@ import 'dart:convert';
 import 'package:flutter/services.dart' show rootBundle;
 
 import '../../core/config/audio_playback_url.dart';
+import '../../core/logging/app_log.dart';
 import '../../core/services/audio_bytes_cache.dart';
 import '../datasources/local/audio_cache_datasource.dart';
 import '../datasources/local/content_local_datasource.dart';
@@ -67,7 +68,11 @@ class ContentRepository {
     if (url.isEmpty) return;
     final existing = await _audioCache.cachedPath(url);
     if (existing != null) return;
-    await _audioCache.download(url);
+    try {
+      await _audioCache.download(url);
+    } catch (e, st) {
+      AppLog.debug('audio_cache', '백그라운드 오디오 저장 실패: $url', e, st);
+    }
   }
 
   /// 모든 오디오를 미리 내려받는다 (설정 화면의 "전체 다운로드").
@@ -77,7 +82,8 @@ class ContentRepository {
     void Function(int done, int total)? onProgress,
   }) async {
     final urls = bundle.sentences
-        .map((s) => AudioPlaybackUrl.resolve(s.audioUrl))
+        .expand((s) => [s.audioUrl, s.audioUrlMale])
+        .map(AudioPlaybackUrl.resolve)
         .where((u) => u.isNotEmpty)
         .toSet()
         .toList();

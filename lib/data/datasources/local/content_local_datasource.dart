@@ -2,6 +2,7 @@ import 'dart:convert';
 
 import 'package:hive_flutter/hive_flutter.dart';
 
+import '../../../core/logging/app_log.dart';
 import '../../models/content_bundle.dart';
 
 /// 콘텐츠를 Hive에 JSON 문자열 하나로 저장한다.
@@ -23,8 +24,13 @@ class ContentLocalDataSource {
     if (raw == null) return null;
     try {
       return ContentBundle.fromJson(jsonDecode(raw) as Map<String, dynamic>);
-    } catch (_) {
-      // 저장 포맷이 깨졌으면 없는 것으로 취급하고 다음 동기화에서 덮어쓴다.
+    } catch (e, st) {
+      AppLog.warn(
+        'content_local',
+        '저장된 콘텐츠 JSON 파싱 실패 — 다음 동기화에서 덮어씁니다.',
+        e,
+        st,
+      );
       return null;
     }
   }

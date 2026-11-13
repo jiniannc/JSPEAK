@@ -1,6 +1,9 @@
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../data/models/sentence.dart';
+export 'app_language_provider.dart' show appLanguageProvider, selectedLanguageProvider;
+
+import 'app_language_provider.dart';
 import 'providers.dart';
 import 'search_providers.dart';
 
@@ -20,18 +23,6 @@ class DictionaryViewModeController extends Notifier<DictionaryViewMode> {
 final dictionaryViewModeProvider =
     NotifierProvider<DictionaryViewModeController, DictionaryViewMode>(
   DictionaryViewModeController.new,
-);
-
-class SelectedLanguageController extends Notifier<String> {
-  @override
-  String build() => 'English';
-
-  void set(String language) => state = language;
-}
-
-final selectedLanguageProvider =
-    NotifierProvider<SelectedLanguageController, String>(
-  SelectedLanguageController.new,
 );
 
 class SelectedCategoryController extends Notifier<String?> {

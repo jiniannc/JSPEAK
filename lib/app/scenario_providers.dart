@@ -5,6 +5,8 @@ import 'package:flutter/foundation.dart' show debugPrint, kIsWeb;
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:just_audio/just_audio.dart';
 
+import '../core/logging/app_log.dart';
+
 import '../data/datasources/local/scenario_progress_local_datasource.dart';
 import '../data/models/content_bundle.dart';
 import '../data/models/scenario.dart';
@@ -13,10 +15,9 @@ import '../data/models/scenario_line.dart';
 import '../data/models/scenario_training_result.dart';
 import '../data/repositories/content_repository.dart';
 import '../data/repositories/scenario_progress_repository.dart';
+import 'app_language_provider.dart';
+import 'app_language_sync.dart';
 import 'dictionary_providers.dart';
-import 'learning_hub_language_provider.dart';
-import 'sentence_progress_providers.dart';
-import 'swipe_progress_providers.dart';
 import 'providers.dart';
 import 'speech_providers.dart';
 import '../core/network/apps_script_fetch.dart';
@@ -43,19 +44,6 @@ final scenarioProgressRepositoryProvider =
     local: ref.watch(scenarioProgressLocalDataSourceProvider),
   );
 });
-
-/// 시나리오 화면 언어 탭 선택.
-class ScenarioLanguageController extends Notifier<String> {
-  @override
-  String build() => 'English';
-
-  void set(String language) => state = language;
-}
-
-final scenarioLanguageProvider =
-    NotifierProvider<ScenarioLanguageController, String>(
-  ScenarioLanguageController.new,
-);
 
 /// 전역 시나리오 진도 상태 (홈·리스트와 실시간 연동).
 class ScenarioProgressState {
@@ -661,7 +649,14 @@ class ScenarioTrainingController extends Notifier<ScenarioTrainingState> {
           try {
             await AudioBytesCache.instance.getOrFetch(url);
             _prefetchedHintUrls.add(url);
-          } catch (_) {}
+          } catch (e, st) {
+            AppLog.debug(
+              'scenario_hint_prefetch',
+              '웹 힌트 오디오 프리페치 실패: $url',
+              e,
+              st,
+            );
+          }
         }),
       );
       return;
@@ -673,7 +668,14 @@ class ScenarioTrainingController extends Notifier<ScenarioTrainingState> {
         try {
           await repo.cacheAudioInBackground(url);
           _prefetchedHintUrls.add(url);
-        } catch (_) {}
+        } catch (e, st) {
+          AppLog.debug(
+            'scenario_hint_prefetch',
+            '힌트 오디오 캐시 프리페치 실패: $url',
+            e,
+            st,
+          );
+        }
       }),
     );
   }
@@ -2026,9 +2028,5 @@ final scenarioTrainingProvider =
 );
 
 void selectScenarioLanguage(WidgetRef ref, String language) {
-  ref.read(scenarioLanguageProvider.notifier).set(language);
-  ref.read(learningHubLanguageProvider.notifier).set(language);
-  ref.read(basicSentenceLanguageProvider.notifier).set(language);
-  ref.read(swipeLanguageProvider.notifier).set(language);
-  ref.read(selectedLanguageProvider.notifier).set(language);
+  syncAppLanguage(ref, language);
 }

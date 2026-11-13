@@ -146,6 +146,6 @@ final homeDailySentenceProvider = Provider<Sentence?>((ref) {
 /// 홈 Today's Pick 오디오 — 카드 표시 전 미리 받아 재생 지연을 줄인다.
 final homeDailySentenceAudioPrefetchProvider = Provider<void>((ref) {
   final sentence = ref.watch(homeDailySentenceProvider);
-  if (sentence == null || sentence.audioUrl.isEmpty) return;
+  if (sentence == null || !sentence.hasAnyAudio) return;
   ref.read(audioProvider.notifier).prefetch(sentence);
 });

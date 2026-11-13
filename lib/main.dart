@@ -1,4 +1,3 @@
-import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:hive_flutter/hive_flutter.dart';
@@ -13,6 +12,6 @@ Future<void> main() async {
   const app = ProviderScope(child: JspeakApp());
 
   runApp(
-    kIsWeb ? const Active5WebViewport(child: app) : app,
+    Active5WebViewport.enabled ? const Active5WebViewport(child: app) : app,
   );
 }

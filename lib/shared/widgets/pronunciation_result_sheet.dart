@@ -8,6 +8,7 @@ import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../app/providers.dart';
+import '../../app/sentence_voice_provider.dart';
 import '../../app/tts_providers.dart';
 import '../../core/utils/cjk_pronunciation_phrase.dart';
 import '../../data/models/sentence.dart';
@@ -272,8 +273,10 @@ class _PronunciationResultSheetState extends ConsumerState<PronunciationResultSh
 
   Future<void> _playTargetAudio() async {
     final sentence = widget.sentence;
-    if (sentence.audioUrl.isNotEmpty) {
-      await ref.read(audioProvider.notifier).play(sentence);
+    if (sentence.hasAnyAudio) {
+      await ref
+          .read(audioProvider.notifier)
+          .play(sentence, voice: ref.read(sentenceVoiceProvider));
       return;
     }
     await ref.read(ttsSpeakingProvider.notifier).speakWord(

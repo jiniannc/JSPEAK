@@ -25,6 +25,13 @@ class AppConfig {
 
   static bool get isConfigured => normalizedContentUrl.isNotEmpty;
 
+  /// GitHub Pages 등 정적 웹 데모 — Active 5(960×600) 레터박스 프레임.
+  /// 로컬 `flutter run -d chrome` 기본값은 false(브라우저 창 전체).
+  static const bool webDemoFrame = bool.fromEnvironment(
+    'JSPEAK_WEB_DEMO',
+    defaultValue: false,
+  );
+
   static const String appName = 'JSPEAK';
   static const String appSubtitle = 'Global Communication Onboard';
 

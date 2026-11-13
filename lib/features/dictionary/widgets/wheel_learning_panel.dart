@@ -7,8 +7,10 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../../app/dictionary_favorite_providers.dart';
 import '../../../app/providers.dart';
 import '../../../app/sentence_progress_providers.dart';
+import '../../../app/sentence_voice_provider.dart';
 import '../../../app/speech_providers.dart';
 import '../../../core/config/active5_layout.dart';
+import '../../../core/services/audio_prefetch.dart';
 import '../../../core/utils/cjk_pronunciation_phrase.dart';
 import '../../../core/utils/scenario_answer_compare.dart';
 import '../../../core/utils/word_token_alignment.dart';
@@ -186,16 +188,31 @@ class _WheelLearningPanelState extends ConsumerState<WheelLearningPanel> {
     });
   }
 
+  void _onVoiceChanged(VoiceGender voice, {required AudioState audio}) {
+    final sentence = widget.sentence;
+    ref.read(sentenceVoiceProvider.notifier).select(voice);
+    AudioPrefetch.sentence(sentence, voice: voice);
+    if (audio.playingSentenceId != sentence.id) return;
+    final audioController = ref.read(audioProvider.notifier);
+    if (audio.isPlaying || audio.loading) {
+      audioController.play(sentence, voice: voice);
+    } else {
+      audioController.stop();
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
     final audio = ref.watch(audioProvider);
     final speech = ref.watch(speechPracticeProvider);
+    final preferredVoice = ref.watch(sentenceVoiceProvider);
     final metrics = Active5Layout.of(context);
     final accent = widget.accent;
     final sentence = widget.sentence;
     final isThisAudio = audio.playingSentenceId == sentence.id;
     final isThisSpeech = speech.activeSentenceId == sentence.id;
-    final hasAudio = sentence.audioUrl.isNotEmpty;
+    final hasAudio = sentence.hasAnyAudio;
+    final activeVoice = sentence.resolveVoice(preferredVoice);
     final stage = ref
         .watch(sentenceProgressProvider)
         .stats
@@ -368,17 +385,24 @@ class _WheelLearningPanelState extends ConsumerState<WheelLearningPanel> {
                             speed: audio.playbackSpeed,
                             playheadMode: playheadMode,
                             liveText: speech.spokenText,
+                            voice: activeVoice,
+                            onVoiceChanged: sentence.hasBothVoices
+                                ? (v) => _onVoiceChanged(v, audio: audio)
+                                : null,
                             onPlayPause: () {
                               ref
                                   .read(sentenceProgressProvider.notifier)
                                   .markListened(sentence.id);
                               ref
                                   .read(audioProvider.notifier)
-                                  .togglePlayPause(sentence);
+                                  .togglePlayPause(
+                                    sentence,
+                                    voice: preferredVoice,
+                                  );
                             },
                             onRestart: () => ref
                                 .read(audioProvider.notifier)
-                                .restart(sentence),
+                                .restart(sentence, voice: preferredVoice),
                             onSeek: (v) => ref
                                 .read(audioProvider.notifier)
                                 .seekToProgress(v),
@@ -562,6 +586,10 @@ class _GlassPlaybackDeck extends StatelessWidget {
   final double speed;
   final PlayheadVoiceMode playheadMode;
   final String liveText;
+
+  /// 재생될 음성. [onVoiceChanged]가 null이면(한쪽 음성만 있음) 토글을 숨긴다.
+  final VoiceGender? voice;
+  final ValueChanged<VoiceGender>? onVoiceChanged;
   final VoidCallback onPlayPause;
   final VoidCallback onRestart;
   final ValueChanged<double> onSeek;
@@ -578,6 +606,8 @@ class _GlassPlaybackDeck extends StatelessWidget {
     required this.speed,
     required this.playheadMode,
     required this.liveText,
+    this.voice,
+    this.onVoiceChanged,
     required this.onPlayPause,
     required this.onRestart,
     required this.onSeek,
@@ -596,6 +626,7 @@ class _GlassPlaybackDeck extends StatelessWidget {
     final progress = duration.inMilliseconds == 0
         ? 0.0
         : position.inMilliseconds / duration.inMilliseconds;
+    final showVoiceToggle = onVoiceChanged != null && voice != null;
 
     return _PanelGlassShell(
       borderRadius: BorderRadius.circular(18),
@@ -630,6 +661,14 @@ class _GlassPlaybackDeck extends StatelessWidget {
                         ),
                       ),
                     ),
+                    if (showVoiceToggle) ...[
+                      const SizedBox(width: 4),
+                      _VoiceToggle(
+                        selected: voice!,
+                        accent: accent,
+                        onChanged: onVoiceChanged!,
+                      ),
+                    ],
                     const SizedBox(width: 6),
                     _GlassRoundButton(
                       accent: accent,
@@ -712,6 +751,14 @@ class _GlassPlaybackDeck extends StatelessWidget {
                               ],
                             ),
                           ),
+                          if (showVoiceToggle) ...[
+                            const SizedBox(width: 8),
+                            _VoiceToggle(
+                              selected: voice!,
+                              accent: accent,
+                              onChanged: onVoiceChanged!,
+                            ),
+                          ],
                         ],
                       ),
                     ),
@@ -878,6 +925,73 @@ class _SpeedChip extends StatelessWidget {
               fontSize: 12,
               fontWeight: FontWeight.w800,
               color: selected ? accent : DashboardPalette.textMuted,
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+/// 여자/남자 원어민 음성 선택 — ♀ │ ♂ 심볼만, 선택된 쪽이 성별 색으로 글로우.
+class _VoiceToggle extends StatelessWidget {
+  static const _symbolSize = 24.0;
+  static const _femaleColor = Color(0xFFC9184A);
+  static const _maleColor = Color(0xFF1E3A8A);
+  static final _inactiveColor =
+      DashboardPalette.textMuted.withValues(alpha: 0.38);
+
+  final VoiceGender selected;
+  final Color accent;
+  final ValueChanged<VoiceGender> onChanged;
+
+  const _VoiceToggle({
+    required this.selected,
+    required this.accent,
+    required this.onChanged,
+  });
+
+  static Color _activeColor(VoiceGender v) =>
+      v == VoiceGender.female ? _femaleColor : _maleColor;
+
+  @override
+  Widget build(BuildContext context) {
+    return Row(
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        _symbol(VoiceGender.female),
+        Container(
+          width: 1,
+          height: 14,
+          color: DashboardPalette.textMuted.withValues(alpha: 0.25),
+        ),
+        _symbol(VoiceGender.male),
+      ],
+    );
+  }
+
+  Widget _symbol(VoiceGender v) {
+    final isSelected = v == selected;
+    final active = _activeColor(v);
+    return Semantics(
+      button: true,
+      selected: isSelected,
+      label: '${v.label} 음성',
+      child: GestureDetector(
+        behavior: HitTestBehavior.opaque,
+        onTap: isSelected ? null : () => onChanged(v),
+        child: Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 2),
+          child: TweenAnimationBuilder<double>(
+            tween: Tween(end: isSelected ? 1.0 : 0.0),
+            duration: const Duration(milliseconds: 220),
+            curve: Curves.easeOut,
+            builder: (context, t, _) => Icon(
+              v == VoiceGender.female
+                  ? Icons.female_rounded
+                  : Icons.male_rounded,
+              size: _symbolSize,
+              color: Color.lerp(_inactiveColor, active, t),
             ),
           ),
         ),

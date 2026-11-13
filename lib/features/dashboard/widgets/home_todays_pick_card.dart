@@ -119,7 +119,7 @@ class _HomeTodaysPickCardState extends ConsumerState<HomeTodaysPickCard> {
   }
 
   void _prefetchAudio() {
-    if (widget.sentence.audioUrl.isEmpty) return;
+    if (!widget.sentence.hasAnyAudio) return;
     ref.read(audioProvider.notifier).prefetch(widget.sentence);
   }
 

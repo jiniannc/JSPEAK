@@ -8,7 +8,7 @@ class TitleBadgeCatalogEntry {
   final String description;
   final String imagePath;
 
-  /// PNG 가로 ÷ 세로 — height 기준 레이아웃 시 width = height × aspectRatio.
+  /// 이미지 가로 ÷ 세로 — height 기준 레이아웃 시 width = height × aspectRatio.
   final double aspectRatio;
 
   const TitleBadgeCatalogEntry({
@@ -26,55 +26,55 @@ const List<TitleBadgeCatalogEntry> kTitleBadgeCatalog = [
     id: 'start',
     title: '시작이 반이다',
     description: '단어·문장·시나리오 중 어떤 학습 모드든 하나만 시작해도 획득할 수 있어요.',
-    imagePath: 'assets/images/badge_start.png',
+    imagePath: 'assets/images/badge_start.webp',
   ),
   TitleBadgeCatalogEntry(
     id: 'omotenashi',
     title: '오모테나시 마스터',
     description: '일본어 문장 스피킹 모드를 마스터하면 획득할 수 있어요.',
-    imagePath: 'assets/images/badge_omotenashi.png',
+    imagePath: 'assets/images/badge_omotenashi.webp',
   ),
   TitleBadgeCatalogEntry(
     id: 'toneDestroyer',
     title: '성조파괴자',
     description: '중국어 문장 스피킹 모드를 마스터하면 획득할 수 있어요.',
-    imagePath: 'assets/images/badge_tonedestroyer.png',
+    imagePath: 'assets/images/badge_tonedestroyer.webp',
   ),
   TitleBadgeCatalogEntry(
     id: 'perfectVoice',
     title: '퍼펙트 보이스',
     description: '영어 문장 스피킹 모드를 마스터하면 획득할 수 있어요.',
-    imagePath: 'assets/images/badge_perfectvoice.png',
+    imagePath: 'assets/images/badge_perfectvoice.webp',
   ),
   TitleBadgeCatalogEntry(
     id: 'guardian',
     title: '돌발상황 가디언',
     description: '영어 시나리오 롤플레잉 모드를 마스터하면 획득할 수 있어요.',
-    imagePath: 'assets/images/badge_guardian.png',
+    imagePath: 'assets/images/badge_guardian.webp',
   ),
   TitleBadgeCatalogEntry(
     id: 'japaneseMaster',
     title: '전천후 일어 해결사',
     description: '일본어 시나리오 롤플레잉 모드를 마스터하면 획득할 수 있어요.',
-    imagePath: 'assets/images/badge_japanesemaster.png',
+    imagePath: 'assets/images/badge_japanesemaster.webp',
   ),
   TitleBadgeCatalogEntry(
     id: 'chineseMaster',
     title: '중국어 기내 회화통',
     description: '중국어 시나리오 롤플레잉 모드를 마스터하면 획득할 수 있어요.',
-    imagePath: 'assets/images/badge_chinesemaster.png',
+    imagePath: 'assets/images/badge_chinesemaster.webp',
   ),
   TitleBadgeCatalogEntry(
     id: 'walkingDictionary',
     title: '걸어다니는 사전',
     description: '영어·일본어·중국어 단어 스와이프를 모두 마스터하면 획득할 수 있어요.',
-    imagePath: 'assets/images/badge_walkingdictionary.png',
+    imagePath: 'assets/images/badge_walkingdictionary.webp',
   ),
   TitleBadgeCatalogEntry(
     id: 'firstClass',
     title: '퍼스트 클래스 멀티 크루',
     description: '위 8개 칭호를 모두 획득하면 해제되는 최고 등급 칭호예요.',
-    imagePath: 'assets/images/badge_firstclass.png',
+    imagePath: 'assets/images/badge_firstclass.webp',
   ),
 ];
 

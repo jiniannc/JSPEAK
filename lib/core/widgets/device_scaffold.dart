@@ -47,9 +47,7 @@ class DeviceScaffold extends StatelessWidget {
           alignment: Alignment.topCenter,
           child: ConstrainedBox(
             constraints: BoxConstraints(
-              maxWidth: metrics.isLandscape
-                  ? Active5Layout.logicalWidthLandscape
-                  : Active5Layout.logicalWidthPortrait,
+              maxWidth: metrics.maxContentWidth,
             ),
             child: body,
           ),

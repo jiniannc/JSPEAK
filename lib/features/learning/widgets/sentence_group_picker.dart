@@ -454,6 +454,18 @@ class _SentenceGroupPickerRow extends StatelessWidget {
                 ),
               ),
             ),
+            if (group.hasNewContent && !progress.allMastered)
+              const Padding(
+                padding: EdgeInsets.only(left: 6, right: 4),
+                child: Text(
+                  'NEW',
+                  style: TextStyle(
+                    fontSize: 9,
+                    fontWeight: FontWeight.w900,
+                    color: Color(0xFFFF5252),
+                  ),
+                ),
+              ),
             if (progress.allMastered && progress.total > 0)
               Padding(
                 padding: const EdgeInsets.only(left: 6, right: 6),

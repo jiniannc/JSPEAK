@@ -4,6 +4,17 @@ import 'package:crypto/crypto.dart';
 
 import '../../core/utils/chapter_asset_path.dart';
 
+/// 문장 원어민 음성 종류 (시트 AudioURL (female) / AudioURL (male)).
+enum VoiceGender {
+  female,
+  male;
+
+  String get label => this == VoiceGender.female ? '여자' : '남자';
+
+  VoiceGender get other =>
+      this == VoiceGender.female ? VoiceGender.male : VoiceGender.female;
+}
+
 /// 스프레드시트 한 행에 해당하는 문장.
 class Sentence {
   final String id;
@@ -15,13 +26,21 @@ class Sentence {
   final String sentence;
   final String pronunciation;
   final String korean;
+
+  /// 여자 음성 (시트 AudioURL (female)). 기본 재생 음성.
   final String audioUrl;
+
+  /// 남자 음성 (시트 AudioURL (male)).
+  final String audioUrlMale;
 
   /// 별 개수 (시트의 popular 열).
   final int stars;
 
   /// 필수 문장 여부 (시트 important 열 — Yes/No, true/false, 체크박스).
   final bool important;
+
+  /// 신규 문장 여부 (시트 new 열) — 괄호 그룹 단위로 홈 NEW UPDATE에 노출.
+  final bool isNewContent;
 
   const Sentence({
     required this.id,
@@ -34,9 +53,32 @@ class Sentence {
     required this.pronunciation,
     required this.korean,
     required this.audioUrl,
+    this.audioUrlMale = '',
     required this.stars,
     required this.important,
+    this.isNewContent = false,
   });
+
+  bool get hasAnyAudio => audioUrl.isNotEmpty || audioUrlMale.isNotEmpty;
+
+  /// 여자·남자 음성이 모두 있어 전환할 수 있는지.
+  bool get hasBothVoices => audioUrl.isNotEmpty && audioUrlMale.isNotEmpty;
+
+  String rawAudioUrlFor(VoiceGender voice) =>
+      voice == VoiceGender.female ? audioUrl : audioUrlMale;
+
+  /// [preferred] 음성이 없으면 다른 음성으로 대체한다. 둘 다 없으면 null.
+  VoiceGender? resolveVoice(VoiceGender preferred) {
+    if (rawAudioUrlFor(preferred).isNotEmpty) return preferred;
+    if (rawAudioUrlFor(preferred.other).isNotEmpty) return preferred.other;
+    return null;
+  }
+
+  /// [preferred] 음성 URL — 없으면 다른 음성 URL, 둘 다 없으면 빈 문자열.
+  String audioUrlFor(VoiceGender preferred) {
+    final voice = resolveVoice(preferred);
+    return voice == null ? '' : rawAudioUrlFor(voice);
+  }
 
   /// 행 순서가 바뀌어도 변하지 않는 내용 기반 ID.
   /// 즐겨찾기·오디오 캐시 등의 키로 사용한다.
@@ -61,8 +103,10 @@ class Sentence {
       pronunciation: (json['pronunciation'] ?? '') as String,
       korean: (json['korean'] ?? '') as String,
       audioUrl: resolveAudioUrl((json['audio'] ?? '') as String),
+      audioUrlMale: resolveAudioUrl((json['audio_male'] ?? '') as String),
       stars: _parseInt(json['popular']),
       important: _parseImportant(json['important']),
+      isNewContent: _parseImportant(json['new']),
     );
   }
 
@@ -86,8 +130,10 @@ class Sentence {
         'pronunciation': pronunciation,
         'korean': korean,
         'audio': audioUrl,
+        if (audioUrlMale.isNotEmpty) 'audio_male': audioUrlMale,
         'popular': stars,
         'important': important ? 'Yes' : 'No',
+        if (isNewContent) 'new': true,
       };
 
   static int _parseInt(Object? value) {

@@ -42,7 +42,7 @@ class DictionaryGlassSearchResultCard extends ConsumerWidget {
     final favState = ref.watch(dictionaryFavoritesResolvedProvider);
     final isFavorite = favState.contains(sentence.storageFavoriteKey);
     final categoryLabel = sentence.category.trim();
-    final hasAudio = sentence.audioUrl.isNotEmpty;
+    final hasAudio = sentence.hasAnyAudio;
     if (hasAudio) {
       ref.read(audioProvider.notifier).prefetch(sentence);
     }

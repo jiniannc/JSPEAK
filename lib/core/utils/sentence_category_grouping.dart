@@ -23,9 +23,13 @@ class SentenceCategoryGroupInfo {
   final String fullCategory;
   final int sentenceCount;
 
+  /// 그룹 안에 시트 new 표시된 문장이 있는지.
+  final bool hasNewContent;
+
   const SentenceCategoryGroupInfo({
     required this.label,
     required this.fullCategory,
     required this.sentenceCount,
+    this.hasNewContent = false,
   });
 }

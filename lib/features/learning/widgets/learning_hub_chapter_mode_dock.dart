@@ -56,9 +56,9 @@ class ChapterModeDock extends ConsumerStatefulWidget {
       progressHeight + progressGap + tileSize + progressGap + labelHeight;
 
   static const modeIconAssets = <String>[
-    'assets/images/icon_word.png',
-    'assets/images/icon_sentence.png',
-    'assets/images/icon_scenario.png',
+    'assets/images/icon_word.webp',
+    'assets/images/icon_sentence.webp',
+    'assets/images/icon_scenario.webp',
   ];
 
   static const _modeIconMaxCacheSize = 240;
@@ -161,7 +161,7 @@ class _ChapterModeDockState extends ConsumerState<ChapterModeDock> {
               resyncEpoch: resync.epoch,
               resyncFullReveal: resync.fullReveal,
               revealAnimation: widget.revealAnimation,
-              assetPath: 'assets/images/icon_word.png',
+              assetPath: 'assets/images/icon_word.webp',
               label: '단어 스와이프',
               maxLabelLines: 1,
               progress: wordRatio,
@@ -192,7 +192,7 @@ class _ChapterModeDockState extends ConsumerState<ChapterModeDock> {
               resyncEpoch: resync.epoch,
               resyncFullReveal: resync.fullReveal,
               revealAnimation: widget.revealAnimation,
-              assetPath: 'assets/images/icon_sentence.png',
+              assetPath: 'assets/images/icon_sentence.webp',
               label: '문장 스피킹',
               maxLabelLines: 1,
               progress: sentenceRatio,
@@ -223,7 +223,7 @@ class _ChapterModeDockState extends ConsumerState<ChapterModeDock> {
               resyncEpoch: resync.epoch,
               resyncFullReveal: resync.fullReveal,
               revealAnimation: widget.revealAnimation,
-              assetPath: 'assets/images/icon_scenario.png',
+              assetPath: 'assets/images/icon_scenario.webp',
               label: '실전 롤플레잉',
               maxLabelLines: 1,
               progress: scenarioRatio,

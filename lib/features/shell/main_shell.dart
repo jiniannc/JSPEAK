@@ -6,7 +6,6 @@ import 'package:go_router/go_router.dart';
 
 import '../../app/dictionary_providers.dart';
 import '../../app/learning_hub_language_provider.dart';
-import '../../app/learning_providers.dart';
 import '../../app/providers.dart';
 import '../../app/shell_providers.dart';
 import '../../app/title_badge_providers.dart';
@@ -50,10 +49,6 @@ class MainShell extends ConsumerWidget {
       case kLearningShellTabIndex:
         ref.read(hubDockResyncProvider.notifier).bumpFullReveal();
       case kDictionaryShellTabIndex:
-        final hubLanguage = ref.read(learningHubLanguageProvider);
-        if (ref.read(selectedLanguageProvider) != hubLanguage) {
-          syncAppLanguage(ref, hubLanguage);
-        }
         resetDictionaryHome(ref);
       case MainShellTabHeader.kMyPageTabIndex:
         ref.read(myPageEntranceEpochProvider.notifier).bump();

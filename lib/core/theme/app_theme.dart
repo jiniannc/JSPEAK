@@ -56,6 +56,8 @@ class AppTheme {
 
     return ThemeData(
       useMaterial3: true,
+      materialTapTargetSize: MaterialTapTargetSize.padded,
+      visualDensity: VisualDensity.standard,
       fontFamily: fontBody,
       fontFamilyFallback: fontFallback,
       colorScheme: scheme,

@@ -2,6 +2,8 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../data/datasources/local/sentence_progress_local_datasource.dart';
 import '../data/repositories/sentence_progress_repository.dart';
+export 'app_language_provider.dart' show basicSentenceLanguageProvider;
+
 import 'app_language_sync.dart';
 
 final sentenceProgressLocalDataSourceProvider =
@@ -15,18 +17,6 @@ final sentenceProgressRepositoryProvider =
     local: ref.watch(sentenceProgressLocalDataSourceProvider),
   );
 });
-
-class BasicSentenceLanguageController extends Notifier<String> {
-  @override
-  String build() => 'English';
-
-  void set(String language) => state = language;
-}
-
-final basicSentenceLanguageProvider =
-    NotifierProvider<BasicSentenceLanguageController, String>(
-  BasicSentenceLanguageController.new,
-);
 
 void selectBasicSentenceLanguage(WidgetRef ref, String language) {
   syncAppLanguage(ref, language);

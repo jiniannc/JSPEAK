@@ -19,7 +19,7 @@ class ScenarioLine {
   final String chapterName;
   /// 챕터 썸네일(레거시·메타). 시나리오 시트 D열은 [avatarImage]로 대체됨.
   final String chapterImage;
-  /// 말풍선 좌상단 캐릭터 (`avatar_normal` → assets/images/avatar_normal.png).
+  /// 말풍선 좌상단 캐릭터 (`avatar_normal` → assets/images/avatar_normal.webp).
   final String avatarImage;
   /// 승무원 대사 녹음 (Drive ID 또는 URL). 없으면 문장 사전 audio로 매칭.
   final String audioUrl;

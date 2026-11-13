@@ -7,11 +7,11 @@ import '../../app/dashboard_providers.dart';
 import '../../app/learning_hub_language_provider.dart';
 import '../../app/learning_providers.dart';
 import '../../app/providers.dart';
-import '../../app/sentence_progress_providers.dart';
 import '../../app/shell_providers.dart';
 import '../../core/config/active5_layout.dart';
 import '../../core/theme/animated_language_scope.dart';
 import '../../core/widgets/device_scaffold.dart';
+import '../../shared/widgets/content_sync_status_banner.dart';
 import '../../shared/widgets/cascade_entrance.dart';
 import '../../shared/widgets/flip_reveal_entrance.dart';
 import '../../shared/widgets/glass_surface.dart';
@@ -68,11 +68,6 @@ class DashboardScreen extends ConsumerWidget {
                                 ref,
                                 recommended.language,
                               );
-                              ref
-                                  .read(
-                                    basicSentenceLanguageProvider.notifier,
-                                  )
-                                  .set(recommended.language);
                               context.push(
                                 '/scenarios/sentences/play'
                                 '?lang=${Uri.encodeComponent(recommended.language)}'
@@ -80,7 +75,7 @@ class DashboardScreen extends ConsumerWidget {
                                 '&sentenceId=${Uri.encodeComponent(recommended.id)}',
                               );
                             },
-                            onListen: recommended.audioUrl.isEmpty
+                            onListen: !recommended.hasAnyAudio
                                 ? null
                                 : () => ref
                                       .read(audioProvider.notifier)
@@ -96,6 +91,7 @@ class DashboardScreen extends ConsumerWidget {
                       child: Column(
                         crossAxisAlignment: CrossAxisAlignment.stretch,
                         children: [
+                          const ContentSyncStatusBanner(),
                           CascadeEntrance(
                             replayToken: entranceEpoch,
                             delay: Duration.zero,

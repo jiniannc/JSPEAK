@@ -259,6 +259,106 @@ void main() {
     });
   });
 
+  group('Sentence 여자/남자 음성', () {
+    Sentence parse({String female = '', String male = ''}) => Sentence.fromJson({
+          'language': 'English',
+          'category': '탑승 안내',
+          'sentence': 'Hello',
+          'pronunciation': '',
+          'korean': '',
+          'audio': female,
+          'audio_male': male,
+          'popular': 0,
+          'important': 'No',
+        });
+
+    test('audio는 여자, audio_male은 남자 음성으로 파싱한다', () {
+      final s = parse(
+        female: 'https://example.com/f.mp3',
+        male: 'https://example.com/m.mp3',
+      );
+      expect(s.hasBothVoices, isTrue);
+      expect(s.audioUrlFor(VoiceGender.female), 'https://example.com/f.mp3');
+      expect(s.audioUrlFor(VoiceGender.male), 'https://example.com/m.mp3');
+    });
+
+    test('선택한 음성이 없으면 다른 음성으로 대체한다', () {
+      final onlyFemale = parse(female: 'https://example.com/f.mp3');
+      expect(onlyFemale.hasBothVoices, isFalse);
+      expect(onlyFemale.resolveVoice(VoiceGender.male), VoiceGender.female);
+      expect(
+        onlyFemale.audioUrlFor(VoiceGender.male),
+        'https://example.com/f.mp3',
+      );
+
+      final onlyMale = parse(male: 'https://example.com/m.mp3');
+      expect(onlyMale.hasAnyAudio, isTrue);
+      expect(onlyMale.resolveVoice(VoiceGender.female), VoiceGender.male);
+    });
+
+    test('둘 다 없으면 재생할 음성이 없다', () {
+      final none = parse();
+      expect(none.hasAnyAudio, isFalse);
+      expect(none.resolveVoice(VoiceGender.female), isNull);
+      expect(none.audioUrlFor(VoiceGender.female), '');
+    });
+
+    test('toJson → fromJson 후 남자 음성이 보존된다', () {
+      final s = parse(
+        female: 'https://example.com/f.mp3',
+        male: 'https://example.com/m.mp3',
+      );
+      final restored = Sentence.fromJson(s.toJson());
+      expect(restored.audioUrlMale, 'https://example.com/m.mp3');
+    });
+  });
+
+  group('ContentBundle.newSentenceGroupsFor', () {
+    Map<String, dynamic> row(String category, String text, {bool isNew = false}) => {
+          'language': 'English',
+          'chapter_no': 2,
+          'category': category,
+          'sentence': text,
+          'pronunciation': '',
+          'korean': '',
+          'audio': '',
+          'popular': 0,
+          'important': 'No',
+          if (isNew) 'new': true,
+        };
+
+    test('new 문장이 있는 괄호 그룹만 묶어서 반환한다', () {
+      final bundle = ContentBundle.fromJson({
+        'categoryOrder': <String>[],
+        'allSentences': [
+          row('탑승 (인사)', 'Hello', isNew: true),
+          row('탑승 (인사)', 'Welcome aboard'),
+          row('탑승 (인사)', 'Good morning', isNew: true),
+          row('탑승 (좌석 안내)', 'Your seat is here'),
+          row('식사', 'Chicken or beef?', isNew: true),
+        ],
+      });
+
+      final groups = bundle.newSentenceGroupsFor('English');
+      expect(groups.map((g) => g.fullCategory), ['탑승 (인사)', '식사']);
+
+      final greeting = groups.first;
+      expect(greeting.baseName, '탑승');
+      expect(greeting.label, '인사');
+      expect(greeting.chapterNo, 2);
+      expect(greeting.sentenceCount, 3);
+
+      expect(groups.last.label, '식사');
+      expect(bundle.newSentenceGroupsFor('Japanese'), isEmpty);
+    });
+
+    test('시트 new 값(true/Yes/체크박스)을 파싱한다', () {
+      expect(Sentence.fromJson(row('a', 'x', isNew: true)).isNewContent, isTrue);
+      expect(Sentence.fromJson({...row('a', 'x'), 'new': 'Yes'}).isNewContent, isTrue);
+      expect(Sentence.fromJson(row('a', 'x')).isNewContent, isFalse);
+    });
+  });
+
   group('Sentence.stableId', () {
     test('같은 내용이면 같은 ID', () {
       final a = Sentence.stableId('English', '탑승 안내', 'Hello');

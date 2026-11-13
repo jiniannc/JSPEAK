@@ -11,6 +11,7 @@ import '../../app/shell_providers.dart';
 import '../../app/title_badge_providers.dart';
 import '../../core/config/active5_layout.dart';
 import '../../core/config/app_config.dart';
+import '../../core/utils/content_sync_status.dart';
 import '../../core/theme/animated_language_scope.dart';
 import '../../core/widgets/device_scaffold.dart';
 import '../../data/models/title_badge.dart';
@@ -257,6 +258,8 @@ class _MyPageScreenState extends ConsumerState<MyPageScreen> {
                   padding: const EdgeInsets.fromLTRB(16, 18, 16, 4),
                   child: _SyncActionList(
                     syncing: syncing,
+                    lastSyncedAt: contentState?.lastSyncedAt,
+                    syncError: contentState?.syncError,
                     onSync: _syncContent,
                     onCheckUpdates: _checkForUpdates,
                   ),
@@ -284,11 +287,15 @@ abstract final class _MyPageInnerTileStyle {
 
 class _SyncActionList extends StatelessWidget {
   final bool syncing;
+  final DateTime? lastSyncedAt;
+  final String? syncError;
   final VoidCallback onSync;
   final VoidCallback onCheckUpdates;
 
   const _SyncActionList({
     required this.syncing,
+    required this.lastSyncedAt,
+    required this.syncError,
     required this.onSync,
     required this.onCheckUpdates,
   });
@@ -304,6 +311,15 @@ class _SyncActionList extends StatelessWidget {
     fontWeight: FontWeight.w400,
     color: GlassSurfaceStyle.subtitleColor,
   );
+
+  String _syncSubtitle() {
+    if (syncing) return '동기화 중...';
+    if (syncError != null && syncError!.isNotEmpty) return syncError!;
+    if (lastSyncedAt != null) {
+      return formatLastContentSync(lastSyncedAt);
+    }
+    return '최신 콘텐츠를 업데이트합니다';
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -330,7 +346,7 @@ class _SyncActionList extends StatelessWidget {
                 ),
           title: const Text('최신 데이터 동기화', style: _titleStyle),
           subtitle: Text(
-            syncing ? '동기화 중...' : '최신 콘텐츠를 업데이트 합니다',
+            _syncSubtitle(),
             style: _subtitleStyle,
           ),
           trailing: syncing

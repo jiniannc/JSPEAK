@@ -3,14 +3,26 @@ import 'dart:math' as math;
 
 import 'package:flutter/material.dart';
 
-/// JSPEAK 옆 미니 언어 뱃지 — en1 / jp1 / cn1 PNG (1000×1000).
+/// JSPEAK 옆 미니 언어 뱃지 — en1 / jp1 / cn1 WebP (1000×1000).
 class LanguageHeaderBadge extends StatefulWidget {
   const LanguageHeaderBadge({
     super.key,
     required this.selectedLanguage,
+    this.size = displaySize,
+    this.enableIdleMotion = true,
+    this.motionTrigger = 0,
   });
 
   final String selectedLanguage;
+
+  /// [displaySize]와 다를 때 — 학습 허브 카드 등.
+  final double size;
+
+  /// false면 랜덤 idle·전환 바운스 없이 크로스페이드만.
+  final bool enableIdleMotion;
+
+  /// 값이 바뀔 때(증가) 펼침 등 — 짧은 부르르 흔들림.
+  final int motionTrigger;
 
   /// 표시 크기 — 원본 1:1 비율 유지.
   static const displaySize = 25.0;
@@ -22,9 +34,9 @@ class LanguageHeaderBadge extends StatefulWidget {
   static const _maxDecodeSize = 240;
 
   static const assets = <String, String>{
-    'English': 'assets/images/languagebadge_en1.png',
-    'Japanese': 'assets/images/languagebadge_jp1.png',
-    'Chinese': 'assets/images/languagebadge_cn1.png',
+    'English': 'assets/images/languagebadge_en1.webp',
+    'Japanese': 'assets/images/languagebadge_jp1.webp',
+    'Chinese': 'assets/images/languagebadge_cn1.webp',
   };
 
   static int? _cachedDecodeSide;
@@ -33,8 +45,11 @@ class LanguageHeaderBadge extends StatefulWidget {
   static String assetFor(String language) =>
       assets[language] ?? assets['English']!;
 
-  static int decodeSideFor(double devicePixelRatio) {
-    return (displaySize * devicePixelRatio * _cacheMultiplier)
+  static int decodeSideFor(
+    double devicePixelRatio, {
+    double logicalSize = displaySize,
+  }) {
+    return (logicalSize * devicePixelRatio * _cacheMultiplier)
         .round()
         .clamp(_minDecodeSize, _maxDecodeSize);
   }
@@ -81,21 +96,41 @@ class _LanguageHeaderBadgeState extends State<LanguageHeaderBadge>
   late final AnimationController _idle;
   Timer? _idleTimer;
   _IdleMotion _motion = _IdleMotion.nod;
+  bool _buzzMode = false;
   int? _warmedDecodeSide;
+  int _lastMotionTrigger = 0;
 
   @override
   void initState() {
     super.initState();
     _idle = AnimationController(vsync: this, duration: _idleAnimDuration);
-    _scheduleNextIdle();
+    if (widget.enableIdleMotion) {
+      _scheduleNextIdle();
+    }
     WidgetsBinding.instance.addPostFrameCallback((_) => _warmLayers());
+    _lastMotionTrigger = widget.motionTrigger;
+    if (widget.motionTrigger > 0) {
+      WidgetsBinding.instance.addPostFrameCallback((_) => _playExpandBuzz());
+    }
   }
 
   @override
   void didUpdateWidget(covariant LanguageHeaderBadge oldWidget) {
     super.didUpdateWidget(oldWidget);
-    if (oldWidget.selectedLanguage != widget.selectedLanguage) {
+    if (oldWidget.enableIdleMotion != widget.enableIdleMotion) {
+      _idleTimer?.cancel();
+      if (widget.enableIdleMotion) {
+        _scheduleNextIdle();
+      }
+    }
+    if (oldWidget.selectedLanguage != widget.selectedLanguage &&
+        widget.enableIdleMotion) {
       _playSwitchMotion();
+    }
+    if (widget.motionTrigger != oldWidget.motionTrigger &&
+        widget.motionTrigger > _lastMotionTrigger) {
+      _lastMotionTrigger = widget.motionTrigger;
+      _playExpandBuzz();
     }
   }
 
@@ -107,8 +142,10 @@ class _LanguageHeaderBadgeState extends State<LanguageHeaderBadge>
 
   Future<void> _warmLayers() async {
     if (!mounted) return;
-    final side =
-        LanguageHeaderBadge.decodeSideFor(MediaQuery.devicePixelRatioOf(context));
+    final side = LanguageHeaderBadge.decodeSideFor(
+      MediaQuery.devicePixelRatioOf(context),
+      logicalSize: widget.size,
+    );
     if (_warmedDecodeSide == side) return;
     _warmedDecodeSide = side;
     try {
@@ -160,6 +197,25 @@ class _LanguageHeaderBadgeState extends State<LanguageHeaderBadge>
     _scheduleNextIdle();
   }
 
+  Future<void> _playExpandBuzz() async {
+    if (!mounted) return;
+    _idleTimer?.cancel();
+    _buzzMode = true;
+    _motion = _IdleMotion.shake;
+    final prevDuration = _idle.duration;
+    _idle.duration = const Duration(milliseconds: 260);
+    await _idle.forward(from: 0);
+    if (!mounted) return;
+    await _idle.forward(from: 0);
+    if (!mounted) return;
+    await _idle.forward(from: 0);
+    _buzzMode = false;
+    _idle.duration = prevDuration;
+    if (widget.enableIdleMotion) {
+      _scheduleNextIdle();
+    }
+  }
+
   Widget _wrapIdleMotion(Widget child, double t) {
     final envelope = math.sin(t * math.pi).clamp(0.0, 1.0);
     switch (_motion) {
@@ -171,6 +227,19 @@ class _LanguageHeaderBadgeState extends State<LanguageHeaderBadge>
           child: child,
         );
       case _IdleMotion.shake:
+        if (_buzzMode) {
+          final dx = math.sin(t * math.pi * 18) * 2.6 * envelope;
+          final dy = math.sin(t * math.pi * 14) * 1.2 * envelope;
+          final twist = math.sin(t * math.pi * 10) * 0.08 * envelope;
+          return Transform.translate(
+            offset: Offset(dx, dy),
+            child: Transform.rotate(
+              angle: twist,
+              alignment: Alignment.bottomCenter,
+              child: child,
+            ),
+          );
+        }
         final dx = math.sin(t * math.pi * 7.5) * 1.6 * envelope;
         return Transform.translate(
           offset: Offset(dx, 0),
@@ -192,8 +261,8 @@ class _LanguageHeaderBadgeState extends State<LanguageHeaderBadge>
   Widget _badgeImage(String language, int decodeSide) {
     return Image(
       image: LanguageHeaderBadge.providerFor(language, decodeSide),
-      width: LanguageHeaderBadge.displaySize,
-      height: LanguageHeaderBadge.displaySize,
+      width: widget.size,
+      height: widget.size,
       fit: BoxFit.contain,
       filterQuality: FilterQuality.high,
       isAntiAlias: true,
@@ -228,19 +297,23 @@ class _LanguageHeaderBadgeState extends State<LanguageHeaderBadge>
 
   @override
   Widget build(BuildContext context) {
-    final decodeSide =
-        LanguageHeaderBadge.decodeSideFor(MediaQuery.devicePixelRatioOf(context));
+    final decodeSide = LanguageHeaderBadge.decodeSideFor(
+      MediaQuery.devicePixelRatioOf(context),
+      logicalSize: widget.size,
+    );
+
+    final layers = _buildLanguageLayers(decodeSide);
 
     return SizedBox(
-      width: LanguageHeaderBadge.displaySize,
-      height: LanguageHeaderBadge.displaySize,
+      width: widget.size,
+      height: widget.size,
       child: AnimatedBuilder(
         animation: _idle,
         builder: (context, child) {
           if (_idle.value <= 0) return child!;
           return _wrapIdleMotion(child!, _idle.value);
         },
-        child: _buildLanguageLayers(decodeSide),
+        child: layers,
       ),
     );
   }

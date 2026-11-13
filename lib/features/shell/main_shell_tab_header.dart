@@ -2,7 +2,6 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
-import '../../app/dictionary_providers.dart';
 import '../../app/learning_hub_language_provider.dart';
 import '../../app/learning_providers.dart';
 import '../../app/shell_providers.dart';
@@ -164,9 +163,7 @@ class _MainShellTabHeaderState extends ConsumerState<MainShellTabHeader>
     }
 
     final showSwitcher = _tabShowsLanguageSwitcher(tabIndex);
-    final language = tabIndex == 2
-        ? ref.watch(selectedLanguageProvider)
-        : ref.watch(learningHubLanguageProvider);
+    final language = ref.watch(learningHubLanguageProvider);
 
     return AnimatedLanguageScope(
       language: language,
@@ -216,9 +213,7 @@ class _MainShellTabHeaderState extends ConsumerState<MainShellTabHeader>
       _ => AppHeaderVariant.home,
     };
 
-    final language = tabIndex == 2
-        ? ref.watch(selectedLanguageProvider)
-        : ref.watch(learningHubLanguageProvider);
+    final language = ref.watch(learningHubLanguageProvider);
 
     return AnimatedLanguageScope(
       language: language,
@@ -422,9 +417,7 @@ class MainShellBackground extends ConsumerWidget {
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
-    final language = tabIndex == 2
-        ? ref.watch(selectedLanguageProvider)
-        : ref.watch(learningHubLanguageProvider);
+    final language = ref.watch(learningHubLanguageProvider);
 
     return AnimatedLanguageScope(
       language: language,

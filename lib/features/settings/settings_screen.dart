@@ -1,10 +1,9 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
-import 'package:intl/intl.dart';
-
 import '../../app/providers.dart';
 import '../../core/config/active5_layout.dart';
 import '../../core/config/app_config.dart';
+import '../../core/utils/content_sync_status.dart';
 import '../../core/widgets/active5_app_bar.dart';
 import '../../core/widgets/device_scaffold.dart';
 
@@ -103,11 +102,7 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
             minVerticalPadding: 12,
             leading: const Icon(Icons.sync, size: 28),
             title: const Text('지금 동기화', style: TextStyle(fontSize: 17)),
-            subtitle: Text(
-              syncedAt != null
-                  ? '마지막 동기화: ${DateFormat('yyyy-MM-dd HH:mm').format(syncedAt)}'
-                  : '아직 동기화하지 않았습니다',
-            ),
+            subtitle: Text(formatLastContentSync(syncedAt)),
             trailing: syncing
                 ? const SizedBox(
                     width: 20,

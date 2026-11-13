@@ -9,7 +9,6 @@ import '../../../app/learning_providers.dart';
 import '../../../app/new_update_scenario_provider.dart';
 import '../../../app/providers.dart';
 import '../../../data/models/content_bundle.dart';
-import '../../../data/models/scenario.dart';
 import '../../../features/learning/widgets/chapter_image_preloader.dart';
 import '../../../shared/widgets/chapter_hero_image.dart';
 import '../dashboard_palette.dart';
@@ -67,9 +66,19 @@ class _NewUpdateScenarioCardState extends ConsumerState<NewUpdateScenarioCard> {
     });
   }
 
-  void _openScenario(Scenario scenario) {
-    selectLearningLanguage(ref, scenario.language);
-    context.push('/scenarios/train/${scenario.id}', extra: scenario);
+  void _openEntry(NewUpdateEntry entry) {
+    switch (entry) {
+      case NewUpdateScenarioEntry(:final scenario):
+        selectLearningLanguage(ref, scenario.language);
+        context.push('/scenarios/train/${scenario.id}', extra: scenario);
+      case NewUpdateSentenceEntry(:final group):
+        selectLearningLanguage(ref, group.language);
+        context.push(
+          '/scenarios/sentences/play'
+          '?lang=${Uri.encodeComponent(group.language)}'
+          '&category=${Uri.encodeComponent(group.fullCategory)}',
+        );
+    }
   }
 
   Future<void> _scrollByPage(double pageWidth) async {
@@ -90,25 +99,28 @@ class _NewUpdateScenarioCardState extends ConsumerState<NewUpdateScenarioCard> {
   }
 
   List<String> _imagePaths(
-    List<Scenario> scenarios,
+    List<NewUpdateEntry> entries,
     ContentBundle? bundle,
   ) {
     if (bundle == null) return const [];
-    return scenarios
-        .map((scenario) => newUpdateChapterImageAsset(bundle, scenario))
+    return entries
+        .map((entry) => newUpdateEntryImageAsset(bundle, entry))
         .where((path) => path.isNotEmpty)
         .toList();
   }
 
+  static String _entriesKey(List<NewUpdateEntry> entries) =>
+      entries.map((entry) => entry.key).join('|');
+
   Future<void> _resolveAspects(
-    List<Scenario> scenarios,
+    List<NewUpdateEntry> entries,
     ContentBundle? bundle,
   ) async {
-    final key = scenarios.map((scenario) => scenario.id).join('|');
+    final key = _entriesKey(entries);
     if (_aspectWarmUpKey == key) return;
     _aspectWarmUpKey = key;
 
-    final paths = _imagePaths(scenarios, bundle);
+    final paths = _imagePaths(entries, bundle);
     if (paths.isEmpty) return;
 
     await ChapterImageAspect.resolveAll(paths);
@@ -121,19 +133,18 @@ class _NewUpdateScenarioCardState extends ConsumerState<NewUpdateScenarioCard> {
 
   Future<void> _precacheThumbs(
     BuildContext context, {
-    required List<Scenario> scenarios,
+    required List<NewUpdateEntry> entries,
     required ContentBundle? bundle,
     required double subCardWidth,
   }) async {
-    final key =
-        '${scenarios.map((scenario) => scenario.id).join('|')}@$subCardWidth';
+    final key = '${_entriesKey(entries)}@$subCardWidth';
     if (_thumbWarmUpKey == key) return;
     _thumbWarmUpKey = key;
 
-    final paths = _imagePaths(scenarios, bundle);
+    final paths = _imagePaths(entries, bundle);
     if (paths.isEmpty || !context.mounted) return;
 
-    final maxImageHeight = _maxImageHeight(subCardWidth, scenarios, bundle);
+    final maxImageHeight = _maxImageHeight(subCardWidth, entries, bundle);
     await ChapterImagePreloader.warmUpNewUpdateThumbs(
       context,
       assetPaths: paths,
@@ -144,14 +155,13 @@ class _NewUpdateScenarioCardState extends ConsumerState<NewUpdateScenarioCard> {
 
   double _maxImageHeight(
     double cardWidth,
-    List<Scenario> scenarios,
+    List<NewUpdateEntry> entries,
     ContentBundle? bundle,
   ) {
     var maxImage = 0.0;
-    for (final scenario in scenarios) {
-      final asset = bundle == null
-          ? ''
-          : newUpdateChapterImageAsset(bundle, scenario);
+    for (final entry in entries) {
+      final asset =
+          bundle == null ? '' : newUpdateEntryImageAsset(bundle, entry);
       maxImage = math.max(
         maxImage,
         ChapterImageAspect.displayHeight(
@@ -168,10 +178,11 @@ class _NewUpdateScenarioCardState extends ConsumerState<NewUpdateScenarioCard> {
     final snapshot = ref.watch(newUpdateScenarioProvider);
     if (!snapshot.hasUpdates) return const SizedBox.shrink();
 
-    final scenarios = snapshot.scenarios;
+    final entries = snapshot.entries;
     final bundle = ref.watch(contentProvider).value?.bundle;
     ref.listen(newUpdateScenarioProvider, (previous, next) {
-      if (previous?.count != next.count) {
+      if (_entriesKey(previous?.entries ?? const []) !=
+          _entriesKey(next.entries)) {
         _aspectWarmUpKey = null;
         _thumbWarmUpKey = null;
         _thumbScheduleKey = null;
@@ -188,7 +199,7 @@ class _NewUpdateScenarioCardState extends ConsumerState<NewUpdateScenarioCard> {
       }
     });
 
-    unawaited(_resolveAspects(scenarios, bundle));
+    unawaited(_resolveAspects(entries, bundle));
 
     return DashboardCompactLinkCard(
       tintColors: [
@@ -214,25 +225,25 @@ class _NewUpdateScenarioCardState extends ConsumerState<NewUpdateScenarioCard> {
             const SizedBox(height: 10),
             LayoutBuilder(
               builder: (context, constraints) {
-                final showArrows = scenarios.length > _visibleCount;
+                final showArrows = entries.length > _visibleCount;
                 final trackWidth = constraints.maxWidth;
                 final arrowLanes = showArrows
                     ? _arrowLaneWidth * 2 + _arrowGap * 2
                     : 0.0;
+                // 카드 크기·높이는 항상 '3열' 기준으로 고정 (1~2장이어도 왼쪽에 같은 폭).
                 final gapsSpace = _cardGap * (_visibleCount - 1);
                 final subCardWidth =
                     (trackWidth - arrowLanes - gapsSpace) / _visibleCount;
                 final pageWidth = subCardWidth + _cardGap;
                 final maxImageHeight = _maxImageHeight(
                   subCardWidth,
-                  scenarios,
+                  entries,
                   bundle,
                 );
                 final stripHeight = maxImageHeight +
-                    _NewUpdateScenarioSubCard.textBlockHeight;
+                    _NewUpdateSubCard.textBlockHeight;
 
-                final thumbKey =
-                    '${scenarios.map((scenario) => scenario.id).join('|')}@$subCardWidth';
+                final thumbKey = '${_entriesKey(entries)}@$subCardWidth';
                 if (_thumbWarmUpKey != thumbKey &&
                     _thumbScheduleKey != thumbKey) {
                   _thumbScheduleKey = thumbKey;
@@ -241,7 +252,7 @@ class _NewUpdateScenarioCardState extends ConsumerState<NewUpdateScenarioCard> {
                     unawaited(
                       _precacheThumbs(
                         context,
-                        scenarios: scenarios,
+                        entries: entries,
                         bundle: bundle,
                         subCardWidth: subCardWidth,
                       ),
@@ -249,26 +260,31 @@ class _NewUpdateScenarioCardState extends ConsumerState<NewUpdateScenarioCard> {
                   });
                 }
 
-                Widget buildSubCard(Scenario scenario) {
-                  return _NewUpdateScenarioSubCard(
-                    scenario: scenario,
+                Widget buildSubCard(NewUpdateEntry entry) {
+                  return _NewUpdateSubCard(
+                    entry: entry,
                     bundle: bundle,
                     cardWidth: subCardWidth,
                     cardHeight: stripHeight,
                     imageSlotHeight: maxImageHeight,
-                    onTap: () => _openScenario(scenario),
+                    onTap: () => _openEntry(entry),
                   );
                 }
 
-                final strip = scenarios.length <= _visibleCount
+                final strip = entries.length <= _visibleCount
                     ? SizedBox(
                         height: stripHeight,
+                        width: trackWidth,
                         child: Row(
                           crossAxisAlignment: CrossAxisAlignment.stretch,
+                          mainAxisAlignment: MainAxisAlignment.start,
                           children: [
-                            for (var i = 0; i < scenarios.length; i++) ...[
+                            for (var i = 0; i < entries.length; i++) ...[
                               if (i > 0) const SizedBox(width: _cardGap),
-                              Expanded(child: buildSubCard(scenarios[i])),
+                              SizedBox(
+                                width: subCardWidth,
+                                child: buildSubCard(entries[i]),
+                              ),
                             ],
                           ],
                         ),
@@ -287,14 +303,14 @@ class _NewUpdateScenarioCardState extends ConsumerState<NewUpdateScenarioCard> {
                             controller: _scrollController,
                             scrollDirection: Axis.horizontal,
                             physics: const ClampingScrollPhysics(),
-                            itemCount: scenarios.length,
+                            itemCount: entries.length,
                             separatorBuilder: (context, index) =>
                                 const SizedBox(width: _cardGap),
                             itemBuilder: (context, index) {
                               return SizedBox(
                                 width: subCardWidth,
                                 height: stripHeight,
-                                child: buildSubCard(scenarios[index]),
+                                child: buildSubCard(entries[index]),
                               );
                             },
                           ),
@@ -381,16 +397,16 @@ class _CarouselArrow extends StatelessWidget {
   }
 }
 
-class _NewUpdateScenarioSubCard extends StatelessWidget {
-  final Scenario scenario;
+class _NewUpdateSubCard extends StatelessWidget {
+  final NewUpdateEntry entry;
   final ContentBundle? bundle;
   final double cardWidth;
   final double cardHeight;
   final double imageSlotHeight;
   final VoidCallback onTap;
 
-  const _NewUpdateScenarioSubCard({
-    required this.scenario,
+  const _NewUpdateSubCard({
+    required this.entry,
     required this.bundle,
     required this.cardWidth,
     required this.cardHeight,
@@ -400,23 +416,53 @@ class _NewUpdateScenarioSubCard extends StatelessWidget {
 
   static const textBlockHeight = 96.0;
   static const _newCoral = Color(0xFFFF5252);
+  static const _sentenceAccent = Color(0xFFE11D48);
 
-  String get _chapterImage => bundle == null
-      ? ''
-      : newUpdateChapterImageAsset(bundle!, scenario);
+  String get _chapterImage =>
+      bundle == null ? '' : newUpdateEntryImageAsset(bundle!, entry);
 
   double get _imageHeight => ChapterImageAspect.displayHeight(
         assetPath: _chapterImage,
         displayWidth: cardWidth,
       );
 
+  String get _chapterLabel => switch (entry) {
+        NewUpdateScenarioEntry(:final scenario) => bundle == null
+            ? 'Ch.${scenario.chapterNo}'
+            : newUpdateChapterShortLabel(bundle!, scenario),
+        NewUpdateSentenceEntry(:final group) =>
+          newUpdateSentenceChapterShortLabel(group),
+      };
+
+  String get _title => switch (entry) {
+        NewUpdateScenarioEntry(:final scenario) => scenario.title,
+        NewUpdateSentenceEntry(:final group) => group.label,
+      };
+
+  List<Widget> get _chips => switch (entry) {
+        NewUpdateScenarioEntry(:final scenario) => [
+            _ScenarioLevelChip(label: scenarioLevelLabel(scenario.level)),
+            const SizedBox(width: 5),
+            _SubCardMetaChip(label: '${scenario.lines.length}문장'),
+          ],
+        NewUpdateSentenceEntry(:final group) => [
+            _SubCardMetaChip(label: '${group.sentenceCount}문장'),
+          ],
+      };
+
+  String get _modeLabel => switch (entry) {
+        NewUpdateScenarioEntry() => '롤플레잉',
+        NewUpdateSentenceEntry() => '스피킹',
+      };
+
+  Color get _modeColor => switch (entry) {
+        NewUpdateScenarioEntry() => DashboardPalette.teal,
+        NewUpdateSentenceEntry() => _sentenceAccent,
+      };
+
   @override
   Widget build(BuildContext context) {
-    final chapterLabel = bundle == null
-        ? 'Ch.${scenario.chapterNo}'
-        : newUpdateChapterShortLabel(bundle!, scenario);
-    final level = scenarioLevelLabel(scenario.level);
-    final lineCount = scenario.lines.length;
+    final chapterLabel = _chapterLabel;
     final imageHeight = _imageHeight;
 
     const radius = BorderRadius.all(Radius.circular(12));
@@ -471,27 +517,23 @@ class _NewUpdateScenarioSubCard extends StatelessWidget {
                         Positioned(
                           top: 6,
                           left: 6,
-                          child: DecoratedBox(
-                            decoration: BoxDecoration(
-                              color: Colors.white.withValues(alpha: 0.92),
-                              borderRadius: BorderRadius.circular(5),
-                            ),
-                            child: const Padding(
-                              padding: EdgeInsets.symmetric(
-                                horizontal: 5,
-                                vertical: 2,
+                          child: Row(
+                            mainAxisSize: MainAxisSize.min,
+                            children: [
+                              const _ImageTag(
+                                label: 'NEW',
+                                textColor: _newCoral,
+                                fillColor: Color(0xEBFFFFFF),
+                                letterSpacing: 0.4,
                               ),
-                              child: Text(
-                                'NEW',
-                                style: TextStyle(
-                                  fontSize: 8,
-                                  fontWeight: FontWeight.w800,
-                                  letterSpacing: 0.4,
-                                  color: _newCoral,
-                                  height: 1,
-                                ),
+                              const SizedBox(width: 3),
+                              _ImageTag(
+                                label: _modeLabel,
+                                textColor: Colors.white,
+                                fillColor:
+                                    _modeColor.withValues(alpha: 0.92),
                               ),
-                            ),
+                            ],
                           ),
                         ),
                       ],
@@ -564,7 +606,7 @@ class _NewUpdateScenarioSubCard extends StatelessWidget {
                                   ),
                                   const SizedBox(height: 4),
                                   Text(
-                                    scenario.title,
+                                    _title,
                                     maxLines: 2,
                                     overflow: TextOverflow.ellipsis,
                                     style: TextStyle(
@@ -588,13 +630,7 @@ class _NewUpdateScenarioSubCard extends StatelessWidget {
                                     alignment: Alignment.bottomRight,
                                     child: Row(
                                       mainAxisSize: MainAxisSize.min,
-                                      children: [
-                                        _ScenarioLevelChip(label: level),
-                                        const SizedBox(width: 5),
-                                        _SubCardMetaChip(
-                                          label: '$lineCount문장',
-                                        ),
-                                      ],
+                                      children: _chips,
                                     ),
                                   ),
                                 ],
@@ -641,6 +677,44 @@ class _SubCardMetaChip extends StatelessWidget {
             letterSpacing: 0.15,
             color: DashboardPalette.textMuted.withValues(alpha: 0.88),
             height: 1.15,
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+/// 썸네일 좌상단 소형 태그 (NEW · 학습 모드).
+class _ImageTag extends StatelessWidget {
+  final String label;
+  final Color textColor;
+  final Color fillColor;
+  final double letterSpacing;
+
+  const _ImageTag({
+    required this.label,
+    required this.textColor,
+    required this.fillColor,
+    this.letterSpacing = 0,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return DecoratedBox(
+      decoration: BoxDecoration(
+        color: fillColor,
+        borderRadius: BorderRadius.circular(5),
+      ),
+      child: Padding(
+        padding: const EdgeInsets.symmetric(horizontal: 5, vertical: 2),
+        child: Text(
+          label,
+          style: TextStyle(
+            fontSize: 8,
+            fontWeight: FontWeight.w800,
+            letterSpacing: letterSpacing,
+            color: textColor,
+            height: 1,
           ),
         ),
       ),

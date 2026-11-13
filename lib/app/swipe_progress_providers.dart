@@ -2,6 +2,8 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../data/datasources/local/swipe_progress_local_datasource.dart';
 import '../data/repositories/swipe_progress_repository.dart';
+export 'app_language_provider.dart' show swipeLanguageProvider;
+
 import 'app_language_sync.dart';
 
 final swipeProgressLocalDataSourceProvider =
@@ -15,19 +17,6 @@ final swipeProgressRepositoryProvider =
     local: ref.watch(swipeProgressLocalDataSourceProvider),
   );
 });
-
-/// 스와이프 홈 언어 선택.
-class SwipeLanguageController extends Notifier<String> {
-  @override
-  String build() => 'English';
-
-  void set(String language) => state = language;
-}
-
-final swipeLanguageProvider =
-    NotifierProvider<SwipeLanguageController, String>(
-  SwipeLanguageController.new,
-);
 
 void selectSwipeLanguage(WidgetRef ref, String language) {
   syncAppLanguage(ref, language);

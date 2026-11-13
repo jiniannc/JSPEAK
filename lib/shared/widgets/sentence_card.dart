@@ -7,6 +7,7 @@ import '../../app/providers.dart';
 import '../../app/dictionary_favorite_providers.dart';
 import '../../app/speech_providers.dart';
 import '../../core/config/active5_layout.dart';
+import '../../core/widgets/accessible_circle_button.dart';
 import '../../core/constants/labels.dart';
 import '../../core/theme/language_palette.dart';
 import '../../core/utils/karaoke_word_index.dart';
@@ -57,7 +58,7 @@ class SentenceCard extends ConsumerWidget {
     final palette = context.languagePalette;
     final accent = palette?.accent ?? scheme.primary;
     final metrics = Active5Layout.of(context);
-    final hasAudio = sentence.audioUrl.isNotEmpty;
+    final hasAudio = sentence.hasAnyAudio;
     if (hasAudio) {
       ref.read(audioProvider.notifier).prefetch(sentence);
     }
@@ -203,8 +204,8 @@ class SentenceCard extends ConsumerWidget {
                           children: [
                             _GlassControlButton(
                               accent: accent,
-                              size: 48,
-                              tooltip: isListening ? '녹음 중지' : '발음 연습',
+                              semanticLabel:
+                                  isListening ? '녹음 중지' : '발음 연습',
                               onPressed: () => ref
                                   .read(speechPracticeProvider.notifier)
                                   .toggle(sentence),
@@ -231,8 +232,9 @@ class SentenceCard extends ConsumerWidget {
                               const SizedBox(width: 8),
                               _GlassControlButton(
                                 accent: accent,
-                                size: 48,
-                                tooltip: isPlaying ? '정지' : '재생',
+                                semanticLabel: isPlaying
+                                    ? '오디오 정지'
+                                    : '오디오 재생',
                                 onPressed: () => ref
                                     .read(audioProvider.notifier)
                                     .toggle(sentence),
@@ -407,36 +409,25 @@ class _InlineGlassAudioButton extends StatelessWidget {
 /// 글래스 카드용 파스텔 원형 컨트롤 버튼.
 class _GlassControlButton extends StatelessWidget {
   final Color accent;
-  final double size;
-  final String tooltip;
+  final String semanticLabel;
   final VoidCallback onPressed;
   final Widget icon;
 
   const _GlassControlButton({
     required this.accent,
-    this.size = 48,
-    required this.tooltip,
+    required this.semanticLabel,
     required this.onPressed,
     required this.icon,
   });
 
   @override
   Widget build(BuildContext context) {
-    return Material(
-      color: accent.withValues(alpha: 0.12),
-      shape: const CircleBorder(),
-      child: InkWell(
-        onTap: onPressed,
-        customBorder: const CircleBorder(),
-        child: SizedBox(
-          width: size,
-          height: size,
-          child: Tooltip(
-            message: tooltip,
-            child: Center(child: icon),
-          ),
-        ),
-      ),
+    return AccessibleCircleButton(
+      semanticLabel: semanticLabel,
+      tooltip: semanticLabel,
+      backgroundColor: accent.withValues(alpha: 0.12),
+      onPressed: onPressed,
+      icon: icon,
     );
   }
 }

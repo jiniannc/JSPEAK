@@ -620,7 +620,7 @@ class _BookmarkSentenceCard extends ConsumerWidget {
     final audioState = ref.watch(audioProvider);
     final isPlaying = audioState.playingSentenceId == sentence.id;
     final category = sentence.category.trim();
-    final hasAudio = sentence.audioUrl.isNotEmpty;
+    final hasAudio = sentence.hasAnyAudio;
     if (hasAudio) {
       ref.read(audioProvider.notifier).prefetch(sentence);
     }

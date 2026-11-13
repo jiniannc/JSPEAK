@@ -9,6 +9,41 @@ const Map<String, String> languageLabels = {
 
 String languageLabel(String language) => languageLabels[language] ?? language;
 
+/// 학습 언어 — 카드·UI에 표시할 모국어명 (English / 日本語 / 中文).
+String languageNativeDisplayName(String language) {
+  return switch (language) {
+    'Japanese' => '日本語',
+    'Chinese' => '中文',
+    _ => 'English',
+  };
+}
+
+/// 홈 브랜드 태그라인 (JSPEAK 아래).
+String appBrandTagline(String language) {
+  return switch (language) {
+    'Japanese' => 'ジンエアー客室乗務員向け 機内グローバル・コミュニケーションガイド',
+    'Chinese' => '真航空客舱乘务员机上全球沟通指南',
+    _ => 'Global Communication Onboard Guide for Jinair Cabin Crew',
+  };
+}
+
+/// 브랜드 헤더 섹션 라벨 — [AppHeaderVariant] 학습 허브·사전 탭.
+String appHeaderLearningHubTitle(String language) {
+  return switch (language) {
+    'Japanese' => 'ラーニングハブ',
+    'Chinese' => '学习中心',
+    _ => 'LEARNING HUB',
+  };
+}
+
+String appHeaderCabinDictionaryTitle(String language) {
+  return switch (language) {
+    'Japanese' => 'キャビン辞書',
+    'Chinese' => '客舱词典',
+    _ => 'CABIN DICTIONARY',
+  };
+}
+
 /// 학습 허브 챕터 카드 — 언어별 챕터 번호 라벨.
 String hubChapterLabel(String language, int chapterNo) {
   return switch (language) {

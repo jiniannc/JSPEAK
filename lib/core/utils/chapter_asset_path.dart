@@ -1,9 +1,12 @@
 /// 시트 `chapter_image` 값을 Flutter [Image.asset] 경로로 정규화.
 ///
-/// - `boarding.png` → `assets/images/boarding.png`
-/// - `ch_boarding.png` / `sent_ch_boarding.png` → `assets/images/boarding.png`
-/// - `assets/images/ch_boarding.png` → `assets/images/boarding.png`
-/// - `learninghub icons/boarding.png` (레거시) → `assets/images/boarding.png`
+/// 시트 CMS는 여전히 `.png` 파일명을 보낼 수 있다. 번들 에셋은 WebP이므로
+/// 확장자는 `.webp`로 맞춘다.
+///
+/// - `boarding.png` → `assets/images/boarding.webp`
+/// - `ch_boarding.png` / `sent_ch_boarding.png` → `assets/images/boarding.webp`
+/// - `assets/images/ch_boarding.png` → `assets/images/boarding.webp`
+/// - `learninghub icons/boarding.png` (레거시) → `assets/images/boarding.webp`
 /// - 한글 설명 등 비이미지 텍스트 → 빈 문자열 (폴백 아이콘)
 String resolveChapterAssetPath(String raw) {
   var trimmed = raw.trim();
@@ -39,7 +42,7 @@ String resolveChapterAssetPath(String raw) {
 }
 
 /// Sheets often use language-prefixed names (`ch_boarding`, `sent_ch_meal`) while
-/// bundled assets use the plain category filename (`boarding.png`, `meal.png`).
+/// bundled assets use the plain category filename (`boarding.webp`, `meal.webp`).
 String _normalizeChapterImageBasename(String filename) {
   var name = filename.trim().replaceAll('\\', '/');
   if (name.contains('/')) {
@@ -54,9 +57,13 @@ String _normalizeChapterImageBasename(String filename) {
     }
   }
 
-  // 시트 `ch_etc` → etc.png (번들에는 irre.png만 존재).
+  name = name.replaceAll(RegExp(r'\.png$', caseSensitive: false), '.webp');
+
+  // 시트 `ch_etc` → etc.webp (번들에는 irre.webp만 존재).
   final baseLower = name.toLowerCase();
-  if (baseLower == 'etc.png' || baseLower == 'etc') return 'irre.png';
+  if (baseLower == 'etc.webp' || baseLower == 'etc') {
+    return 'irre.webp';
+  }
 
   return name;
 }

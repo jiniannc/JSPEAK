@@ -3,10 +3,14 @@ import 'dart:math' as math;
 import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:flutter/material.dart';
 
+import '../accessibility/app_accessibility.dart';
 import '../config/active5_layout.dart';
+import '../config/app_config.dart';
 
-/// 웹(GitHub Pages 등) — 브라우저 창 크기와 무관하게 Active 5 논리 해상도로 고정.
-/// Chrome `--window-size=960,600` 미리보기와 동일한 레이아웃·비율(확대하지 않음).
+/// 웹 **데모 전용** (`JSPEAK_WEB_DEMO`) — 브라우저를 Active 5 가로(960×600)로 고정.
+///
+/// 반응형 웹 앱이 아니라, 기내 태블릿 UI 미리보기용입니다.
+/// 로컬 `flutter run -d chrome` 기본값은 프레임 없이 창 전체를 씁니다.
 class Active5WebViewport extends StatelessWidget {
   final Widget child;
 
@@ -14,15 +18,14 @@ class Active5WebViewport extends StatelessWidget {
 
   static const Size _deviceSize = Active5Layout.previewLandscape;
 
+  static bool get enabled => kIsWeb && AppConfig.webDemoFrame;
+
   static MediaQueryData _framedMediaQuery(BuildContext hostContext) {
     final host = MediaQuery.of(hostContext);
     return MediaQueryData(
       size: _deviceSize,
       devicePixelRatio: 1,
-      textScaler: host.textScaler.clamp(
-        minScaleFactor: 0.95,
-        maxScaleFactor: 1.15,
-      ),
+      textScaler: AppAccessibility.clampTextScaler(host.textScaler),
       padding: EdgeInsets.zero,
       viewPadding: EdgeInsets.zero,
       viewInsets: EdgeInsets.zero,
@@ -42,35 +45,30 @@ class Active5WebViewport extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    if (!kIsWeb) return child;
+    if (!enabled) return child;
 
-    return ColoredBox(
-      color: const Color(0xFF0F172A),
-      child: LayoutBuilder(
-        builder: (context, constraints) {
-          final maxW = constraints.maxWidth;
-          final maxH = constraints.maxHeight;
-          if (!maxW.isFinite || !maxH.isFinite || maxW <= 0 || maxH <= 0) {
-            return child;
-          }
+    return SizedBox.expand(
+      child: ColoredBox(
+        color: const Color(0xFF0F172A),
+        child: LayoutBuilder(
+          builder: (context, constraints) {
+            final maxW = constraints.maxWidth;
+            final maxH = constraints.maxHeight;
+            if (!maxW.isFinite || !maxH.isFinite || maxW <= 0 || maxH <= 0) {
+              return child;
+            }
 
-          // 큰 모니터에서도 960×600을 넘어 확대하지 않음 → 로컬 Chrome 창과 동일.
-          final scale = math.min(
-            1.0,
-            math.min(
-              maxW / _deviceSize.width,
-              maxH / _deviceSize.height,
-            ),
-          );
-          final frameW = _deviceSize.width * scale;
-          final frameH = _deviceSize.height * scale;
+            final scale = math.min(
+              1.0,
+              math.min(
+                maxW / _deviceSize.width,
+                maxH / _deviceSize.height,
+              ),
+            );
 
-          return Center(
-            child: SizedBox(
-              width: frameW,
-              height: frameH,
-              child: FittedBox(
-                fit: BoxFit.fill,
+            return Center(
+              child: Transform.scale(
+                scale: scale,
                 alignment: Alignment.center,
                 child: SizedBox(
                   width: _deviceSize.width,
@@ -81,9 +79,9 @@ class Active5WebViewport extends StatelessWidget {
                   ),
                 ),
               ),
-            ),
-          );
-        },
+            );
+          },
+        ),
       ),
     );
   }

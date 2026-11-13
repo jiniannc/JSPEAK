@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 
+import '../../../core/accessibility/app_accessibility.dart';
 import '../../basic_sentence/widgets/achievement_stamps.dart';
 import '../../dashboard/dashboard_palette.dart';
 
@@ -31,58 +32,70 @@ class ModeGuideReopenButton extends StatelessWidget {
         ? const Color(0xFFF3F5F8).withValues(alpha: 0.9)
         : Colors.white.withValues(alpha: 0.92);
 
-    final chip = Material(
-      color: Colors.transparent,
-      child: InkWell(
-        onTap: onPressed,
-        borderRadius: BorderRadius.circular(compact ? 14 : 20),
-        child: Ink(
-          padding: EdgeInsets.fromLTRB(
-            compact ? 8 : 10,
-            compact ? 5 : 7,
-            compact ? 8 : 12,
-            compact ? 5 : 7,
-          ),
-          decoration: BoxDecoration(
-            color: bg,
-            borderRadius: BorderRadius.circular(compact ? 14 : 20),
-            border: Border.all(color: border),
-            boxShadow: compact
-                ? null
-                : [
-                    BoxShadow(
-                      color: accent.withValues(alpha: 0.1),
-                      blurRadius: 8,
-                      offset: const Offset(0, 2),
+    final iconSize = compact ? 18.0 : 20.0;
+    final fontSize = compact ? 12.0 : 13.0;
+
+    final chip = Semantics(
+      button: true,
+      label: label,
+      child: Material(
+        color: Colors.transparent,
+        child: InkWell(
+          onTap: onPressed,
+          borderRadius: BorderRadius.circular(compact ? 14 : 20),
+          child: ConstrainedBox(
+            constraints: const BoxConstraints(
+              minHeight: AppAccessibility.minTouchTarget,
+              minWidth: AppAccessibility.minTouchTarget,
+            ),
+            child: Ink(
+              padding: EdgeInsets.symmetric(
+                horizontal: compact ? 12 : 14,
+                vertical: compact ? 8 : 10,
+              ),
+              decoration: BoxDecoration(
+                color: bg,
+                borderRadius: BorderRadius.circular(compact ? 14 : 20),
+                border: Border.all(color: border),
+                boxShadow: compact
+                    ? null
+                    : [
+                        BoxShadow(
+                          color: accent.withValues(alpha: 0.1),
+                          blurRadius: 8,
+                          offset: const Offset(0, 2),
+                        ),
+                      ],
+              ),
+              child: Row(
+                mainAxisSize: MainAxisSize.min,
+                mainAxisAlignment: MainAxisAlignment.center,
+                children: [
+                  Icon(
+                    Icons.auto_awesome_rounded,
+                    size: iconSize,
+                    color: compact ? fg : accent,
+                  ),
+                  SizedBox(width: compact ? 6 : 8),
+                  Text(
+                    label,
+                    style: TextStyle(
+                      fontSize: fontSize,
+                      fontWeight: FontWeight.w700,
+                      color: fg,
+                    ),
+                  ),
+                  if (!compact) ...[
+                    const SizedBox(width: 4),
+                    Icon(
+                      Icons.keyboard_arrow_down_rounded,
+                      size: 20,
+                      color: accent.withValues(alpha: 0.7),
                     ),
                   ],
-          ),
-          child: Row(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              Icon(
-                Icons.auto_awesome_rounded,
-                size: compact ? 12 : 13,
-                color: compact ? fg : accent,
+                ],
               ),
-              SizedBox(width: compact ? 4 : 6),
-              Text(
-                label,
-                style: TextStyle(
-                  fontSize: compact ? 10.5 : 11.5,
-                  fontWeight: FontWeight.w700,
-                  color: fg,
-                ),
-              ),
-              if (!compact) ...[
-                const SizedBox(width: 2),
-                Icon(
-                  Icons.keyboard_arrow_down_rounded,
-                  size: 16,
-                  color: accent.withValues(alpha: 0.7),
-                ),
-              ],
-            ],
+            ),
           ),
         ),
       ),

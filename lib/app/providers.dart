@@ -6,6 +6,8 @@ import 'package:just_audio/just_audio.dart';
 
 import '../core/config/audio_playback_url.dart';
 import '../core/config/app_config.dart';
+import '../core/logging/app_log.dart';
+import '../core/utils/content_sync_status.dart';
 import '../core/services/audio_player_service.dart';
 import '../core/services/audio_prefetch.dart';
 import '../core/network/apps_script_fetch.dart';
@@ -80,16 +82,21 @@ class ContentController extends AsyncNotifier<ContentState> {
         final bundle = await _repo.sync();
         _warmAudioAfterLoad(bundle);
         return ContentState(bundle: bundle, lastSyncedAt: DateTime.now());
-      } catch (e) {
+      } catch (e, st) {
+        AppLog.warn('content_sync', '최초 동기화 실패', e, st);
         // 동기화 불가(URL 미설정·오프라인) 시 번들 샘플로 폴백해
         // 개발·데모 상태에서도 앱이 동작하게 한다.
         final sample = await _repo.loadBundledSample();
-        return ContentState(bundle: sample, syncError: e.toString());
+        return ContentState(
+          bundle: sample,
+          syncError: formatContentSyncError(e),
+        );
       }
     }
     if (local.sentences.isNotEmpty) {
       _warmAudioAfterLoad(local);
     }
+    Future.microtask(() => unawaited(sync()));
     return initial;
   }
 
@@ -105,9 +112,13 @@ class ContentController extends AsyncNotifier<ContentState> {
         bundle: bundle,
         lastSyncedAt: DateTime.now(),
       ));
-    } catch (e) {
+    } catch (e, st) {
+      AppLog.warn('content_sync', '동기화 실패', e, st);
       state = AsyncData(
-        current.copyWith(syncing: false, syncError: e.toString()),
+        current.copyWith(
+          syncing: false,
+          syncError: formatContentSyncError(e),
+        ),
       );
     }
   }
@@ -129,7 +140,12 @@ void _warmAppsScriptProxy() {
       'jspeak_ping': '1',
     },
   );
-  AppsScriptFetch().getBytes(ping.toString()).then((_) {}, onError: (Object _, StackTrace __) {});
+  AppsScriptFetch().getBytes(ping.toString()).then(
+        (_) {},
+        onError: (Object e, StackTrace st) {
+          AppLog.debug('content_sync', 'Apps Script 워밍업 ping 실패', e, st);
+        },
+      );
 }
 
 final contentProvider =
@@ -140,6 +156,9 @@ final contentProvider =
 /// 현재 재생 중인 문장 상태.
 class AudioState {
   final String? playingSentenceId;
+
+  /// 현재 재생 중인 문장의 음성(여자/남자).
+  final VoiceGender? playingVoice;
   final bool loading;
   final bool isPlaying;
   final Duration position;
@@ -148,6 +167,7 @@ class AudioState {
 
   const AudioState({
     this.playingSentenceId,
+    this.playingVoice,
     this.loading = false,
     this.isPlaying = false,
     this.position = Duration.zero,
@@ -169,6 +189,7 @@ class AudioState {
     return AudioState(
       playingSentenceId:
           clearPlaying ? null : (playingSentenceId ?? this.playingSentenceId),
+      playingVoice: clearPlaying ? null : playingVoice,
       loading: loading ?? this.loading,
       isPlaying: isPlaying ?? this.isPlaying,
       position: position ?? this.position,
@@ -221,44 +242,61 @@ class AudioController extends Notifier<AudioState> {
     return const AudioState();
   }
 
+  /// 이 문장·음성이 현재 재생 컨텍스트인지.
+  bool _isCurrent(Sentence sentence, VoiceGender? voice) =>
+      state.playingSentenceId == sentence.id && state.playingVoice == voice;
+
   /// 리스트 모드 — 같은 문장이면 정지, 아니면 재생.
-  Future<void> toggle(Sentence sentence) async {
+  Future<void> toggle(
+    Sentence sentence, {
+    VoiceGender voice = VoiceGender.female,
+  }) async {
     if (state.playingSentenceId == sentence.id) {
       await stop();
       return;
     }
-    AudioPrefetch.sentence(sentence);
-    await play(sentence);
+    AudioPrefetch.sentence(sentence, voice: voice);
+    await play(sentence, voice: voice);
   }
 
   /// 화면 진입 시 미리 받기 — 메모리 캐시 + (모바일) 디스크 캐시.
-  void prefetch(Sentence sentence) {
-    if (sentence.audioUrl.isEmpty) return;
-    AudioPrefetch.sentence(sentence);
+  void prefetch(
+    Sentence sentence, {
+    VoiceGender voice = VoiceGender.female,
+  }) {
+    final rawUrl = sentence.audioUrlFor(voice);
+    if (rawUrl.isEmpty) return;
+    AudioPrefetch.sentence(sentence, voice: voice);
     if (kIsWeb) return;
-    final playbackUrl = AudioPlaybackUrl.resolve(sentence.audioUrl);
+    final playbackUrl = AudioPlaybackUrl.resolve(rawUrl);
     if (playbackUrl.isEmpty) return;
     unawaited(
       ref.read(contentRepositoryProvider).cacheAudioInBackground(playbackUrl),
     );
   }
 
-  /// 학습 모드 — 재생 시작.
-  Future<void> play(Sentence sentence) async {
+  /// 학습 모드 — 재생 시작. [voice] 음성이 없으면 다른 음성으로 재생한다.
+  Future<void> play(
+    Sentence sentence, {
+    VoiceGender voice = VoiceGender.female,
+  }) async {
     final service = ref.read(audioPlayerServiceProvider);
     final repo = ref.read(contentRepositoryProvider);
-    if (sentence.audioUrl.isEmpty) return;
+    final resolvedVoice = sentence.resolveVoice(voice);
+    if (resolvedVoice == null) return;
 
-    final playbackUrl = AudioPlaybackUrl.resolve(sentence.audioUrl);
+    final playbackUrl =
+        AudioPlaybackUrl.resolve(sentence.rawAudioUrlFor(resolvedVoice));
     if (playbackUrl.isEmpty) return;
 
-    final sameSentence = state.playingSentenceId == sentence.id;
-    final preservedDuration = sameSentence && state.duration.inMilliseconds > 0
+    final sameAudio = _isCurrent(sentence, resolvedVoice);
+    final preservedDuration = sameAudio && state.duration.inMilliseconds > 0
         ? state.duration
         : Duration.zero;
 
     state = AudioState(
       playingSentenceId: sentence.id,
+      playingVoice: resolvedVoice,
       loading: true,
       playbackSpeed: state.playbackSpeed,
       duration: preservedDuration,
@@ -273,7 +311,7 @@ class AudioController extends Notifier<AudioState> {
       if (!kIsWeb) {
         localPath = await repo.cachedAudioPath(playbackUrl);
       }
-      if (state.playingSentenceId != sentence.id) return;
+      if (!_isCurrent(sentence, resolvedVoice)) return;
 
       if (localPath != null) {
         await service.playFile(localPath);
@@ -283,7 +321,7 @@ class AudioController extends Notifier<AudioState> {
           unawaited(repo.cacheAudioInBackground(playbackUrl));
         }
       }
-      if (state.playingSentenceId != sentence.id) return;
+      if (!_isCurrent(sentence, resolvedVoice)) return;
 
       final resolved = await service.resolveDuration();
       final duration = resolved.inMilliseconds > 0
@@ -298,15 +336,19 @@ class AudioController extends Notifier<AudioState> {
     } catch (e, st) {
       debugPrint('오디오 재생 실패: $playbackUrl');
       debugPrint('$e\n$st');
+      if (!_isCurrent(sentence, resolvedVoice)) return;
       final speed = state.playbackSpeed;
       state = AudioState(playbackSpeed: speed);
     }
   }
 
-  Future<void> togglePlayPause(Sentence sentence) async {
+  Future<void> togglePlayPause(
+    Sentence sentence, {
+    VoiceGender voice = VoiceGender.female,
+  }) async {
     final service = ref.read(audioPlayerServiceProvider);
-    if (state.playingSentenceId != sentence.id) {
-      await play(sentence);
+    if (!_isCurrent(sentence, sentence.resolveVoice(voice))) {
+      await play(sentence, voice: voice);
       return;
     }
     if (state.isPlaying) {
@@ -316,7 +358,7 @@ class AudioController extends Notifier<AudioState> {
       if (service.processingState == ProcessingState.completed) {
         // completed 상태에서 seek+resume만 하면 Web 등에서 무음·유령 position
         // 업데이트가 발생할 수 있어 소스를 다시 올린다.
-        await play(sentence);
+        await play(sentence, voice: voice);
         return;
       }
       await service.resume();
@@ -341,12 +383,15 @@ class AudioController extends Notifier<AudioState> {
     state = state.copyWith(position: target);
   }
 
-  Future<void> restart(Sentence sentence) async {
+  Future<void> restart(
+    Sentence sentence, {
+    VoiceGender voice = VoiceGender.female,
+  }) async {
     final service = ref.read(audioPlayerServiceProvider);
-    if (state.playingSentenceId != sentence.id ||
+    if (!_isCurrent(sentence, sentence.resolveVoice(voice)) ||
         !state.isActive ||
         service.processingState == ProcessingState.completed) {
-      await play(sentence);
+      await play(sentence, voice: voice);
       return;
     }
     await service.seek(Duration.zero);

@@ -4,6 +4,7 @@ import 'sentence.dart';
 import 'vocabulary_entry.dart';
 import 'content_chapter.dart';
 import 'learning_hub_chapter.dart';
+import 'new_sentence_group.dart';
 import '../../core/utils/search_text_match.dart';
 import '../../core/utils/sentence_category_grouping.dart';
 
@@ -131,6 +132,7 @@ class ContentBundle {
           label: '',
           fullCategory: flatCategory,
           sentenceCount: scoped.length,
+          hasNewContent: scoped.any((s) => s.isNewContent),
         ),
       ];
     }
@@ -160,8 +162,51 @@ class ContentBundle {
           sentenceCount: scoped
               .where((s) => s.category == groupFullCategory[label])
               .length,
+          hasNewContent: scoped.any(
+            (s) => s.category == groupFullCategory[label] && s.isNewContent,
+          ),
         ),
     ];
+  }
+
+  /// new 표시된 문장이 있는 괄호 그룹(category 원문) — 시트 등장 순서.
+  List<NewSentenceGroup> newSentenceGroupsFor(String language) {
+    final newCategories = <String>{
+      for (final s in sentences)
+        if (s.language == language && s.isNewContent) s.category,
+    };
+    if (newCategories.isEmpty) return const [];
+
+    // 괄호 그룹 행에는 chapter_image가 없을 수 있어 같은 챕터 이미지를 쓴다.
+    final chapters = sentenceChaptersFor(language);
+    final groups = <NewSentenceGroup>[];
+    for (final category in newCategories) {
+      final rows = sentencesFor(language, category);
+      if (rows.isEmpty) continue;
+      final meta = chapterForSentenceCategory(language, category);
+      final baseName = SentenceCategoryGrouping.baseName(category);
+      var image = meta.chapterImage;
+      if (image.isEmpty) {
+        for (final c in chapters) {
+          if (c.chapterNo == meta.chapterNo && c.name == baseName) {
+            image = c.chapterImage;
+            break;
+          }
+        }
+      }
+      groups.add(
+        NewSentenceGroup(
+          language: language,
+          chapterNo: meta.chapterNo,
+          fullCategory: category,
+          baseName: baseName,
+          label: SentenceCategoryGrouping.parse(category)?.group ?? baseName,
+          chapterImage: image,
+          sentenceCount: rows.length,
+        ),
+      );
+    }
+    return groups;
   }
 
   /// 언어별 문장 챕터 메타 ([chapter_no] 순).

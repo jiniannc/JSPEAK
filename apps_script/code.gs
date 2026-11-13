@@ -14,8 +14,12 @@
  *
  * 시트 컬럼 (Sentences 시트, 1행은 헤더):
  *  A: language | B: chapter_no | C: category | D: chapter_image
- *  E: sentence | F: pronunciation | G: korean | H: audio (Google Drive 파일 ID)
- *  I: popular | J: important (Yes/No) | K/L: chapter_hook (챕터당 첫 행 1셀만)
+ *  E: sentence | F: pronunciation | G: korean
+ *  H: AudioURL (female) | I: AudioURL (male) (Google Drive 파일 ID 또는 링크)
+ *  J: popular | K: important (Yes/No) | L: new (체크 시 홈 NEW UPDATE 노출)
+ *  M: chapter_hook (챕터당 첫 행 1셀만)
+ *  1행 헤더명으로 컬럼을 찾으므로 열 순서가 바뀌어도 된다.
+ *  헤더를 못 찾으면 위 고정 열 위치로 읽는다.
  *
  * Words 시트 (1행은 헤더):
  *  A: language | B: chapter_no | C: category | D: chapter_image
@@ -107,33 +111,7 @@ function normalizeAvatarImage(raw) {
 }
 
 function getData() {
-  const ss = SpreadsheetApp.getActiveSpreadsheet();
-  const sheet = ss.getSheetByName('Sentences');
-  const data = sheet.getDataRange().getValues();
-
-  const allSentences = [];
-
-  for (let i = 1; i < data.length; i++) {
-    const row = data[i];
-    const language = row[0];
-    const category = row[2];
-    if (!language || !category) continue;
-
-    allSentences.push({
-      language: language,
-      chapter_no: parseInt(row[1]) || 1,
-      category: category,
-      chapter_image: normalizeChapterImage(row[3]),
-      sentence: row[4],
-      pronunciation: row[5],
-      korean: row[6],
-      audio: resolveAudioUrl(row[7]),
-      popular: parseInt(row[8]) || 0,
-      important: normalizeImportant(row[9]),
-      chapter_hook: String(row[11] || row[10] || '').trim(),
-    });
-  }
-
+  const allSentences = getSentences();
   const allWords = getWords();
 
   return {
@@ -144,6 +122,118 @@ function getData() {
     scenariosJp: getScenarios('scenarios_jp'),
     scenariosCn: getScenarios('scenarios_cn'),
   };
+}
+
+/**
+ * Sentences 시트 파싱. 1행 헤더명으로 컬럼을 찾고, 실패 시 고정 열 인덱스로 폴백한다.
+ * audio: 여자 음성 (AudioURL (female)), audio_male: 남자 음성 (AudioURL (male)).
+ */
+function getSentences() {
+  const ss = SpreadsheetApp.getActiveSpreadsheet();
+  const sheet = getSheetByNameInsensitive(ss, 'Sentences');
+  if (!sheet) return [];
+
+  const data = sheet.getDataRange().getValues();
+  if (data.length < 2) return [];
+
+  // "chapter_ hook"처럼 헤더에 공백이 섞여도 찾을 수 있게 밑줄을 제거해 비교한다.
+  function compactHeader(h) {
+    return String(h).replace(/_/g, '');
+  }
+  const col = buildScenarioColumnMap(
+    data[0].map(normalizeScenarioHeader).map(compactHeader)
+  );
+
+  const FALLBACK = {
+    language: 0,
+    chapter_no: 1,
+    category: 2,
+    chapter_image: 3,
+    sentence: 4,
+    pronunciation: 5,
+    korean: 6,
+    audio_female: 7,
+    audio_male: 8,
+    popular: 9,
+    important: 10,
+    new: 11,
+    chapter_hook: 12,
+  };
+
+  const HEADER_ALIASES = {
+    language: ['language', 'lang'],
+    chapter_no: ['chapter_no', 'chapterno', 'chapter', 'chapter_number'],
+    category: ['category'],
+    chapter_image: ['chapter_image', 'chapterimage', 'chapter_thumb', 'chapter_thumbnail'],
+    sentence: ['sentence', 'text_target', 'target'],
+    pronunciation: ['pronunciation', 'pron'],
+    korean: ['korean', 'text_ko', 'ko'],
+    audio_female: [
+      'audiourl_female', 'audiourlfemale', 'audio_url_female', 'audio_female',
+      'audiofemale', 'female_audio', 'female',
+      'audiourl', 'audio_url', 'audio',
+    ],
+    audio_male: [
+      'audiourl_male', 'audiourlmale', 'audio_url_male', 'audio_male',
+      'audiomale', 'male_audio', 'male',
+    ],
+    popular: ['popular', 'stars', 'star'],
+    important: ['important', 'essential'],
+    new: ['new', 'is_new', 'new_content'],
+    chapter_hook: ['chapter_hook', 'hook'],
+  };
+
+  const useHeader = col['sentence'] !== undefined && col['language'] !== undefined;
+
+  function colIndex(key) {
+    if (useHeader) {
+      const aliases = HEADER_ALIASES[key] || [key];
+      for (let i = 0; i < aliases.length; i++) {
+        const alias = compactHeader(aliases[i]);
+        if (col[alias] !== undefined) return col[alias];
+      }
+      return undefined;
+    }
+    return FALLBACK[key];
+  }
+
+  function readCell(row, key) {
+    const idx = colIndex(key);
+    if (idx === undefined || idx < 0 || idx >= row.length) return '';
+    const v = row[idx];
+    return v === undefined || v === null ? '' : v;
+  }
+
+  function readChapterHook(row) {
+    const idx = colIndex('chapter_hook');
+    if (idx === undefined) return '';
+    return String(row[idx] || row[idx + 1] || '').trim();
+  }
+
+  const allSentences = [];
+  for (let i = 1; i < data.length; i++) {
+    const row = data[i];
+    const language = readCell(row, 'language');
+    const category = readCell(row, 'category');
+    if (!language || !category) continue;
+
+    allSentences.push({
+      language: language,
+      chapter_no: parseInt(readCell(row, 'chapter_no')) || 1,
+      category: category,
+      chapter_image: normalizeChapterImage(readCell(row, 'chapter_image')),
+      sentence: readCell(row, 'sentence'),
+      pronunciation: readCell(row, 'pronunciation'),
+      korean: readCell(row, 'korean'),
+      audio: resolveAudioUrl(readCell(row, 'audio_female')),
+      audio_male: resolveAudioUrl(readCell(row, 'audio_male')),
+      popular: parseInt(readCell(row, 'popular')) || 0,
+      important: normalizeImportant(readCell(row, 'important')),
+      new: normalizeImportant(readCell(row, 'new')) === 'Yes',
+      chapter_hook: readChapterHook(row),
+    });
+  }
+  return allSentences;
 }
 
 function buildCategoryOrder(allSentences, allWords) {

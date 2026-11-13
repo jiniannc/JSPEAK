@@ -6,6 +6,7 @@ import 'package:dio/dio.dart';
 import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:path_provider/path_provider.dart';
 
+import '../../../core/logging/app_log.dart';
 import '../../../core/network/apps_script_audio_decoder.dart';
 import '../../../core/network/apps_script_fetch.dart';
 
@@ -71,7 +72,8 @@ class AudioCacheDataSource {
     if (existing != null) return existing;
     try {
       return await download(url);
-    } catch (_) {
+    } catch (e, st) {
+      AppLog.debug('audio_cache', '오디오 캐시 실패: $url', e, st);
       return null;
     }
   }

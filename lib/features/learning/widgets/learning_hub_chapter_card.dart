@@ -8,6 +8,7 @@ import 'package:go_router/go_router.dart';
 import 'package:lottie/lottie.dart';
 
 import '../../../core/constants/labels.dart';
+import '../../../core/theme/language_palette.dart';
 import '../../../core/utils/learning_hub_icon.dart';
 import '../../../data/datasources/local/swipe_progress_local_datasource.dart';
 import '../../../data/models/learning_hub_chapter.dart';
@@ -15,6 +16,7 @@ import '../../../data/models/scenario.dart';
 import '../../../data/models/sentence.dart';
 import '../../../data/repositories/sentence_progress_repository.dart';
 import '../../../shared/widgets/chapter_hero_image.dart';
+import '../../../shared/widgets/language_header_badge.dart';
 import '../../dashboard/dashboard_palette.dart';
 import '../../word_swipe/word_swipe_training_screen.dart';
 import 'learning_hub_chapter_mode_dock.dart';
@@ -267,6 +269,7 @@ class _LearningHubChapterCardState extends State<LearningHubChapterCard>
   late final Animation<double> _snapScale;
   bool _expandShimmerArmed = false;
   int _lastSnapToken = 0;
+  int _badgeMotionTrigger = 0;
 
   static const fallbackAspectRatio = 3 / 2;
   static const _fallbackAspectRatio = fallbackAspectRatio;
@@ -326,6 +329,7 @@ class _LearningHubChapterCardState extends State<LearningHubChapterCard>
     }
     if (oldWidget.isExpanded != widget.isExpanded) {
       if (widget.isExpanded) {
+        setState(() => _badgeMotionTrigger++);
         _fold.forward(from: _fold.value);
       } else {
         _fold.reverse();
@@ -466,7 +470,9 @@ class _LearningHubChapterCardState extends State<LearningHubChapterCard>
             final cardColor = Color.lerp(
               Colors.white,
               Colors.transparent,
-              Curves.easeIn.transform(t),
+              isCompactStack
+                  ? 0.0
+                  : Curves.easeIn.transform(t),
             )!;
             const rimWidth = 3.2;
             const rimStroke = 2.2;
@@ -553,6 +559,8 @@ class _LearningHubChapterCardState extends State<LearningHubChapterCard>
                                         cardHeight: expandedHeight,
                                         allModesCleared: allModesCleared,
                                         chapterStatus: chapterStatus,
+                                        badgeMotionTrigger:
+                                            _badgeMotionTrigger,
                                       ),
                                     ),
                                   if (peel < 0.999)
@@ -576,6 +584,8 @@ class _LearningHubChapterCardState extends State<LearningHubChapterCard>
                                                   _imageAspectRatio ??
                                                   LearningHubChapterCard
                                                       .fallbackAspectRatio,
+                                              badgeMotionTrigger:
+                                                  _badgeMotionTrigger,
                                               onTap: widget.onExpandRequested,
                                             ),
                                           ),
@@ -641,6 +651,81 @@ class _ChapterHeroImageLayer extends StatelessWidget {
   }
 }
 
+/// 접힌 카드 — 펼침 히어로 [\_ChapterStatusBadge]와 구분되는 라이트 pill.
+class _ChapterCompactStatusChip extends StatelessWidget {
+  const _ChapterCompactStatusChip({required this.status});
+
+  final _ChapterLearningStatus status;
+
+  @override
+  Widget build(BuildContext context) {
+    final meta = switch (status) {
+      _ChapterLearningStatus.notStarted => (
+        bg: const Color(0xFFF1F5F9),
+        fg: const Color(0xFF64748B),
+        label: '시작 전',
+        showDot: false,
+        showCheck: false,
+      ),
+      _ChapterLearningStatus.inProgress => (
+        bg: const Color(0xFFE0F2FE),
+        fg: const Color(0xFF0284C7),
+        label: '진행 중',
+        showDot: true,
+        showCheck: false,
+      ),
+      _ChapterLearningStatus.completed => (
+        bg: const Color(0xFFFEF3C7),
+        fg: const Color(0xFFD97706),
+        label: '완료',
+        showDot: false,
+        showCheck: true,
+      ),
+    };
+
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+      decoration: BoxDecoration(
+        color: meta.bg,
+        borderRadius: BorderRadius.circular(20),
+        border: Border.all(
+          color: meta.fg.withValues(alpha: 0.14),
+          width: 0.6,
+        ),
+      ),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          if (meta.showDot)
+            Container(
+              width: 6,
+              height: 6,
+              margin: const EdgeInsets.only(right: 4),
+              decoration: BoxDecoration(
+                color: meta.fg,
+                shape: BoxShape.circle,
+              ),
+            ),
+          if (meta.showCheck)
+            Padding(
+              padding: const EdgeInsets.only(right: 3),
+              child: Icon(Icons.check_rounded, size: 12, color: meta.fg),
+            ),
+          Text(
+            meta.label,
+            style: TextStyle(
+              fontSize: 10,
+              fontWeight: FontWeight.w700,
+              color: meta.fg,
+              height: 1.1,
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
 /// 압축(Accordion Collapsed) 상태 — 88px 미니 타일. BackdropFilter/Lottie 없이 가벼움.
 class _ChapterCompactTile extends StatelessWidget {
   const _ChapterCompactTile({
@@ -649,6 +734,7 @@ class _ChapterCompactTile extends StatelessWidget {
     required this.iconAsset,
     required this.status,
     required this.imageAspectRatio,
+    required this.badgeMotionTrigger,
     required this.onTap,
   });
 
@@ -657,6 +743,7 @@ class _ChapterCompactTile extends StatelessWidget {
   final String iconAsset;
   final _ChapterLearningStatus status;
   final double imageAspectRatio;
+  final int badgeMotionTrigger;
   final VoidCallback onTap;
 
   /// 카드 내부(패딩 제외) 세로 공간에 맞춘 썸네일 높이 — 3:2 등 원본 비율로 가로 확장.
@@ -664,84 +751,80 @@ class _ChapterCompactTile extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final statusMeta = switch (status) {
-      _ChapterLearningStatus.notStarted => const (
-        fg: Color(0xFF64748B),
-        label: '시작 전',
-      ),
-      _ChapterLearningStatus.inProgress => const (
-        fg: Color(0xFF0284C7),
-        label: '진행 중',
-      ),
-      _ChapterLearningStatus.completed => const (
-        fg: Color(0xFFD97706),
-        label: '완료',
-      ),
-    };
     final thumbHeight = _maxThumbHeight;
     final thumbWidth = thumbHeight * imageAspectRatio;
+
+    final palette = LanguagePalette.forLanguage(language);
+    final radius = LearningHubChapterCard._outerRadius;
 
     return SizedBox(
       width: double.infinity,
       height: LearningHubChapterCard._compactHeight,
-      child: Material(
-        color: Colors.transparent,
-        child: InkWell(
-          onTap: onTap,
-          child: Padding(
-            padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+      child: DecoratedBox(
+        decoration: BoxDecoration(
+          color: palette.card,
+          borderRadius: BorderRadius.circular(radius),
+          border: Border.all(color: palette.cardBorder, width: 1),
+        ),
+        child: Material(
+          color: Colors.transparent,
+          child: InkWell(
+            onTap: onTap,
+            borderRadius: BorderRadius.circular(radius),
+            splashColor: palette.primary.withValues(alpha: 0.06),
+            highlightColor: palette.primary.withValues(alpha: 0.03),
             child: Row(
+              crossAxisAlignment: CrossAxisAlignment.stretch,
               children: [
-                Expanded(
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    mainAxisAlignment: MainAxisAlignment.center,
-                    children: [
-                      Text.rich(
-                        TextSpan(
-                          children: [
-                            TextSpan(
-                              text: hubChapterLabel(
-                                language,
-                                chapter.chapterNo,
-                              ),
-                              style: const TextStyle(
-                                fontSize: 11,
-                                fontWeight: FontWeight.w700,
-                                color: Color(0xFF0284C7),
-                                height: 1.1,
-                              ),
-                            ),
-                            TextSpan(
-                              text: '  ·  ${statusMeta.label}',
-                              style: TextStyle(
-                                fontSize: 11,
-                                fontWeight: FontWeight.w600,
-                                color: statusMeta.fg,
-                                height: 1.1,
-                              ),
-                            ),
-                          ],
-                        ),
-                        maxLines: 1,
-                        overflow: TextOverflow.ellipsis,
-                      ),
-                      const SizedBox(height: 6),
-                      Text(
-                        chapter.name,
-                        maxLines: 1,
-                        overflow: TextOverflow.ellipsis,
-                        style: const TextStyle(
-                          fontSize: 15,
-                          fontWeight: FontWeight.w700,
-                          color: Color(0xFF0F172A),
-                          letterSpacing: -0.2,
-                        ),
-                      ),
-                    ],
+                DecoratedBox(
+                  decoration: BoxDecoration(
+                    color: palette.primary.withValues(alpha: 0.88),
+                    borderRadius: BorderRadius.only(
+                      topLeft: Radius.circular(radius),
+                      bottomLeft: Radius.circular(radius),
+                    ),
                   ),
+                  child: const SizedBox(width: 4),
                 ),
-                const SizedBox(width: 12),
+                Expanded(
+                  child: Padding(
+                    padding: const EdgeInsets.fromLTRB(12, 11, 12, 11),
+                    child: Row(
+                      children: [
+                        Expanded(
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            mainAxisAlignment: MainAxisAlignment.center,
+                            children: [
+                              Row(
+                                children: [
+                                  Expanded(
+                                    child: _HubChapterMetaLine(
+                                      language: language,
+                                      chapterNo: chapter.chapterNo,
+                                      badgeMotionTrigger: badgeMotionTrigger,
+                                    ),
+                                  ),
+                                  const SizedBox(width: 6),
+                                  _ChapterCompactStatusChip(status: status),
+                                ],
+                              ),
+                              const SizedBox(height: 5),
+                              Text(
+                                chapter.name,
+                                maxLines: 1,
+                                overflow: TextOverflow.ellipsis,
+                                style: const TextStyle(
+                                  fontSize: 15,
+                                  fontWeight: FontWeight.w700,
+                                  color: Color(0xFF0F172A),
+                                  letterSpacing: -0.2,
+                                ),
+                              ),
+                            ],
+                          ),
+                        ),
+                        const SizedBox(width: 10),
                 Container(
                   width: thumbWidth,
                   height: thumbHeight,
@@ -782,11 +865,15 @@ class _ChapterCompactTile extends StatelessWidget {
                     ),
                   ),
                 ),
-                const SizedBox(width: 4),
-                const Icon(
-                  Icons.keyboard_arrow_down_rounded,
-                  color: Color(0xFF94A3B8),
-                  size: 22,
+                        const SizedBox(width: 2),
+                        Icon(
+                          Icons.keyboard_arrow_down_rounded,
+                          color: palette.tabUnselected,
+                          size: 22,
+                        ),
+                      ],
+                    ),
+                  ),
                 ),
               ],
             ),
@@ -864,6 +951,7 @@ class _ExpandedChapterVisual extends StatefulWidget {
     required this.cardHeight,
     required this.allModesCleared,
     required this.chapterStatus,
+    required this.badgeMotionTrigger,
   });
 
   final LearningHubChapter chapter;
@@ -881,6 +969,7 @@ class _ExpandedChapterVisual extends StatefulWidget {
   final double cardHeight;
   final bool allModesCleared;
   final _ChapterLearningStatus chapterStatus;
+  final int badgeMotionTrigger;
 
   @override
   State<_ExpandedChapterVisual> createState() => _ExpandedChapterVisualState();
@@ -1035,6 +1124,7 @@ class _ExpandedChapterVisualState extends State<_ExpandedChapterVisual>
                               hook: hook,
                               compactProgress: textCompactT,
                               modeRevealProgress: t,
+                              badgeMotionTrigger: widget.badgeMotionTrigger,
                             ),
                           ),
                           ChapterModeDock(
@@ -1061,6 +1151,7 @@ class _ExpandedChapterVisualState extends State<_ExpandedChapterVisual>
                         hook: hook,
                         compactProgress: textCompactT,
                         modeRevealProgress: t,
+                        badgeMotionTrigger: widget.badgeMotionTrigger,
                       ),
               ),
               Positioned(
@@ -1405,6 +1496,127 @@ class _ChapterUnifiedBottomScrim extends StatelessWidget {
   }
 }
 
+/// 챕터 라벨 행 — 헤더와 동일 언어 뱃지 + `Chapter N · English` 형식.
+class _HubChapterMetaLine extends StatelessWidget {
+  const _HubChapterMetaLine({
+    required this.language,
+    required this.chapterNo,
+    this.forExpandedHero = false,
+    this.compactProgress = 0,
+    this.badgeMotionTrigger = 0,
+  });
+
+  static const _heroBadgeSize = 19.0;
+  static const _compactBadgeSize = 16.0;
+
+  final String language;
+  final int chapterNo;
+  final bool forExpandedHero;
+  final double compactProgress;
+  final int badgeMotionTrigger;
+
+  @override
+  Widget build(BuildContext context) {
+    final t = compactProgress.clamp(0.0, 1.0);
+
+    if (forExpandedHero) {
+      final chapterSize = _ChapterHeroHeaderTexts._lerp(14, 13, t);
+      final shadowAlpha = _ChapterHeroHeaderTexts._lerp(0.65, 0.72, t);
+      final blur = _ChapterHeroHeaderTexts._lerp(8, 9, t);
+      final shadow = [
+        Shadow(
+          color: Colors.black.withValues(alpha: shadowAlpha),
+          blurRadius: blur,
+        ),
+      ];
+
+      return Row(
+        crossAxisAlignment: CrossAxisAlignment.center,
+        children: [
+          LanguageHeaderBadge(
+            selectedLanguage: language,
+            size: _heroBadgeSize,
+            enableIdleMotion: false,
+            motionTrigger: badgeMotionTrigger,
+          ),
+          const SizedBox(width: 6),
+          Expanded(
+            child: Text.rich(
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+              TextSpan(
+                children: [
+                  TextSpan(
+                    text: hubChapterLabel(language, chapterNo),
+                    style: TextStyle(
+                      fontSize: chapterSize,
+                      fontWeight: FontWeight.w700,
+                      color: const Color(0xFF38BDF8),
+                      letterSpacing: _ChapterHeroHeaderTexts._lerp(0.6, 0.5, t),
+                      shadows: shadow,
+                    ),
+                  ),
+                  TextSpan(
+                    text: ' · ${languageNativeDisplayName(language)}',
+                    style: TextStyle(
+                      fontSize: chapterSize,
+                      fontWeight: FontWeight.w600,
+                      color: Colors.white.withValues(alpha: 0.72),
+                      letterSpacing: _ChapterHeroHeaderTexts._lerp(0.2, 0.15, t),
+                      shadows: shadow,
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ),
+        ],
+      );
+    }
+
+    return Row(
+      crossAxisAlignment: CrossAxisAlignment.center,
+      children: [
+        LanguageHeaderBadge(
+          selectedLanguage: language,
+          size: _compactBadgeSize,
+          enableIdleMotion: false,
+          motionTrigger: badgeMotionTrigger,
+        ),
+        const SizedBox(width: 5),
+        Expanded(
+          child: Text.rich(
+            maxLines: 1,
+            overflow: TextOverflow.ellipsis,
+            TextSpan(
+              children: [
+                TextSpan(
+                  text: hubChapterLabel(language, chapterNo),
+                  style: const TextStyle(
+                    fontSize: 11,
+                    fontWeight: FontWeight.w700,
+                    color: Color(0xFF0284C7),
+                    height: 1.1,
+                  ),
+                ),
+                TextSpan(
+                  text: ' · ${languageNativeDisplayName(language)}',
+                  style: const TextStyle(
+                    fontSize: 11,
+                    fontWeight: FontWeight.w600,
+                    color: Color(0xFF64748B),
+                    height: 1.1,
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ),
+      ],
+    );
+  }
+}
+
 class _ChapterHeroHeaderTexts extends StatelessWidget {
   final String language;
   final int chapterNo;
@@ -1412,6 +1624,7 @@ class _ChapterHeroHeaderTexts extends StatelessWidget {
   final String hook;
   final double compactProgress;
   final double modeRevealProgress;
+  final int badgeMotionTrigger;
 
   const _ChapterHeroHeaderTexts({
     required this.language,
@@ -1420,6 +1633,7 @@ class _ChapterHeroHeaderTexts extends StatelessWidget {
     this.hook = '',
     this.compactProgress = 0,
     this.modeRevealProgress = 0,
+    this.badgeMotionTrigger = 0,
   });
 
   static double _lerp(double from, double to, double t) =>
@@ -1432,7 +1646,6 @@ class _ChapterHeroHeaderTexts extends StatelessWidget {
     final dockOpen = modeRevealProgress > 0.04;
     final hookMaxLines = dockOpen ? 3 : (t > 0.7 ? 2 : 3);
 
-    final chapterSize = _lerp(14, 13, t);
     final titleSize = _lerp(26, 22, t);
     final hookSize = _lerp(14.5, 12.5, t);
     final titleLineHeight = _lerp(1.12, 1.1, t);
@@ -1445,20 +1658,12 @@ class _ChapterHeroHeaderTexts extends StatelessWidget {
       crossAxisAlignment: CrossAxisAlignment.start,
       mainAxisSize: MainAxisSize.min,
       children: [
-        Text(
-          hubChapterLabel(language, chapterNo),
-          style: TextStyle(
-            fontSize: chapterSize,
-            fontWeight: FontWeight.w700,
-            color: const Color(0xFF38BDF8),
-            letterSpacing: _lerp(0.6, 0.5, t),
-            shadows: [
-              Shadow(
-                color: Colors.black.withValues(alpha: _lerp(0.65, 0.72, t)),
-                blurRadius: _lerp(8, 9, t),
-              ),
-            ],
-          ),
+        _HubChapterMetaLine(
+          language: language,
+          chapterNo: chapterNo,
+          forExpandedHero: true,
+          compactProgress: t,
+          badgeMotionTrigger: badgeMotionTrigger,
         ),
         SizedBox(height: gapAfterChapter),
         Text(

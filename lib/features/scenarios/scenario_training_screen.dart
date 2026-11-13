@@ -13,6 +13,7 @@ import '../../app/last_learning_session_providers.dart';
 import '../../app/scenario_providers.dart';
 import '../../app/shell_providers.dart';
 import '../../app/vocabulary_providers.dart';
+import '../../core/accessibility/app_accessibility.dart';
 import '../../core/config/active5_layout.dart';
 import '../../core/theme/language_palette.dart';
 import '../../core/widgets/device_scaffold.dart';
@@ -1028,18 +1029,25 @@ class _CompactIconButton extends StatelessWidget {
     final iconColor = enabled ? color : color.withValues(alpha: 0.35);
     return Tooltip(
       message: tooltip,
-      child: Material(
-        color: enabled
-            ? color.withValues(alpha: 0.1)
-            : DashboardPalette.borderLight.withValues(alpha: 0.65),
-        borderRadius: BorderRadius.circular(14),
-        child: InkWell(
-          onTap: enabled ? onTap : null,
+      child: Semantics(
+        button: true,
+        enabled: enabled,
+        label: tooltip,
+        child: Material(
+          color: enabled
+              ? color.withValues(alpha: 0.1)
+              : DashboardPalette.borderLight.withValues(alpha: 0.65),
           borderRadius: BorderRadius.circular(14),
-          child: SizedBox(
-            width: 44,
-            height: 44,
-            child: Icon(icon, color: iconColor, size: 22),
+          child: InkWell(
+            onTap: enabled ? onTap : null,
+            borderRadius: BorderRadius.circular(14),
+            child: SizedBox(
+              width: AppAccessibility.minTouchTarget,
+              height: AppAccessibility.minTouchTarget,
+              child: ExcludeSemantics(
+                child: Icon(icon, color: iconColor, size: 24),
+              ),
+            ),
           ),
         ),
       ),
@@ -1209,25 +1217,38 @@ class _SideActionState extends State<_SideAction>
             ? Curves.easeInOut.transform(_pulse.value)
             : 0.0;
         final accent = Color.lerp(base, _warmAccent, t * 0.72)!;
-        return InkWell(
-          onTap: widget.enabled ? widget.onTap : null,
-          borderRadius: BorderRadius.circular(14),
-          child: Padding(
-            padding: const EdgeInsets.symmetric(vertical: 8, horizontal: 4),
-            child: Column(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                Icon(widget.icon, size: 22, color: accent),
-                const SizedBox(height: 4),
-                Text(
-                  widget.label,
-                  style: TextStyle(
-                    fontSize: 11,
-                    fontWeight: FontWeight.w700,
-                    color: accent,
-                  ),
+        return Semantics(
+          button: true,
+          enabled: widget.enabled,
+          label: widget.label,
+          child: InkWell(
+            onTap: widget.enabled ? widget.onTap : null,
+            borderRadius: BorderRadius.circular(14),
+            child: ConstrainedBox(
+              constraints: const BoxConstraints(
+                minHeight: AppAccessibility.minTouchTarget,
+                minWidth: AppAccessibility.minTouchTarget,
+              ),
+              child: Padding(
+                padding:
+                    const EdgeInsets.symmetric(vertical: 8, horizontal: 6),
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  mainAxisAlignment: MainAxisAlignment.center,
+                  children: [
+                    Icon(widget.icon, size: 24, color: accent),
+                    const SizedBox(height: 4),
+                    Text(
+                      widget.label,
+                      style: TextStyle(
+                        fontSize: 12,
+                        fontWeight: FontWeight.w700,
+                        color: accent,
+                      ),
+                    ),
+                  ],
                 ),
-              ],
+              ),
             ),
           ),
         );
@@ -1339,6 +1360,12 @@ class _MicButtonState extends State<_MicButton>
   @override
   Widget build(BuildContext context) {
     const micSize = 64.0;
+    final micLabel = widget.isInitializing
+        ? '음성 인식 준비 중'
+        : widget.isListening
+            ? '녹음 종료'
+            : '녹음 시작';
+
     final button = Material(
       color: Colors.transparent,
       child: InkWell(
@@ -1346,10 +1373,14 @@ class _MicButtonState extends State<_MicButton>
             ? widget.onPressed
             : null,
         customBorder: const CircleBorder(),
-        child: SizedBox(
-          width: micSize,
-          height: micSize,
-          child: Stack(
+        child: Semantics(
+          button: true,
+          enabled: widget.enabled && !widget.isInitializing,
+          label: micLabel,
+          child: SizedBox(
+            width: micSize,
+            height: micSize,
+            child: Stack(
             alignment: Alignment.center,
             clipBehavior: Clip.none,
             children: [
@@ -1516,6 +1547,7 @@ class _MicButtonState extends State<_MicButton>
               ),
             ],
           ),
+        ),
         ),
       ),
     );

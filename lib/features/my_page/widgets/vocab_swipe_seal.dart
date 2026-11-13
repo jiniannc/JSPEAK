@@ -268,7 +268,7 @@ class _VocabSealTheme {
   static _VocabSealTheme of(String language) {
     return switch (language) {
       'Japanese' => const _VocabSealTheme(
-        assetPath: 'assets/images/badge_vocab_jp.png',
+        assetPath: 'assets/images/badge_vocab_jp.webp',
         ringColors: [
           Color(0xFFFCD34D),
           Color(0xFFF59E0B),
@@ -284,7 +284,7 @@ class _VocabSealTheme {
         trackColor: Color(0xFFFDE68A),
       ),
       'Chinese' => const _VocabSealTheme(
-        assetPath: 'assets/images/badge_vocab_cn.png',
+        assetPath: 'assets/images/badge_vocab_cn.webp',
         ringColors: [
           Color(0xFFFCD34D),
           Color(0xFFDC2626),
@@ -300,7 +300,7 @@ class _VocabSealTheme {
         trackColor: Color(0xFFFECACA),
       ),
       _ => const _VocabSealTheme(
-        assetPath: 'assets/images/badge_vocab_en.png',
+        assetPath: 'assets/images/badge_vocab_en.webp',
         ringColors: [
           Color(0xFFFCD34D),
           Color(0xFFF59E0B),

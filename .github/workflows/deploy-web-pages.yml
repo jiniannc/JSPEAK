@@ -44,6 +44,7 @@ jobs:
           flutter build web --release
           --base-href "/JSPEAK/"
           --dart-define=CONTENT_URL=${{ env.CONTENT_URL }}
+          --dart-define=JSPEAK_WEB_DEMO=true
 
       - name: Upload Pages artifact
         uses: actions/upload-pages-artifact@v3

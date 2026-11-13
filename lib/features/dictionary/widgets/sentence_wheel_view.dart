@@ -8,6 +8,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../../app/learning_tour_providers.dart';
 import '../../../app/providers.dart';
+import '../../../app/sentence_voice_provider.dart';
 import '../../../app/speech_providers.dart';
 import '../../../core/config/active5_layout.dart';
 import '../../../core/services/audio_prefetch.dart';
@@ -162,9 +163,17 @@ class _SentenceWheelViewState extends ConsumerState<SentenceWheelView>
     );
     WidgetsBinding.instance.addPostFrameCallback((_) {
       widget.onIndexChanged?.call(_currentIndex);
-      AudioPrefetch.around(widget.sentences, _currentIndex);
+      _prefetchAround(_currentIndex);
       _scheduleInitialTour();
     });
+  }
+
+  void _prefetchAround(int index) {
+    AudioPrefetch.around(
+      widget.sentences,
+      index,
+      voice: ref.read(sentenceVoiceProvider),
+    );
   }
 
   Future<void> _scheduleInitialTour() async {
@@ -188,7 +197,7 @@ class _SentenceWheelViewState extends ConsumerState<SentenceWheelView>
     if (!overlayContext.mounted) return;
 
     final sentence = widget.sentences[_currentIndex];
-    final includeSpeedStep = sentence.audioUrl.isNotEmpty;
+    final includeSpeedStep = sentence.hasAnyAudio;
 
     await InFlightBriefingTour.show(
       context: overlayContext,
@@ -294,7 +303,7 @@ class _SentenceWheelViewState extends ConsumerState<SentenceWheelView>
       _speechPracticeController.reset();
       setState(() => _currentIndex = targetIndex);
       widget.onIndexChanged?.call(targetIndex);
-      AudioPrefetch.around(widget.sentences, targetIndex);
+      _prefetchAround(targetIndex);
     }
 
     final wheelFuture = _controller.hasClients
@@ -364,7 +373,7 @@ class _SentenceWheelViewState extends ConsumerState<SentenceWheelView>
 
     setState(() => _currentIndex = clamped);
     widget.onIndexChanged?.call(clamped);
-    AudioPrefetch.around(widget.sentences, clamped);
+    _prefetchAround(clamped);
     _dragHapticAnchorIndex = null;
     _maybeHapticForSnapIndex(clamped);
 

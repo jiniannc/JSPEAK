@@ -3,6 +3,7 @@ import 'package:flutter_svg/flutter_svg.dart';
 import 'package:go_router/go_router.dart';
 
 import '../../core/config/active5_layout.dart';
+import '../../core/constants/labels.dart';
 import '../../core/theme/language_palette.dart';
 import 'compact_language_switcher.dart';
 import 'jspeak_logo_color_mapper.dart';
@@ -69,7 +70,7 @@ class AppHeader extends StatelessWidget {
     final style = variant.style;
     return AppHeader(
       key: key,
-      title: style.title,
+      title: variant.titleForLanguage(selectedLanguage),
       subtitle: style.subtitle,
       icon: style.icon,
       titleDotColor: style.titleDotColor,
@@ -124,8 +125,8 @@ class AppHeader extends StatelessWidget {
   static const trailingTop = topInset;
   static const trailingHeight = actionBandHeight;
 
-  static const homeBrandTagline =
-      'Global Communication Onboard Guide for Jinair Cabin Crew';
+  static String homeBrandTaglineFor(String language) =>
+      appBrandTagline(language);
 
   static bool usesBrandHeader(int tabIndex) =>
       tabIndex >= 0 && tabIndex <= 3;
@@ -203,7 +204,7 @@ class AppHeader extends StatelessWidget {
                 logoAsset: logoAsset!,
                 selectedLanguage: selectedLanguage,
                 usesGlobalTagline: usesGlobalTagline,
-                globalTagline: AppHeader.homeBrandTagline,
+                globalTagline: AppHeader.homeBrandTaglineFor(selectedLanguage),
                 sectionTitle: title,
                 sectionAccent: titleDotColor,
                 animateSection: animateTitle && !usesGlobalTagline,
@@ -944,12 +945,25 @@ enum AppHeaderVariant {
     }
   }
 
+  String titleForLanguage(String language) {
+    switch (this) {
+      case AppHeaderVariant.home:
+        return 'JSPEAK';
+      case AppHeaderVariant.learningHub:
+        return appHeaderLearningHubTitle(language);
+      case AppHeaderVariant.cabinDictionary:
+        return appHeaderCabinDictionaryTitle(language);
+      default:
+        return style.title;
+    }
+  }
+
   AppHeaderStyle get style {
     switch (this) {
       case AppHeaderVariant.home:
         return const AppHeaderStyle(
           title: 'JSPEAK',
-          subtitle: AppHeader.homeBrandTagline,
+          subtitle: '',
           icon: Icons.flight_outlined,
           titleDotColor: Color(0xFF475569),
           logoAsset: AppHeader.homeBrandLogoAsset,
