@@ -2,28 +2,24 @@ import 'dart:convert';
 import 'dart:io';
 
 import 'package:crypto/crypto.dart';
-import 'package:dio/dio.dart';
 import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:path_provider/path_provider.dart';
 
 import '../../../core/logging/app_log.dart';
-import '../../../core/network/apps_script_audio_decoder.dart';
-import '../../../core/network/apps_script_fetch.dart';
+import '../../../core/services/audio_bytes_cache.dart';
 
 /// 오디오 파일을 기기에 내려받아 오프라인 재생을 지원한다.
 /// 캐시 키는 URL 해시라서, 시트에서 오디오 URL을 바꾸면 자연스럽게 새로 받는다.
 /// 웹에서는 파일 시스템이 없으므로 캐시 없이 스트리밍으로 폴백한다.
 class AudioCacheDataSource {
-  final Dio _dio;
+  final AudioBytesCache _bytes;
 
-  AudioCacheDataSource([Dio? dio])
-      : _dio = dio ??
-            Dio(BaseOptions(
-              connectTimeout: const Duration(seconds: 15),
-              receiveTimeout: const Duration(minutes: 2),
-              followRedirects: true,
-              maxRedirects: 5,
-            ));
+  AudioCacheDataSource([AudioBytesCache? bytes])
+      : _bytes = bytes ?? AudioBytesCache.instance;
+
+  /// 같은 파일을 동시에 여러 곳(재생·카테고리 프리로드·전체 다운로드)에서 써도 한 번만 저장.
+  static final Map<String, Future<String>> _writing = {};
+  static int _tmpSeq = 0;
 
   Future<Directory> _cacheDir() async {
     final base = await getApplicationSupportDirectory();
@@ -37,45 +33,83 @@ class AudioCacheDataSource {
   String _fileNameFor(String url) =>
       '${md5.convert(utf8.encode(url))}.audio';
 
+  Future<String> _pathFor(String url) async {
+    final dir = await _cacheDir();
+    return '${dir.path}${Platform.pathSeparator}${_fileNameFor(url)}';
+  }
+
   /// 캐시된 파일 경로. 없으면 null.
   Future<String?> cachedPath(String url) async {
     if (kIsWeb || url.isEmpty) return null;
-    final dir = await _cacheDir();
-    final file = File('${dir.path}${Platform.pathSeparator}${_fileNameFor(url)}');
-    return await file.exists() ? file.path : null;
+    final file = File(await _pathFor(url));
+    if (!await file.exists()) return null;
+    if (await file.length() == 0) {
+      await _deleteQuietly(file);
+      return null;
+    }
+    return file.path;
   }
 
   /// URL을 내려받아 캐시하고 로컬 경로를 반환. 웹이면 null.
-  Future<String?> download(String url) async {
+  /// [priority]면 백그라운드 다운로드 대기열을 건너뛴다.
+  Future<String?> download(String url, {bool priority = false}) async {
     if (kIsWeb || url.isEmpty) return null;
-    final dir = await _cacheDir();
-    final path = '${dir.path}${Platform.pathSeparator}${_fileNameFor(url)}';
-    final tmpPath = '$path.tmp';
-
-    if (AppsScriptFetch.isWebAppUrl(url)) {
-      final fetch = AppsScriptFetch();
-      final response = await fetch.getBytes(url);
-      final bytes = AppsScriptAudioDecoder.decodeBytes(response.data ?? const []);
-      await File(tmpPath).writeAsBytes(bytes, flush: true);
-    } else {
-      await _dio.download(url, tmpPath);
+    final writing = _writing[url];
+    if (writing != null) {
+      if (priority) _bytes.getOrFetch(url, priority: true).ignore();
+      return writing;
     }
 
-    final tmp = File(tmpPath);
-    await tmp.rename(path);
+    final future = _downloadAndWrite(url, priority: priority);
+    _writing[url] = future;
+    try {
+      return await future;
+    } finally {
+      _writing.remove(url);
+    }
+  }
+
+  Future<String> _downloadAndWrite(String url, {required bool priority}) async {
+    final path = await _pathFor(url);
+    final existing = File(path);
+    if (await existing.exists() && await existing.length() > 0) return path;
+
+    final audio = await _bytes.getOrFetch(url, priority: priority);
+    final tmp = File('$path.${DateTime.now().microsecondsSinceEpoch}_${_tmpSeq++}.tmp');
+    try {
+      await tmp.writeAsBytes(audio.bytes, flush: true);
+      await tmp.rename(path);
+    } catch (_) {
+      await _deleteQuietly(tmp);
+      rethrow;
+    }
+    if (!priority) _bytes.evict(url);
     return path;
   }
 
   /// 캐시가 있으면 경로 반환, 없으면 내려받아서 반환. 실패/웹이면 null.
-  Future<String?> ensureCached(String url) async {
+  Future<String?> ensureCached(String url, {bool priority = false}) async {
     final existing = await cachedPath(url);
     if (existing != null) return existing;
     try {
-      return await download(url);
+      return await download(url, priority: priority);
     } catch (e, st) {
       AppLog.debug('audio_cache', '오디오 캐시 실패: $url', e, st);
       return null;
     }
+  }
+
+  /// 재생에 실패한(손상된) 캐시 파일 삭제 — 다음 시도에서 새로 받는다.
+  Future<void> evict(String url) async {
+    if (kIsWeb || url.isEmpty) return;
+    await _deleteQuietly(File(await _pathFor(url)));
+    _bytes.evict(url);
+  }
+
+  Future<void> _deleteQuietly(File file) async {
+    try {
+      if (await file.exists()) await file.delete();
+    } catch (_) {}
   }
 
   Future<int> cacheSizeBytes() async {

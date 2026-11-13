@@ -389,16 +389,22 @@ class _WheelLearningPanelState extends ConsumerState<WheelLearningPanel> {
                             onVoiceChanged: sentence.hasBothVoices
                                 ? (v) => _onVoiceChanged(v, audio: audio)
                                 : null,
-                            onPlayPause: () {
-                              ref
-                                  .read(sentenceProgressProvider.notifier)
-                                  .markListened(sentence.id);
-                              ref
-                                  .read(audioProvider.notifier)
-                                  .togglePlayPause(
-                                    sentence,
-                                    voice: preferredVoice,
-                                  );
+                            onPlayPause: () async {
+                              final audioNotifier =
+                                  ref.read(audioProvider.notifier);
+                              await audioNotifier.togglePlayPause(
+                                sentence,
+                                voice: preferredVoice,
+                              );
+                              if (!context.mounted) return;
+                              final now = ref.read(audioProvider);
+                              if (now.playingSentenceId == sentence.id &&
+                                  (now.isPlaying ||
+                                      now.duration.inMilliseconds > 0)) {
+                                ref
+                                    .read(sentenceProgressProvider.notifier)
+                                    .markListened(sentence.id);
+                              }
                             },
                             onRestart: () => ref
                                 .read(audioProvider.notifier)

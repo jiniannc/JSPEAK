@@ -61,7 +61,12 @@ class ContentRepository {
   Future<String?> cachedAudioPath(String url) => _audioCache.cachedPath(url);
 
   /// 재생용 오디오 소스 결정: 캐시 파일 경로 우선, 없으면 내려받고, 실패하면 null.
-  Future<String?> localAudioPath(String url) => _audioCache.ensureCached(url);
+  /// 사용자가 누른 재생이므로 백그라운드 다운로드 대기열보다 먼저 받는다.
+  Future<String?> localAudioPath(String url) =>
+      _audioCache.ensureCached(url, priority: true);
+
+  /// 재생에 실패한 캐시 파일 삭제.
+  Future<void> evictCachedAudio(String url) => _audioCache.evict(url);
 
   /// 재생과 병렬로 디스크 캐시만 백그라운드 저장.
   Future<void> cacheAudioInBackground(String url) async {
@@ -87,6 +92,9 @@ class ContentRepository {
         .where((u) => u.isNotEmpty)
         .toSet()
         .toList();
+    onProgress?.call(0, urls.length);
+    if (urls.isEmpty) return 0;
+
     var done = 0;
     var succeeded = 0;
     for (final url in urls) {

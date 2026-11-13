@@ -40,6 +40,7 @@ class _BasicSentenceTrainingScreenState
   int _currentIndex = 0;
   bool _showCelebration = false;
   bool _initialSessionRecorded = false;
+  String? _categoryAudioPrefetchKey;
 
   void _leaveTraining() {
     if (!mounted) return;
@@ -110,6 +111,17 @@ class _BasicSentenceTrainingScreenState
                 sentences: sentences,
                 stats: progressState.stats,
               );
+              final prefetchKey =
+                  '${widget.language}|${widget.category}|${sentences.length}';
+              if (_categoryAudioPrefetchKey != prefetchKey) {
+                _categoryAudioPrefetchKey = prefetchKey;
+                WidgetsBinding.instance.addPostFrameCallback((_) {
+                  if (!mounted) return;
+                  ref
+                      .read(audioProvider.notifier)
+                      .prefetchCategory(sentences);
+                });
+              }
               final startIndex = _initialIndexFor(sentences);
               if (!_initialSessionRecorded && sentences.isNotEmpty) {
                 _initialSessionRecorded = true;

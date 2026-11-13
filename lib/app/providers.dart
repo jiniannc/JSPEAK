@@ -1,6 +1,7 @@
 import 'dart:async';
 
-import 'package:flutter/foundation.dart' show debugPrint, kIsWeb;
+import 'package:connectivity_plus/connectivity_plus.dart';
+import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:just_audio/just_audio.dart';
 
@@ -81,6 +82,7 @@ class ContentController extends AsyncNotifier<ContentState> {
       try {
         final bundle = await _repo.sync();
         _warmAudioAfterLoad(bundle);
+        _scheduleOfflineAudioPrefetch(bundle);
         return ContentState(bundle: bundle, lastSyncedAt: DateTime.now());
       } catch (e, st) {
         AppLog.warn('content_sync', '최초 동기화 실패', e, st);
@@ -95,9 +97,21 @@ class ContentController extends AsyncNotifier<ContentState> {
     }
     if (local.sentences.isNotEmpty) {
       _warmAudioAfterLoad(local);
+      _scheduleOfflineAudioPrefetch(local);
     }
     Future.microtask(() => unawaited(sync()));
     return initial;
+  }
+
+  /// 모바일·네트워크 있을 때 문장 오디오 전체를 백그라운드 순차 다운로드.
+  void _scheduleOfflineAudioPrefetch(ContentBundle bundle) {
+    if (kIsWeb) return;
+    Future.microtask(() {
+      if (!ref.mounted) return;
+      unawaited(
+        ref.read(audioOfflinePrefetchProvider.notifier).scheduleForBundle(bundle),
+      );
+    });
   }
 
   /// 수동 동기화 (설정 화면 / 당겨서 새로고침).
@@ -108,6 +122,7 @@ class ContentController extends AsyncNotifier<ContentState> {
     try {
       final bundle = await _repo.sync();
       _warmAudioAfterLoad(bundle);
+      _scheduleOfflineAudioPrefetch(bundle);
       state = AsyncData(ContentState(
         bundle: bundle,
         lastSyncedAt: DateTime.now(),
@@ -151,6 +166,137 @@ void _warmAppsScriptProxy() {
 final contentProvider =
     AsyncNotifierProvider<ContentController, ContentState>(
   ContentController.new,
+);
+
+/// 앱 실행·콘텐츠 동기화 후 오프라인용 오디오 전체 다운로드 (백그라운드).
+/// 스플래시·메인 화면 전환을 막지 않으며, [Future]는 호출부에서 await 하지 않는다.
+class AudioOfflinePrefetchState {
+  final bool running;
+  final int done;
+  final int total;
+  final DateTime? lastCompletedAt;
+
+  /// 마지막 완료 시 실제 저장에 성공한 파일 수.
+  final int lastSucceeded;
+
+  const AudioOfflinePrefetchState({
+    this.running = false,
+    this.done = 0,
+    this.total = 0,
+    this.lastCompletedAt,
+    this.lastSucceeded = 0,
+  });
+
+  double get progress =>
+      total <= 0 ? 0.0 : (done / total).clamp(0.0, 1.0);
+
+  AudioOfflinePrefetchState copyWith({
+    bool? running,
+    int? done,
+    int? total,
+    DateTime? lastCompletedAt,
+    int? lastSucceeded,
+  }) {
+    return AudioOfflinePrefetchState(
+      running: running ?? this.running,
+      done: done ?? this.done,
+      total: total ?? this.total,
+      lastCompletedAt: lastCompletedAt ?? this.lastCompletedAt,
+      lastSucceeded: lastSucceeded ?? this.lastSucceeded,
+    );
+  }
+}
+
+class AudioOfflinePrefetchController extends Notifier<AudioOfflinePrefetchState> {
+  int _runGeneration = 0;
+  StreamSubscription<List<ConnectivityResult>>? _connectivitySub;
+
+  /// 실행 중에 새 번들이 오면(동기화·네트워크 복구) 끝난 뒤 한 번 더 돈다.
+  ContentBundle? _pendingBundle;
+
+  @override
+  AudioOfflinePrefetchState build() {
+    if (!kIsWeb) {
+      _connectivitySub ??= Connectivity().onConnectivityChanged.listen(
+        (results) => _onConnectivityChanged(results),
+      );
+      ref.onDispose(() {
+        unawaited(_connectivitySub?.cancel());
+        _connectivitySub = null;
+      });
+    }
+    return const AudioOfflinePrefetchState();
+  }
+
+  void _onConnectivityChanged(List<ConnectivityResult> results) {
+    if (!_hasUsableNetwork(results)) return;
+    final bundle = ref.read(contentProvider).value?.bundle;
+    if (bundle == null || bundle.isEmpty) return;
+    unawaited(scheduleForBundle(bundle));
+  }
+
+  bool _hasUsableNetwork(List<ConnectivityResult> results) {
+    return results.any(
+      (r) =>
+          r != ConnectivityResult.none && r != ConnectivityResult.bluetooth,
+    );
+  }
+
+  Future<bool> _canDownloadNow() async {
+    final results = await Connectivity().checkConnectivity();
+    return _hasUsableNetwork(results);
+  }
+
+  Future<void> scheduleForBundle(ContentBundle bundle) async {
+    if (kIsWeb) return;
+    if (!AppConfig.isConfigured) return;
+    if (bundle.isEmpty) return;
+    if (state.running) {
+      _pendingBundle = bundle;
+      return;
+    }
+    if (!await _canDownloadNow()) return;
+    if (state.running) {
+      _pendingBundle = bundle;
+      return;
+    }
+
+    final gen = ++_runGeneration;
+    state = state.copyWith(running: true, done: 0, total: 0);
+
+    try {
+      final repo = ref.read(contentRepositoryProvider);
+      final succeeded = await repo.prefetchAllAudio(
+        bundle,
+        onProgress: (done, total) {
+          if (!ref.mounted || gen != _runGeneration) return;
+          state = state.copyWith(done: done, total: total);
+        },
+      );
+      if (!ref.mounted || gen != _runGeneration) return;
+      state = state.copyWith(
+        running: false,
+        lastCompletedAt: DateTime.now(),
+        lastSucceeded: succeeded,
+      );
+    } catch (e, st) {
+      AppLog.debug('audio_offline', '전체 오디오 자동 다운로드 실패', e, st);
+      if (ref.mounted && gen == _runGeneration) {
+        state = state.copyWith(running: false);
+      }
+    }
+
+    final next = _pendingBundle;
+    _pendingBundle = null;
+    if (next != null && ref.mounted) {
+      unawaited(scheduleForBundle(next));
+    }
+  }
+}
+
+final audioOfflinePrefetchProvider =
+    NotifierProvider<AudioOfflinePrefetchController, AudioOfflinePrefetchState>(
+  AudioOfflinePrefetchController.new,
 );
 
 /// 현재 재생 중인 문장 상태.
@@ -259,6 +405,19 @@ class AudioController extends Notifier<AudioState> {
     await play(sentence, voice: voice);
   }
 
+  /// 문장 스피킹 카테고리(괄호 그룹) 전체 — 여·남 URL을 백그라운드로 받는다.
+  void prefetchCategory(Iterable<Sentence> sentences) {
+    for (final sentence in sentences) {
+      if (!sentence.hasAnyAudio) continue;
+      if (sentence.audioUrl.isNotEmpty) {
+        prefetch(sentence, voice: VoiceGender.female);
+      }
+      if (sentence.audioUrlMale.isNotEmpty) {
+        prefetch(sentence, voice: VoiceGender.male);
+      }
+    }
+  }
+
   /// 화면 진입 시 미리 받기 — 메모리 캐시 + (모바일) 디스크 캐시.
   void prefetch(
     Sentence sentence, {
@@ -306,16 +465,28 @@ class AudioController extends Notifier<AudioState> {
       await service.setSpeed(state.playbackSpeed);
 
       // 웹: 디스크 캐시 없음 → 메모리 캐시 + 스트리밍.
-      // 모바일: 디스크에 있으면 즉시, 없으면 네트워크 재생 후 백그라운드 저장.
+      // 모바일: 로컬 파일 재생이 가장 안정적. 없으면 받을 때까지 기다렸다 재생.
       String? localPath;
       if (!kIsWeb) {
         localPath = await repo.cachedAudioPath(playbackUrl);
+        localPath ??= await repo.localAudioPath(playbackUrl);
       }
       if (!_isCurrent(sentence, resolvedVoice)) return;
 
+      var playedFromFile = false;
       if (localPath != null) {
-        await service.playFile(localPath);
-      } else {
+        try {
+          await service.playFile(localPath);
+          playedFromFile = true;
+        } catch (e, st) {
+          // 손상된 캐시 파일 — 지우고 온라인으로 한 번 더 시도한다.
+          AppLog.warn('audio', '캐시 파일 재생 실패, 온라인 재시도: $playbackUrl', e, st);
+          await repo.evictCachedAudio(playbackUrl);
+          if (!_isCurrent(sentence, resolvedVoice)) return;
+        }
+      }
+      if (!playedFromFile) {
+        // 디스크에 없거나 받기 실패 — 온라인 재생 (오프라인 다운로드 완료 전에도 동작).
         await service.playUrl(playbackUrl);
         if (!kIsWeb) {
           unawaited(repo.cacheAudioInBackground(playbackUrl));
@@ -334,8 +505,7 @@ class AudioController extends Notifier<AudioState> {
         position: Duration.zero,
       );
     } catch (e, st) {
-      debugPrint('오디오 재생 실패: $playbackUrl');
-      debugPrint('$e\n$st');
+      AppLog.warn('audio', '오디오 재생 실패: $playbackUrl', e, st);
       if (!_isCurrent(sentence, resolvedVoice)) return;
       final speed = state.playbackSpeed;
       state = AudioState(playbackSpeed: speed);
@@ -351,6 +521,8 @@ class AudioController extends Notifier<AudioState> {
       await play(sentence, voice: voice);
       return;
     }
+    // 받는 중 재탭 — resume()하면 이전 문장 소스가 재생될 수 있어 무시한다.
+    if (state.loading) return;
     if (state.isPlaying) {
       await service.pause();
       state = state.copyWith(isPlaying: false);
@@ -388,6 +560,9 @@ class AudioController extends Notifier<AudioState> {
     VoiceGender voice = VoiceGender.female,
   }) async {
     final service = ref.read(audioPlayerServiceProvider);
+    if (_isCurrent(sentence, sentence.resolveVoice(voice)) && state.loading) {
+      return;
+    }
     if (!_isCurrent(sentence, sentence.resolveVoice(voice)) ||
         !state.isActive ||
         service.processingState == ProcessingState.completed) {

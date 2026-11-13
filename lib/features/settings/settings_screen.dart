@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../app/providers.dart';
@@ -6,6 +8,7 @@ import '../../core/config/app_config.dart';
 import '../../core/utils/content_sync_status.dart';
 import '../../core/widgets/active5_app_bar.dart';
 import '../../core/widgets/device_scaffold.dart';
+import 'widgets/audio_offline_prefetch_tile.dart';
 
 /// 설정: 콘텐츠 동기화, 오디오 전체 다운로드, 캐시 관리.
 class SettingsScreen extends ConsumerStatefulWidget {
@@ -16,9 +19,6 @@ class SettingsScreen extends ConsumerStatefulWidget {
 }
 
 class _SettingsScreenState extends ConsumerState<SettingsScreen> {
-  bool _prefetching = false;
-  int _prefetchDone = 0;
-  int _prefetchTotal = 0;
   int? _cacheSizeBytes;
 
   @override
@@ -33,33 +33,14 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
     if (mounted) setState(() => _cacheSizeBytes = size);
   }
 
-  Future<void> _prefetchAudio() async {
+  void _prefetchAudio() {
     final state = ref.read(contentProvider).value;
-    if (state == null || state.bundle.isEmpty || _prefetching) return;
-
-    setState(() {
-      _prefetching = true;
-      _prefetchDone = 0;
-      _prefetchTotal = 0;
-    });
-    final succeeded =
-        await ref.read(contentRepositoryProvider).prefetchAllAudio(
-      state.bundle,
-      onProgress: (done, total) {
-        if (mounted) {
-          setState(() {
-            _prefetchDone = done;
-            _prefetchTotal = total;
-          });
-        }
-      },
-    );
-    if (!mounted) return;
-    setState(() => _prefetching = false);
-    await _refreshCacheSize();
-    if (!mounted) return;
-    ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(content: Text('오디오 $succeeded / $_prefetchTotal개 다운로드 완료')),
+    if (state == null || state.bundle.isEmpty) return;
+    if (ref.read(audioOfflinePrefetchProvider).running) return;
+    unawaited(
+      ref
+          .read(audioOfflinePrefetchProvider.notifier)
+          .scheduleForBundle(state.bundle),
     );
   }
 
@@ -82,7 +63,6 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
     final contentState = ref.watch(contentProvider).value;
     final syncedAt = contentState?.lastSyncedAt;
     final syncing = contentState?.syncing ?? false;
-
     final metrics = Active5Layout.of(context);
 
     return DeviceScaffold(
@@ -133,24 +113,9 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
           ),
           const Divider(),
           const _SectionHeader('오프라인 오디오'),
-          ListTile(
-            contentPadding: const EdgeInsets.symmetric(horizontal: 20, vertical: 4),
-            minVerticalPadding: 12,
-            leading: const Icon(Icons.download_outlined, size: 28),
-            title: const Text('오디오 전체 다운로드', style: TextStyle(fontSize: 17)),
-            subtitle: Text(
-              _prefetching
-                  ? '다운로드 중... $_prefetchDone / $_prefetchTotal'
-                  : '비행 전 미리 받아두면 오프라인에서 재생됩니다',
-            ),
-            trailing: _prefetching
-                ? const SizedBox(
-                    width: 20,
-                    height: 20,
-                    child: CircularProgressIndicator(strokeWidth: 2),
-                  )
-                : null,
-            onTap: _prefetching ? null : _prefetchAudio,
+          AudioOfflinePrefetchTile(
+            onManualPrefetch: _prefetchAudio,
+            onPrefetchFinished: _refreshCacheSize,
           ),
           ListTile(
             contentPadding: const EdgeInsets.symmetric(horizontal: 20, vertical: 4),

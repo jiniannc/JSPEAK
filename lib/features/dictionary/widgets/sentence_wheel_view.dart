@@ -11,7 +11,6 @@ import '../../../app/providers.dart';
 import '../../../app/sentence_voice_provider.dart';
 import '../../../app/speech_providers.dart';
 import '../../../core/config/active5_layout.dart';
-import '../../../core/services/audio_prefetch.dart';
 import '../../../core/theme/app_theme.dart';
 import '../../../core/theme/language_palette.dart';
 import '../../../data/models/sentence.dart';
@@ -168,12 +167,16 @@ class _SentenceWheelViewState extends ConsumerState<SentenceWheelView>
     });
   }
 
+  /// 사전 검색 카드와 동일 — 메모리 + (모바일) 디스크 프리페치.
   void _prefetchAround(int index) {
-    AudioPrefetch.around(
-      widget.sentences,
-      index,
-      voice: ref.read(sentenceVoiceProvider),
-    );
+    if (widget.sentences.isEmpty) return;
+    final voice = ref.read(sentenceVoiceProvider);
+    final audio = ref.read(audioProvider.notifier);
+    final start = (index - 1).clamp(0, widget.sentences.length - 1);
+    final end = (index + 2).clamp(0, widget.sentences.length - 1);
+    for (var i = start; i <= end; i++) {
+      audio.prefetch(widget.sentences[i], voice: voice);
+    }
   }
 
   Future<void> _scheduleInitialTour() async {
