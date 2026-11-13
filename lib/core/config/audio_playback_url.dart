@@ -22,6 +22,34 @@ class AudioPlaybackUrl {
     return Sentence.resolveAudioUrl(value);
   }
 
+  /// 디스크 캐시 키. 같은 Drive 파일이면 프록시 배포 URL이 달라도 같은 키를 쓴다.
+  static String cacheKey(String url) {
+    final value = url.trim();
+    final uri = Uri.tryParse(value);
+    if (uri != null && uri.host.contains('script.google.com')) {
+      final id = uri.queryParameters['audio'];
+      if (id != null && id.isNotEmpty) return 'drive:$id';
+      final audioIndex = uri.pathSegments.indexOf('audio');
+      if (audioIndex >= 0 && audioIndex < uri.pathSegments.length - 1) {
+        return 'drive:${uri.pathSegments[audioIndex + 1]}';
+      }
+    }
+    final driveId =
+        value.startsWith('http') ? Sentence.extractDriveFileId(value) : null;
+    if (driveId != null) return 'drive:$driveId';
+    return value;
+  }
+
+  /// 프록시·Drive URL이면 Drive 파일 ID, 아니면 null.
+  static String? driveFileIdOf(String url) {
+    final key = cacheKey(url);
+    return key.startsWith('drive:') ? key.substring('drive:'.length) : null;
+  }
+
+  static String directDriveUrl(String fileId) =>
+      'https://drive.usercontent.google.com/download'
+      '?id=${Uri.encodeQueryComponent(fileId)}&export=download';
+
   static String? _driveFileId(String value) {
     if (!value.startsWith('http')) {
       if (RegExp(r'^[a-zA-Z0-9_-]+$').hasMatch(value)) return value;

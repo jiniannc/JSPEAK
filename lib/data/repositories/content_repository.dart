@@ -1,4 +1,5 @@
 import 'dart:convert';
+import 'dart:math' as math;
 
 import 'package:flutter/services.dart' show rootBundle;
 
@@ -95,14 +96,23 @@ class ContentRepository {
     onProgress?.call(0, urls.length);
     if (urls.isEmpty) return 0;
 
+    var next = 0;
     var done = 0;
     var succeeded = 0;
-    for (final url in urls) {
-      final path = await _audioCache.ensureCached(url);
-      if (path != null) succeeded++;
-      done++;
-      onProgress?.call(done, urls.length);
+    Future<void> worker() async {
+      while (next < urls.length) {
+        final url = urls[next++];
+        final path = await _audioCache.ensureCached(url);
+        if (path != null) succeeded++;
+        done++;
+        onProgress?.call(done, urls.length);
+      }
     }
+
+    await Future.wait(List.generate(
+      math.min(AudioBytesCache.maxBackgroundConcurrency, urls.length),
+      (_) => worker(),
+    ));
     return succeeded;
   }
 

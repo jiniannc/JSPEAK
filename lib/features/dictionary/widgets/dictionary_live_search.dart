@@ -403,11 +403,6 @@ class _DictionaryLiveSearchViewState extends ConsumerState<DictionaryLiveSearchV
               const favoritesReserve = 76.0;
               final navBottom =
                   FloatingIslandNavBar.scrollBottomPadding(context) + 8;
-              final keyboardInset = MediaQuery.viewInsetsOf(context).bottom;
-              final searchDockBottom = keyboardInset > 0
-                  ? keyboardInset + 8
-                  : FloatingIslandNavBar.scrollBottomPadding(context) + 8;
-
               // DeviceScaffold가 maxWidth로 본문을 가운데 가두므로,
               // MediaQuery 전체 너비가 아니라 실제 스택 너비로 위치를 잡는다.
               final stackW = constraints.maxWidth;
@@ -446,9 +441,9 @@ class _DictionaryLiveSearchViewState extends ConsumerState<DictionaryLiveSearchV
                         ? Padding(
                             padding: EdgeInsets.fromLTRB(
                               contentInset,
-                              8,
+                              expandedBarHeight + 20,
                               contentInset,
-                              expandedBarHeight + 12 + searchDockBottom,
+                              0,
                             ),
                             child: _buildResultsList(
                               wordResults: wordResults,
@@ -556,25 +551,6 @@ class _DictionaryLiveSearchViewState extends ConsumerState<DictionaryLiveSearchV
                       final left = lerpDouble(compactLeft, expandedLeft, t)!
                           .clamp(0.0, math.max(0.0, stackW - width))
                           .toDouble();
-
-                      if (active) {
-                        return Positioned(
-                          left: expandedLeft,
-                          width: fullW,
-                          height: expandedBarHeight,
-                          bottom: searchDockBottom,
-                          child: _LiveSearchPillBar(
-                            key: const ValueKey('dictionary-live-search-bar'),
-                            palette: widget.palette,
-                            controller: _controller,
-                            focusNode: _focusNode,
-                            expandProgress: 1,
-                            engaged: true,
-                            onClear: _clearSearch,
-                            onExpandTap: _enterSearch,
-                          ),
-                        );
-                      }
 
                       Widget bar = _LiveSearchPillBar(
                         key: const ValueKey('dictionary-live-search-bar'),
@@ -1161,7 +1137,6 @@ class _LiveSearchPillBarState extends ConsumerState<_LiveSearchPillBar> {
               child: TextField(
                 controller: widget.controller,
                 focusNode: widget.focusNode,
-                readOnly: !expanded,
                 showCursor: expanded,
                 enableInteractiveSelection: expanded,
                 textInputAction: TextInputAction.search,

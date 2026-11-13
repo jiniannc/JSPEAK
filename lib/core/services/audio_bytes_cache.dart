@@ -3,6 +3,9 @@ import 'dart:collection';
 import 'dart:convert';
 import 'dart:typed_data';
 
+import 'package:flutter/foundation.dart' show kIsWeb;
+
+import '../config/audio_playback_url.dart';
 import '../network/apps_script_audio_decoder.dart';
 import '../network/apps_script_fetch.dart';
 
@@ -29,7 +32,11 @@ class AudioBytesCache {
   static final AudioBytesCache instance = AudioBytesCache._();
 
   static const int _maxEntries = 80;
-  static const int maxBackgroundConcurrency = 3;
+  static const int maxBackgroundConcurrency = 5;
+
+  /// Drive가 직접 다운로드를 막으면(403·429) 잠시 프록시만 쓴다.
+  static const Duration _directDriveCooldown = Duration(minutes: 10);
+  DateTime? _directDriveBlockedUntil;
 
   /// 이보다 작은 응답은 오디오가 아닌 오류 페이지로 본다.
   static const int _minAudioBytes = 512;
@@ -107,6 +114,15 @@ class AudioBytesCache {
   }
 
   Future<CachedAudioBytes> _download(String url) async {
+    // 모바일은 CORS 제약이 없어 Drive에서 바로 받는다 (프록시의 base64·스크립트 실행 지연 회피).
+    if (!kIsWeb) {
+      final driveId = AudioPlaybackUrl.driveFileIdOf(url);
+      if (driveId != null) {
+        final direct = await _tryDirectDrive(driveId);
+        if (direct != null) return direct;
+      }
+    }
+
     final response = await _fetch.getBytes(url);
     final raw = response.data ?? const <int>[];
     var contentType = 'audio/mpeg';
@@ -152,6 +168,41 @@ class AudioBytesCache {
       bytes: Uint8List.fromList(decoded),
       contentType: contentType,
     );
+  }
+
+  /// 실패하면 null — 호출부가 Apps Script 프록시로 다시 받는다.
+  Future<CachedAudioBytes?> _tryDirectDrive(String fileId) async {
+    final blockedUntil = _directDriveBlockedUntil;
+    if (blockedUntil != null && DateTime.now().isBefore(blockedUntil)) {
+      return null;
+    }
+    try {
+      final response =
+          await _fetch.getBytes(AudioPlaybackUrl.directDriveUrl(fileId));
+      final status = response.statusCode ?? 0;
+      if (status == 403 || status == 429) {
+        _directDriveBlockedUntil = DateTime.now().add(_directDriveCooldown);
+        return null;
+      }
+      if (status != 200) return null;
+
+      final header = (response.headers.value('content-type') ?? '')
+          .split(';')
+          .first
+          .trim()
+          .toLowerCase();
+      // 비공개 파일·확인 페이지는 HTML로 온다.
+      if (header.startsWith('text/') || header.contains('json')) return null;
+
+      final bytes = response.data ?? const <int>[];
+      if (bytes.length < _minAudioBytes) return null;
+      return CachedAudioBytes(
+        bytes: Uint8List.fromList(bytes),
+        contentType: header.startsWith('audio/') ? header : 'audio/mpeg',
+      );
+    } catch (_) {
+      return null;
+    }
   }
 
   void _put(String url, CachedAudioBytes entry) {

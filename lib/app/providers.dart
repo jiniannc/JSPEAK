@@ -478,6 +478,9 @@ class AudioController extends Notifier<AudioState> {
         try {
           await service.playFile(localPath);
           playedFromFile = true;
+        } on PlayerInterruptedException {
+          // 다른 문장 재생으로 로딩이 끊긴 것 — 파일은 정상이므로 지우지 않는다.
+          return;
         } catch (e, st) {
           // 손상된 캐시 파일 — 지우고 온라인으로 한 번 더 시도한다.
           AppLog.warn('audio', '캐시 파일 재생 실패, 온라인 재시도: $playbackUrl', e, st);

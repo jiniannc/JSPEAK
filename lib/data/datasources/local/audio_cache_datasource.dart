@@ -5,6 +5,7 @@ import 'package:crypto/crypto.dart';
 import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:path_provider/path_provider.dart';
 
+import '../../../core/config/audio_playback_url.dart';
 import '../../../core/logging/app_log.dart';
 import '../../../core/services/audio_bytes_cache.dart';
 
@@ -31,6 +32,10 @@ class AudioCacheDataSource {
   }
 
   String _fileNameFor(String url) =>
+      '${md5.convert(utf8.encode(AudioPlaybackUrl.cacheKey(url)))}.audio';
+
+  /// URL 전체 해시를 쓰던 이전 버전의 파일 이름.
+  String _legacyFileNameFor(String url) =>
       '${md5.convert(utf8.encode(url))}.audio';
 
   Future<String> _pathFor(String url) async {
@@ -38,10 +43,23 @@ class AudioCacheDataSource {
     return '${dir.path}${Platform.pathSeparator}${_fileNameFor(url)}';
   }
 
+  /// 이전 키로 저장된 파일이 있으면 새 키 이름으로 옮긴다.
+  Future<void> _migrateLegacy(String url, File target) async {
+    if (await target.exists()) return;
+    final legacy = File(
+      '${target.parent.path}${Platform.pathSeparator}${_legacyFileNameFor(url)}',
+    );
+    if (legacy.path == target.path || !await legacy.exists()) return;
+    try {
+      await legacy.rename(target.path);
+    } catch (_) {}
+  }
+
   /// 캐시된 파일 경로. 없으면 null.
   Future<String?> cachedPath(String url) async {
     if (kIsWeb || url.isEmpty) return null;
     final file = File(await _pathFor(url));
+    await _migrateLegacy(url, file);
     if (!await file.exists()) return null;
     if (await file.length() == 0) {
       await _deleteQuietly(file);
