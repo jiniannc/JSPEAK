@@ -2,6 +2,8 @@ import 'dart:async';
 
 import 'package:flutter_tts/flutter_tts.dart';
 
+import '../../data/models/sentence.dart';
+
 /// flutter_tts 래퍼.
 class TtsService {
   final FlutterTts _tts = FlutterTts();
@@ -37,6 +39,7 @@ class TtsService {
   Future<void> _beginSpeak(
     String text, {
     required String language,
+    VoiceGender? voice,
     void Function(int start, int end, String word)? onProgress,
   }) async {
     if (text.trim().isEmpty) return;
@@ -45,7 +48,7 @@ class TtsService {
     final gen = ++_speakGen;
     _finishActiveSpeak();
     await _tts.stop();
-    await _tts.setLanguage(localeFor(language));
+    await _applyLanguageAndVoice(language, voice);
 
     final completer = Completer<void>();
     _activeSpeak = completer;
@@ -66,13 +69,21 @@ class TtsService {
     await _tts.speak(text);
   }
 
-  Future<void> speak(String text, {required String language}) async {
-    await _beginSpeak(text, language: language);
+  Future<void> speak(
+    String text, {
+    required String language,
+    VoiceGender? voice,
+  }) async {
+    await _beginSpeak(text, language: language, voice: voice);
   }
 
   /// TTS 재생이 끝날 때까지 대기한다.
-  Future<void> speakAndWait(String text, {required String language}) async {
-    await _beginSpeak(text, language: language);
+  Future<void> speakAndWait(
+    String text, {
+    required String language,
+    VoiceGender? voice,
+  }) async {
+    await _beginSpeak(text, language: language, voice: voice);
     await _activeSpeak?.future.timeout(
       const Duration(seconds: 30),
       onTimeout: () {},
@@ -83,11 +94,13 @@ class TtsService {
   Future<void> speakWithProgress(
     String text, {
     required String language,
+    VoiceGender? voice,
     void Function(int start, int end, String word)? onProgress,
   }) async {
     await _beginSpeak(
       text,
       language: language,
+      voice: voice,
       onProgress: onProgress,
     );
     await _activeSpeak?.future.timeout(
@@ -100,5 +113,103 @@ class TtsService {
     _speakGen++;
     _finishActiveSpeak();
     await _tts.stop();
+  }
+
+  Future<void> _applyLanguageAndVoice(
+    String language,
+    VoiceGender? voice,
+  ) async {
+    final locale = localeFor(language);
+    await _tts.setLanguage(locale);
+    if (voice == null) {
+      await _tts.setPitch(1.0);
+      return;
+    }
+
+    final pitch = voice == VoiceGender.male ? 0.88 : 1.05;
+    await _tts.setPitch(pitch);
+
+    final picked = await _pickSystemVoice(locale, voice);
+    if (picked != null) {
+      try {
+        await _tts.setVoice(picked);
+      } catch (_) {
+        // 플랫폼별 setVoice 실패 시 언어·피치만 적용.
+      }
+    }
+  }
+
+  Future<Map<String, String>?> _pickSystemVoice(
+    String locale,
+    VoiceGender gender,
+  ) async {
+    dynamic raw;
+    try {
+      raw = await _tts.getVoices;
+    } catch (_) {
+      return null;
+    }
+    if (raw is! List || raw.isEmpty) return null;
+
+    final localeLower = locale.toLowerCase();
+    final langPrefix = localeLower.split('-').first;
+    final candidates = <Map<String, String>>[];
+
+    for (final entry in raw) {
+      if (entry is! Map) continue;
+      final name = entry['name']?.toString() ?? '';
+      final loc = entry['locale']?.toString() ?? '';
+      if (name.isEmpty || loc.isEmpty) continue;
+      final locLower = loc.toLowerCase();
+      if (!locLower.startsWith(langPrefix)) continue;
+      candidates.add({'name': name, 'locale': loc});
+    }
+    if (candidates.isEmpty) return null;
+
+    bool matchesGender(String name, VoiceGender g) {
+      final n = name.toLowerCase();
+      const femaleHints = [
+        'female',
+        'woman',
+        'girl',
+        'samantha',
+        'victoria',
+        'karen',
+        'zira',
+        'susan',
+        'kyoko',
+        'yuna',
+        'xiaoxiao',
+        'tingting',
+      ];
+      const maleHints = [
+        'male',
+        'man',
+        'boy',
+        'daniel',
+        'david',
+        'james',
+        'richard',
+        'otoya',
+        'yunxi',
+        'kangkang',
+      ];
+      final female = femaleHints.any(n.contains);
+      final male = maleHints.any(n.contains);
+      if (g == VoiceGender.female) {
+        return female && !male;
+      }
+      return male && !female;
+    }
+
+    for (final c in candidates) {
+      if (matchesGender(c['name']!, gender)) return c;
+    }
+
+    // 힌트가 없으면 목록 순서로 대략 구분 (앞쪽 여성, 뒤쪽 남성에 가깝게).
+    if (gender == VoiceGender.male && candidates.length > 1) {
+      return candidates[candidates.length - 1];
+    }
+    return candidates.first;
   }
 }

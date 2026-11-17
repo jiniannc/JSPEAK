@@ -12,6 +12,7 @@ import '../data/models/content_bundle.dart';
 import '../data/models/scenario.dart';
 import '../data/models/scenario_chapter.dart';
 import '../data/models/scenario_line.dart';
+import '../data/models/sentence.dart';
 import '../data/models/scenario_training_result.dart';
 import '../data/repositories/content_repository.dart';
 import '../data/repositories/scenario_progress_repository.dart';
@@ -530,6 +531,7 @@ class ScenarioTrainingController extends Notifier<ScenarioTrainingState> {
   final Map<int, _ScenarioTurnAccumulator> _turnPerformance = {};
   int _hintTtsGen = 0;
   Timer? _karaokeFallbackTimer;
+  Timer? _ttsKaraokeSweepTimer;
   bool _usedNativeKaraokeProgress = false;
   StreamSubscription<Duration>? _hintAudioPositionSub;
   final Set<String> _prefetchedHintUrls = {};
@@ -546,6 +548,7 @@ class ScenarioTrainingController extends Notifier<ScenarioTrainingState> {
       _sessionActive = false;
       _hintTtsGen++;
       _karaokeFallbackTimer?.cancel();
+      _cancelTtsKaraokeSweep();
       _hintAudioPositionSub?.cancel();
       _stt.cancelListening();
       ref.read(ttsServiceProvider).stop();
@@ -1448,11 +1451,76 @@ class ScenarioTrainingController extends Notifier<ScenarioTrainingState> {
     );
   }
 
+  void _cancelTtsKaraokeSweep() {
+    _ttsKaraokeSweepTimer?.cancel();
+    _ttsKaraokeSweepTimer = null;
+  }
+
+  void _applyHintTtsKaraokeProgress(
+    ScenarioLine line,
+    int gen,
+    int start,
+    int end,
+  ) {
+    if (gen != _hintTtsGen || !ref.mounted) return;
+    if (!_usedNativeKaraokeProgress) {
+      _usedNativeKaraokeProgress = true;
+      _karaokeFallbackTimer?.cancel();
+      _karaokeFallbackTimer = null;
+    }
+
+    final lang = line.language;
+    final from = WordCompare.tokenIndexForCodeUnitOffset(
+          line.textTarget,
+          start,
+          language: lang,
+        ) ??
+        0;
+    final to = WordCompare.tokenIndexForCodeUnitOffset(
+          line.textTarget,
+          math.max(start, end - 1),
+          language: lang,
+        ) ??
+        from;
+
+    if (lang == 'Japanese' && to > from) {
+      _cancelTtsKaraokeSweep();
+      var step = from;
+      state = state.copyWith(karaokeTokenIndex: step);
+      _ttsKaraokeSweepTimer = Timer.periodic(
+        const Duration(milliseconds: 110),
+        (t) {
+          if (gen != _hintTtsGen || !ref.mounted) {
+            t.cancel();
+            return;
+          }
+          step++;
+          if (step > to) {
+            t.cancel();
+            _ttsKaraokeSweepTimer = null;
+            return;
+          }
+          state = state.copyWith(karaokeTokenIndex: step);
+        },
+      );
+      return;
+    }
+
+    final idx = KaraokeWordIndex.resolveFromOffset(
+      sentence: line.textTarget,
+      language: lang,
+      startOffset: start,
+    );
+    if (idx == null || idx == state.karaokeTokenIndex) return;
+    state = state.copyWith(karaokeTokenIndex: idx);
+  }
+
   Future<void> _stopHintTts() async {
     _hintTtsGen++;
     _usedNativeKaraokeProgress = false;
     _karaokeFallbackTimer?.cancel();
     _karaokeFallbackTimer = null;
+    _cancelTtsKaraokeSweep();
     await _hintAudioPositionSub?.cancel();
     _hintAudioPositionSub = null;
     await ref.read(ttsServiceProvider).stop();
@@ -1490,7 +1558,7 @@ class ScenarioTrainingController extends Notifier<ScenarioTrainingState> {
         if (_usedNativeKaraokeProgress) return;
         _startKaraokeFallback(line, gen);
       });
-      await _speakHintWithBuiltInTts(line, gen);
+      await _speakHintWithBuiltInTts(line, gen, voice: line.preferredVoice);
     } finally {
       finished = true;
       if (gen == _hintTtsGen) {
@@ -1806,24 +1874,17 @@ class ScenarioTrainingController extends Notifier<ScenarioTrainingState> {
     }
   }
 
-  Future<void> _speakHintWithBuiltInTts(ScenarioLine line, int gen) async {
+  Future<void> _speakHintWithBuiltInTts(
+    ScenarioLine line,
+    int gen, {
+    required VoiceGender voice,
+  }) async {
     await ref.read(ttsServiceProvider).speakWithProgress(
       line.textTarget,
       language: line.language,
+      voice: voice,
       onProgress: (start, end, word) {
-        if (gen != _hintTtsGen || !ref.mounted) return;
-        if (!_usedNativeKaraokeProgress) {
-          _usedNativeKaraokeProgress = true;
-          _karaokeFallbackTimer?.cancel();
-          _karaokeFallbackTimer = null;
-        }
-        final idx = KaraokeWordIndex.resolveFromOffset(
-          sentence: line.textTarget,
-          language: line.language,
-          startOffset: start,
-        );
-        if (idx == null || idx == state.karaokeTokenIndex) return;
-        state = state.copyWith(karaokeTokenIndex: idx);
+        _applyHintTtsKaraokeProgress(line, gen, start, end);
       },
     );
   }

@@ -89,6 +89,7 @@ ScenarioHintAudio resolveScenarioHintAudio({
   required ScenarioLine line,
   Iterable<Sentence> sentences = const [],
 }) {
+  final voice = line.preferredVoice;
   final manualSegment = _manualSegment(line);
 
   if (line.audioUrl.isNotEmpty) {
@@ -117,18 +118,20 @@ ScenarioHintAudio resolveScenarioHintAudio({
   final chained = resolveDictionaryHintClips(
     line: line,
     sentences: sentences,
+    voice: voice,
   );
   if (chained != null && chained.isNotEmpty) {
     return ScenarioHintAudio(clips: chained);
   }
 
   for (final sentence in sentences) {
+    final rawAudio = sentence.audioUrlFor(voice);
     if (!_languageMatches(sentence.language, line.language) ||
-        sentence.audioUrl.isEmpty) {
+        rawAudio.isEmpty) {
       continue;
     }
 
-    final url = AudioPlaybackUrl.resolve(sentence.audioUrl);
+    final url = AudioPlaybackUrl.resolve(rawAudio);
     if (url.isEmpty) continue;
 
     final candidate = ScenarioAnswerCompare.normalize(
@@ -254,7 +257,9 @@ String resolveScenarioHintAudioUrl({
 List<HintAudioClip>? resolveDictionaryHintClips({
   required ScenarioLine line,
   Iterable<Sentence> sentences = const [],
+  VoiceGender? voice,
 }) {
+  final resolvedVoice = voice ?? line.preferredVoice;
   final language = line.language;
   final targetTokens =
       WordCompare.splitTokens(line.textTarget, language: language);
@@ -262,7 +267,9 @@ List<HintAudioClip>? resolveDictionaryHintClips({
 
   final pool = sentences
       .where(
-        (s) => _languageMatches(s.language, language) && s.audioUrl.isNotEmpty,
+        (s) =>
+            _languageMatches(s.language, language) &&
+            s.audioUrlFor(resolvedVoice).isNotEmpty,
       )
       .toList();
   if (pool.isEmpty) return null;
@@ -276,6 +283,7 @@ List<HintAudioClip>? resolveDictionaryHintClips({
       targetTokens: targetTokens,
       cursor: cursor,
       language: language,
+      voice: resolvedVoice,
     );
 
     if (atCursor != null) {
@@ -289,6 +297,7 @@ List<HintAudioClip>? resolveDictionaryHintClips({
       targetTokens: targetTokens,
       afterCursor: cursor,
       language: language,
+      voice: resolvedVoice,
     );
     if (jumped == null) break;
 
@@ -304,6 +313,7 @@ List<HintAudioClip>? resolveDictionaryHintClips({
   required List<String> targetTokens,
   required int cursor,
   required String language,
+  required VoiceGender voice,
 }) {
   HintAudioClip? bestClip;
   var bestLen = 0;
@@ -324,7 +334,7 @@ List<HintAudioClip>? resolveDictionaryHintClips({
 
     if (sentenceTokens.length <= bestLen) continue;
 
-    final url = AudioPlaybackUrl.resolve(sentence.audioUrl);
+    final url = AudioPlaybackUrl.resolve(sentence.audioUrlFor(voice));
     if (url.isEmpty) continue;
 
     bestLen = sentenceTokens.length;
@@ -345,6 +355,7 @@ List<HintAudioClip>? resolveDictionaryHintClips({
   required List<String> targetTokens,
   required int afterCursor,
   required String language,
+  required VoiceGender voice,
 }) {
   for (var probe = afterCursor + 1; probe < targetTokens.length; probe++) {
     final match = _bestDictionaryClipAt(
@@ -352,6 +363,7 @@ List<HintAudioClip>? resolveDictionaryHintClips({
       targetTokens: targetTokens,
       cursor: probe,
       language: language,
+      voice: voice,
     );
     if (match != null) {
       return (clip: match.clip, start: probe, length: match.length);

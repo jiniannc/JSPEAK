@@ -34,41 +34,10 @@ class KaraokeWordIndex {
     final tokens = WordCompare.splitTokens(sentence, language: language);
     if (tokens.isEmpty) return null;
 
-    final offset = startOffset.clamp(0, sentence.length);
-
-    if (WordCompare.isCjkLanguage(language) && !sentence.contains(' ')) {
-      var i = 0;
-      var tokenIdx = 0;
-      while (i < sentence.length) {
-        final cu = sentence.codeUnitAt(i);
-        final len =
-            (cu >= 0xD800 && cu <= 0xDBFF && i + 1 < sentence.length) ? 2 : 1;
-        final end = i + len;
-        if (offset < end) {
-          return tokenIdx.clamp(0, tokens.length - 1);
-        }
-        i = end;
-        tokenIdx++;
-      }
-      return tokens.length - 1;
-    }
-
-    var i = 0;
-    var wordIdx = 0;
-    while (i < sentence.length) {
-      while (i < sentence.length && sentence[i] == ' ') {
-        i++;
-      }
-      if (i >= sentence.length) break;
-      final start = i;
-      while (i < sentence.length && sentence[i] != ' ') {
-        i++;
-      }
-      if (offset <= start || offset < i) {
-        return wordIdx.clamp(0, tokens.length - 1);
-      }
-      wordIdx++;
-    }
-    return (wordIdx - 1).clamp(0, tokens.length - 1);
+    return WordCompare.tokenIndexForCodeUnitOffset(
+      sentence,
+      startOffset,
+      language: language,
+    )?.clamp(0, tokens.length - 1);
   }
 }

@@ -608,10 +608,40 @@ class JapaneseToKoreanConverter {
     return missing;
   }
 
+  /// カタカナ만 ひらがな로 바꾼다. 한자·히라가나·그 외는 그대로.
+  static String foldKatakanaToHiragana(String text) {
+    if (text.isEmpty) return text;
+    final buffer = StringBuffer();
+    for (final ch in text.split('')) {
+      buffer.write(_katakana.hasMatch(ch) ? _katakanaToHiraganaChar(ch) : ch);
+    }
+    return buffer.toString();
+  }
+
+  /// 한 글자 히라가나↔カタカナ 동치 (ー 포함).
+  static bool kanaCharsEquivalent(String a, String b) {
+    if (a.isEmpty || b.isEmpty || a.length != 1 || b.length != 1) return false;
+    if (a == b) return true;
+    return foldKatakanaToHiragana(a) == foldKatakanaToHiragana(b);
+  }
+
+  /// 두 문자열이 사전 기준 히라가나 읽기가 같고, 미등록 한자가 없으면 true.
+  static bool readingsEquivalent(String a, String b) {
+    final ca = _toHiraganaChecked(a);
+    final cb = _toHiraganaChecked(b);
+    if (!ca.complete || !cb.complete) return false;
+    if (ca.hiragana.isEmpty || cb.hiragana.isEmpty) return false;
+    return ca.hiragana == cb.hiragana;
+  }
+
   /// 1단계: 한자·가타카나 → 히라가나 (미등록 한자는 건너뛰고 계속).
   /// 미등록 한자가 있어도 최대한 이어붙인 결과 — 표시용이 아닌 내부 매칭용
   /// (예: [JapaneseReadingFold] 읽기 비교)으로만 사용할 것.
   static String toHiragana(String text) => _toHiraganaChecked(text).hiragana;
+
+  /// [toHiragana] + 사전 완전 여부. Fold·동음 한자 판정용.
+  static ({String hiragana, bool complete}) toHiraganaChecked(String text) =>
+      _toHiraganaChecked(text);
 
   /// [toHiragana]와 동일하되, 사전에 없는 한자를 만나면 [complete]가 false.
   /// 미등록 한자를 자동으로 뭉개고 남은 글자만 이어붙이면(예: `対応の怒` →

@@ -1,6 +1,7 @@
 import 'package:flutter_test/flutter_test.dart';
 import 'package:jspeak/core/utils/answer_blank_hints.dart';
 import 'package:jspeak/core/utils/karaoke_word_index.dart';
+import 'package:jspeak/core/utils/word_compare.dart';
 
 void main() {
   group('KaraokeWordIndex.resolveFromOffset', () {
@@ -49,6 +50,16 @@ void main() {
           startOffset: 2,
         ),
         2,
+      );
+    });
+  });
+
+  group('WordCompare.splitTokens', () {
+    test('일본어는 공백이 있어도 글자 단위로 분리한다', () {
+      const text = 'お願い します';
+      expect(
+        WordCompare.splitTokens(text, language: 'Japanese'),
+        ['お', '願', 'い', 'し', 'ま', 'す'],
       );
     });
   });

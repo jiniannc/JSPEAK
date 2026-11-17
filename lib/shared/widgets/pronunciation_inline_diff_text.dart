@@ -4,6 +4,7 @@ import '../../core/utils/cjk_pronunciation_phrase.dart';
 import '../../core/utils/cjk_spoken_phonetic.dart';
 import '../../core/utils/cjk_stt_segments.dart';
 import '../../core/utils/english_pronunciation_tokens.dart';
+import '../../core/utils/hanzi_to_pinyin_converter.dart';
 import '../../core/utils/japanese_number_normalizer.dart';
 import '../../core/utils/japanese_reading_fold.dart';
 import '../../core/utils/scenario_answer_compare.dart';
@@ -45,6 +46,9 @@ class PronunciationInlineDiffCorrection extends PronunciationInlineDiffToken {
 
   final String? correctPhonetic;
 
+  /// 음절은 같고 성조만 달라 STT가 다른 한자를 고른 경우 — 「불명확」으로 표시.
+  final bool toneUnclear;
+
 
 
   const PronunciationInlineDiffCorrection({
@@ -57,8 +61,68 @@ class PronunciationInlineDiffCorrection extends PronunciationInlineDiffToken {
 
     this.correctPhonetic,
 
+    this.toneUnclear = false,
+
   });
 
+}
+
+bool _toneUnclearForPair(String target, String spoken, String language) {
+  if (language != 'Chinese') return false;
+  if (target.isEmpty || spoken.isEmpty) return false;
+  return ScenarioAnswerCompare.charsToneOnlyDiffer(target, spoken, language);
+}
+
+/// 성조 불명확이면 STT가 들은 성조 병음을 우선, 아니면 기존 fallback.
+String? _spokenPhoneticForCorrection({
+  required String target,
+  required String spoken,
+  required String language,
+  String? fallback,
+}) {
+  if (language == 'Chinese' && _toneUnclearForPair(target, spoken, language)) {
+    return HanziToPinyinConverter.heardTonePinyin(target, spoken) ?? fallback;
+  }
+  return fallback;
+}
+
+/// 교정 토큰이 모두 성조 불명확이고 Missing/일반 오답이 없으면 true.
+bool _tokensAreToneUnclearOnly(List<PronunciationInlineDiffToken> tokens) {
+  var sawToneUnclear = false;
+  for (final token in tokens) {
+    switch (token) {
+      case PronunciationInlineDiffMatch():
+        continue;
+      case PronunciationInlineDiffCorrection(:final toneUnclear):
+        if (!toneUnclear) return false;
+        sawToneUnclear = true;
+      case PronunciationInlineDiffMissing():
+        return false;
+    }
+  }
+  return sawToneUnclear;
+}
+
+/// 성조 불명확 교정 토큰들의 들은 병음을 모아 라벨용 문자열로.
+String? _heardTonePinyinFromTokens(List<PronunciationInlineDiffToken> tokens) {
+  final parts = <String>[];
+  for (final token in tokens) {
+    if (token is! PronunciationInlineDiffCorrection || !token.toneUnclear) {
+      continue;
+    }
+    final phonetic = token.spokenPhonetic?.trim();
+    if (phonetic != null && phonetic.isNotEmpty) {
+      parts.add(phonetic);
+      continue;
+    }
+    final correct = token.correct;
+    final heard = correct != null
+        ? HanziToPinyinConverter.heardTonePinyin(correct, token.spoken)
+        : HanziToPinyinConverter.transliterateOrNull(token.spoken);
+    if (heard != null && heard.trim().isNotEmpty) parts.add(heard.trim());
+  }
+  if (parts.isEmpty) return null;
+  return parts.join(' ');
 }
 
 
@@ -126,6 +190,8 @@ List<PronunciationInlineDiffToken> formatEnglishSpokenTokensForDisplay(
 
         :final correctPhonetic,
 
+        :final toneUnclear,
+
       ):
 
         var displaySpoken = spoken;
@@ -151,6 +217,8 @@ List<PronunciationInlineDiffToken> formatEnglishSpokenTokensForDisplay(
             spokenPhonetic: spokenPhonetic,
 
             correctPhonetic: correctPhonetic,
+
+            toneUnclear: toneUnclear,
 
           ),
 
@@ -183,6 +251,7 @@ List<PronunciationInlineDiffToken> formatEnglishSpokenTokensForDisplay(
         :final correct,
         :final spokenPhonetic,
         :final correctPhonetic,
+        :final toneUnclear,
       ):
         result[i] = PronunciationInlineDiffCorrection(
           spoken: EnglishPronunciationTokens.applyTrailingPunctuation(
@@ -192,6 +261,7 @@ List<PronunciationInlineDiffToken> formatEnglishSpokenTokensForDisplay(
           correct: correct,
           spokenPhonetic: spokenPhonetic,
           correctPhonetic: correctPhonetic,
+          toneUnclear: toneUnclear,
         );
         return result;
       case PronunciationInlineDiffMissing():
@@ -636,20 +706,20 @@ List<PronunciationInlineDiffToken> _tokensFromPhraseOps(
 
             ),
 
-            spokenPhonetic:
+            toneUnclear: _toneUnclearForPair(targetWord, spokenWord, language),
 
-                CjkPronunciationPhraseBuilder.spokenPhoneticForSubstitution(
-
-              rawSpoken: spokenText,
-
-              spokenSurface: spokenWord,
-
-              target: targetLexeme,
-
+            spokenPhonetic: _spokenPhoneticForCorrection(
+              target: targetWord,
+              spoken: spokenWord,
               language: language,
-
-              phraseIndex: phraseIndex,
-
+              fallback:
+                  CjkPronunciationPhraseBuilder.spokenPhoneticForSubstitution(
+                rawSpoken: spokenText,
+                spokenSurface: spokenWord,
+                target: targetLexeme,
+                language: language,
+                phraseIndex: phraseIndex,
+              ),
             ),
 
           ),
@@ -792,6 +862,7 @@ List<PronunciationInlineDiffToken> _tokensFromSubstitutionOp(
   }
 
   final rangeEnd = targetRangeStart + target.length;
+  final toneUnclear = _toneUnclearForPair(target, spoken, language);
   return [
     PronunciationInlineDiffCorrection(
       spoken: spoken,
@@ -805,14 +876,19 @@ List<PronunciationInlineDiffToken> _tokensFromSubstitutionOp(
         surfaceKey: target,
         language: language,
       ),
-      spokenPhonetic:
-          CjkPronunciationPhraseBuilder.spokenPhoneticForSubstitution(
-        rawSpoken: spokenText,
-        spokenSurface: spoken,
-        target: targetLexeme,
+      spokenPhonetic: _spokenPhoneticForCorrection(
+        target: target,
+        spoken: spoken,
         language: language,
-        phraseIndex: phraseIndex,
+        fallback: CjkPronunciationPhraseBuilder.spokenPhoneticForSubstitution(
+          rawSpoken: spokenText,
+          spokenSurface: spoken,
+          target: targetLexeme,
+          language: language,
+          phraseIndex: phraseIndex,
+        ),
       ),
+      toneUnclear: toneUnclear,
     ),
   ];
 }
@@ -1223,6 +1299,10 @@ class PronunciationInlineDiffText extends StatelessWidget {
 
   static const _wrongBg = Color(0xFFEF4444);
 
+  static const _unclearText = Color(0xFFB45309);
+
+  static const _unclearBg = Color(0xFFF59E0B);
+
   static const _correctText = Color(0xFF059669);
 
   static const _correctBg = Color(0xFF10B981);
@@ -1319,6 +1399,10 @@ class PronunciationInlineDiffText extends StatelessWidget {
       final preparedSpoken = isCjk
           ? _cjkPreparedSpoken(spokenText, targetText, language)
           : null;
+      final toneUnclearOnly = _tokensAreToneUnclearOnly(cjkInlineTokens);
+      final heardToneLabel = toneUnclearOnly
+          ? _heardTonePinyinFromTokens(cjkInlineTokens)
+          : null;
       return LayoutBuilder(
         builder: (context, constraints) {
           return SizedBox(
@@ -1334,6 +1418,7 @@ class PronunciationInlineDiffText extends StatelessWidget {
                       : spokenText.trim(),
               spokenTokens: cjkInlineTokens,
               correct: targetText.trim(),
+              spokenPhonetic: heardToneLabel,
               correctPhonetic: _showPhonetic &&
                       correctPronunciation.trim().isNotEmpty
                   ? correctPronunciation.trim()
@@ -1341,6 +1426,7 @@ class PronunciationInlineDiffText extends StatelessWidget {
               showPhonetic: _showPhonetic,
               language: language,
               separateTokensWithSpaces: isEnglish,
+              toneUnclear: toneUnclearOnly,
             ),
           );
         },
@@ -1387,6 +1473,7 @@ class PronunciationInlineDiffText extends StatelessWidget {
                   :final correct,
                   :final correctPhonetic,
                   :final spokenPhonetic,
+                  :final toneUnclear,
                 ) =>
                   SizedBox(
                     width: constraints.maxWidth,
@@ -1397,6 +1484,7 @@ class PronunciationInlineDiffText extends StatelessWidget {
                       correctPhonetic: correctPhonetic,
                       showPhonetic: _showPhonetic,
                       language: language,
+                      toneUnclear: toneUnclear,
                     ),
                   ),
                 PronunciationInlineDiffMissing(
@@ -1674,6 +1762,14 @@ class _SpokenInlineDiffText extends StatelessWidget {
     height: 1.3,
   );
 
+  static const _unclearStyle = TextStyle(
+    fontSize: PronunciationInlineDiffText._surfaceFontSize,
+    fontWeight: FontWeight.bold,
+    letterSpacing: PronunciationInlineDiffText._surfaceLetterSpacing,
+    color: PronunciationInlineDiffText._unclearText,
+    height: 1.3,
+  );
+
   static const _missingStyle = TextStyle(
     fontSize: PronunciationInlineDiffText._surfaceFontSize,
     fontWeight: FontWeight.bold,
@@ -1724,14 +1820,14 @@ class _SpokenInlineDiffText extends StatelessWidget {
       if (needsSpace && separateTokensWithSpaces) {
         spans.add(const TextSpan(text: ' '));
       }
-      spans.add(
-        TextSpan(
-          text: text,
-          style: token is PronunciationInlineDiffMatch
-              ? _matchStyle
-              : _wrongStrikeStyle,
-        ),
-      );
+      final style = switch (token) {
+        PronunciationInlineDiffMatch() => _matchStyle,
+        PronunciationInlineDiffCorrection(:final toneUnclear)
+            when toneUnclear =>
+          _unclearStyle,
+        _ => _wrongStrikeStyle,
+      };
+      spans.add(TextSpan(text: text, style: style));
       needsSpace = true;
     }
 
@@ -1774,6 +1870,13 @@ class _SpokenInlineDiffPhonetic extends StatelessWidget {
     height: 1.3,
   );
 
+  static const _unclearStyle = TextStyle(
+    fontSize: PronunciationInlineDiffText._phoneticFontSize,
+    fontWeight: FontWeight.w500,
+    color: Color(0xFF92400E),
+    height: 1.3,
+  );
+
   @override
   Widget build(BuildContext context) {
     final spans = <InlineSpan>[];
@@ -1806,6 +1909,9 @@ class _SpokenInlineDiffPhonetic extends StatelessWidget {
             PronunciationInlineDiffMatch() => _matchStyle,
             PronunciationInlineDiffMissing() =>
               _SpokenInlineDiffText._missingPhoneticStyle,
+            PronunciationInlineDiffCorrection(:final toneUnclear)
+                when toneUnclear =>
+              _unclearStyle,
             PronunciationInlineDiffCorrection() => _wrongStrikeStyle,
           },
         ),
@@ -1824,7 +1930,7 @@ class _SpokenInlineDiffPhonetic extends StatelessWidget {
 
 
 
-/// 오발음/치환 — 붉은 오답 칩 ➔ 초록 정답 칩.
+/// 오발음/치환 — 붉은 오답 칩(또는 성조 불명확 앰버 칩) ➔ 초록 정답 칩.
 
 class _SubstitutionCluster extends StatelessWidget {
 
@@ -1843,6 +1949,8 @@ class _SubstitutionCluster extends StatelessWidget {
   final String language;
 
   final bool separateTokensWithSpaces;
+
+  final bool toneUnclear;
 
 
 
@@ -1864,11 +1972,15 @@ class _SubstitutionCluster extends StatelessWidget {
 
     this.separateTokensWithSpaces = true,
 
+    this.toneUnclear = false,
+
   });
 
 
 
   static const _wrongPhoneticColor = Color(0xFF991B1B);
+
+  static const _unclearPhoneticColor = Color(0xFF92400E);
 
 
 
@@ -1876,65 +1988,93 @@ class _SubstitutionCluster extends StatelessWidget {
 
   Widget build(BuildContext context) {
 
-    final wrongPhonetic = showPhonetic && spoken.trim().isNotEmpty
+    final surfaceColor = toneUnclear
+        ? PronunciationInlineDiffText._unclearText
+        : PronunciationInlineDiffText._wrongText;
+    final bgColor = toneUnclear
+        ? PronunciationInlineDiffText._unclearBg
+        : PronunciationInlineDiffText._wrongBg;
+    final phoneticColor =
+        toneUnclear ? _unclearPhoneticColor : _wrongPhoneticColor;
 
-        ? CjkSpokenPhonetic.phoneticForSpokenSurface(
-
-            spoken,
-
-            language: language,
-
-          )
-
+    final heardPinyin = toneUnclear
+        ? (spokenPhonetic?.trim().isNotEmpty == true
+            ? spokenPhonetic!.trim()
+            : (correct != null
+                ? HanziToPinyinConverter.heardTonePinyin(correct!, spoken)
+                : null) ??
+            CjkSpokenPhonetic.phoneticForSpokenSurface(
+              spoken,
+              language: language,
+            ))
         : null;
 
-    final useTokenPhonetic =
-        showPhonetic && spokenTokens != null && spokenTokens!.isNotEmpty;
+    final wrongPhonetic = (showPhonetic || toneUnclear) &&
+            spoken.trim().isNotEmpty
+        ? (heardPinyin ??
+            CjkSpokenPhonetic.phoneticForSpokenSurface(
+              spoken,
+              language: language,
+            ))
+        : null;
 
-
+    final useTokenPhonetic = (showPhonetic || toneUnclear) &&
+        spokenTokens != null &&
+        spokenTokens!.isNotEmpty;
 
     return Column(
-
       crossAxisAlignment: CrossAxisAlignment.stretch,
-
       mainAxisSize: MainAxisSize.min,
-
       children: [
-
-        DecoratedBox(
-
-          decoration: BoxDecoration(
-
-            color: PronunciationInlineDiffText._wrongBg.withValues(alpha: 0.12),
-
-            borderRadius: PronunciationInlineDiffText._chipRadius,
-
+        if (toneUnclear)
+          Padding(
+            padding: const EdgeInsets.only(bottom: 4),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Text(
+                  '불명확',
+                  textAlign: TextAlign.center,
+                  style: TextStyle(
+                    fontSize: 11,
+                    fontWeight: FontWeight.w600,
+                    color: surfaceColor.withValues(alpha: 0.85),
+                    height: 1.2,
+                  ),
+                ),
+                if (heardPinyin != null && heardPinyin.isNotEmpty) ...[
+                  const SizedBox(height: 2),
+                  Text(
+                    heardPinyin,
+                    textAlign: TextAlign.center,
+                    style: TextStyle(
+                      fontSize: PronunciationInlineDiffText._phoneticFontSize,
+                      fontWeight: FontWeight.w700,
+                      color: phoneticColor,
+                      height: 1.2,
+                    ),
+                  ),
+                ],
+              ],
+            ),
           ),
-
+        DecoratedBox(
+          decoration: BoxDecoration(
+            color: bgColor.withValues(alpha: 0.12),
+            borderRadius: PronunciationInlineDiffText._chipRadius,
+          ),
           child: Padding(
-
             padding: PronunciationInlineDiffText._chipPadding,
-
             child: spokenTokens != null
-
                 ? Column(
-
                     mainAxisSize: MainAxisSize.min,
-
                     crossAxisAlignment: CrossAxisAlignment.center,
-
                     children: [
-
                       _SpokenInlineDiffText(
-
                         tokens: spokenTokens!,
-
                         textAlign: TextAlign.center,
-
                         separateTokensWithSpaces: separateTokensWithSpaces,
-
                       ),
-
                       if (useTokenPhonetic) ...[
                         const SizedBox(height: 4),
                         _SpokenInlineDiffPhonetic(
@@ -1943,130 +2083,72 @@ class _SubstitutionCluster extends StatelessWidget {
                           textAlign: TextAlign.center,
                           separateTokensWithSpaces: separateTokensWithSpaces,
                         ),
-                      ] else if (showPhonetic &&
+                      ] else if ((showPhonetic || toneUnclear) &&
                           (wrongPhonetic?.trim().isNotEmpty ?? false)) ...[
-
                         const SizedBox(height: 4),
-
                         Text(
-
                           wrongPhonetic!,
-
                           textAlign: TextAlign.center,
-
                           style: TextStyle(
-
                             fontSize:
-
                                 PronunciationInlineDiffText._phoneticFontSize,
-
                             fontWeight: FontWeight.w500,
-
-                            color: _wrongPhoneticColor.withValues(alpha: 0.8),
-
+                            color: phoneticColor.withValues(alpha: 0.8),
                             height: 1.3,
-
                           ),
-
                         ),
-
                       ],
-
                     ],
-
                   )
-
-                : showPhonetic
-
+                : (showPhonetic || toneUnclear)
                     ? _PhraseChip(
-
                         surface: spoken,
-
-                        phonetic: wrongPhonetic,
-
-                        surfaceColor: PronunciationInlineDiffText._wrongText,
-
+                        phonetic: toneUnclear ? null : wrongPhonetic,
+                        surfaceColor: surfaceColor,
                         surfaceWeight: FontWeight.bold,
-
-                        phoneticColor: _wrongPhoneticColor,
-
+                        phoneticColor: phoneticColor,
                         phoneticOpacity: 0.8,
-
-                        strikethrough: true,
-
+                        strikethrough: !toneUnclear,
                       )
-
                     : Text(
-
-                    spoken,
-
-                    textAlign: TextAlign.center,
-
-                    style: TextStyle(
-
-                      fontSize: PronunciationInlineDiffText._surfaceFontSize,
-
-                      fontWeight: FontWeight.bold,
-
-                      letterSpacing:
-                          PronunciationInlineDiffText._surfaceLetterSpacing,
-
-                      color: PronunciationInlineDiffText._wrongText,
-
-                      decoration: TextDecoration.lineThrough,
-
-                      decorationColor: PronunciationInlineDiffText._wrongText,
-
-                      decorationThickness: 1.4,
-
-                      height: 1.3,
-
-                    ),
-
-                  ),
-
+                        spoken,
+                        textAlign: TextAlign.center,
+                        style: TextStyle(
+                          fontSize:
+                              PronunciationInlineDiffText._surfaceFontSize,
+                          fontWeight: FontWeight.bold,
+                          letterSpacing: PronunciationInlineDiffText
+                              ._surfaceLetterSpacing,
+                          color: surfaceColor,
+                          decoration: toneUnclear
+                              ? TextDecoration.none
+                              : TextDecoration.lineThrough,
+                          decorationColor: surfaceColor,
+                          decorationThickness: 1.4,
+                          height: 1.3,
+                        ),
+                      ),
           ),
-
         ),
-
         if (correct != null) ...[
-
           const SizedBox(height: PronunciationInlineDiffText._clusterGap),
-
           const Center(
-
             child: Icon(
-
               Icons.arrow_downward_rounded,
-
               color: Colors.grey,
-
               size: 20,
-
             ),
-
           ),
-
           const SizedBox(height: PronunciationInlineDiffText._clusterGap),
-
           _CorrectChip(
-
             label: correct!,
-
             phonetic: correctPhonetic,
-
             showPhonetic: showPhonetic,
-
             expand: true,
-
           ),
-
         ],
-
       ],
-
     );
-
   }
 
 }

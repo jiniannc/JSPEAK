@@ -97,7 +97,8 @@ class EnglishPronunciationTokens {
     final homophone = _homophoneToAcronym[WordCompare.normalize(word)];
     if (homophone != null) return homophone;
 
-    return WordCompare.normalize(word);
+    // Ma'am / maam, (hello) / hello — 글자만으로 비교.
+    return letters.toLowerCase();
   }
 
   static String _lettersOnly(String word) =>

@@ -100,7 +100,8 @@ class WordTokenAligner {
     required String spokenText,
     String language = 'English',
   }) {
-    final targetHasSlash =
+    // `/` 선택지 정렬은 CJK 전용. 영어 Sir/Ma'am 은 토큰화 단계에서 공백 취급.
+    final useSlashSegments = CjkSttSegments.isTargetLanguage(language) &&
         PronunciationTextTokenizer.hasSlashSegments(targetText);
     final spokenPrepared = PronunciationTextTokenizer.prepareSpokenForCompare(
       spokenText,
@@ -110,7 +111,7 @@ class WordTokenAligner {
     final spokenHasSlash =
         PronunciationTextTokenizer.hasSlashSegments(spokenPrepared);
 
-    if (targetHasSlash && spokenHasSlash) {
+    if (useSlashSegments && spokenHasSlash) {
       return _alignSlashSegmentsOneToOne(
         targetText: targetText,
         spokenText: spokenPrepared,
@@ -118,7 +119,7 @@ class WordTokenAligner {
       );
     }
 
-    if (targetHasSlash) {
+    if (useSlashSegments) {
       final targetWords = PronunciationTextTokenizer.splitSlashSegments(
         targetText,
       ).expand(

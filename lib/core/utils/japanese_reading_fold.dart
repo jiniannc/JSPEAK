@@ -72,16 +72,18 @@ class JapaneseReadingFold {
         ti++;
       }
 
-      if (ti < target.length && sc == target[ti]) {
-        out.write(sc);
+      if (ti < target.length &&
+          (sc == target[ti] ||
+              JapaneseToKoreanConverter.kanaCharsEquivalent(sc, target[ti]))) {
+        out.write(target[ti]);
         ranges.add((start: si, end: si + 1));
         si++;
         ti++;
         continue;
       }
 
-      // 히라가나 읽기 → 정답 한자 (もの→者). 가나 앵커보다 먼저 시도.
-      if (ti < target.length && isHiragana(sc) && isKanji(target[ti])) {
+      // 가나 읽기 → 정답 한자 (もの/モノ→者). 가나 앵커보다 먼저 시도.
+      if (ti < target.length && isKana(sc) && isKanji(target[ti])) {
         final hiraToKanji = _mapHiraganaReadingToTargetKanji(
           spoken: spoken,
           spokenStart: si,
@@ -100,12 +102,12 @@ class JapaneseReadingFold {
         }
       }
 
-      // 가나 불일치 — 정답 앞부분(미발화)을 건너뛰고 같은 글자를 찾는다.
+      // 가나 불일치 — 정답 앞부분(미발화)을 건너뛰고 같은(히라/カタ) 글자를 찾는다.
       if (ti < target.length && isKana(sc) && !isKanji(sc)) {
         final anchor = _findKanaAnchor(spoken, si, target, ti);
         if (anchor != null) {
           ti = anchor;
-          out.write(sc);
+          out.write(target[ti]);
           ranges.add((start: si, end: si + 1));
           si++;
           ti++;
@@ -272,7 +274,7 @@ class JapaneseReadingFold {
 
     for (var i = ti; i < target.length; i++) {
       if (isPunct(target[i])) continue;
-      if (target[i] != sc) continue;
+      if (!_kanaOrExactMatch(sc, target[i])) continue;
       final targetLeft = _contentLength(target.substring(i));
       // spoken이 target 남은 길이보다 길면 이 위치는 불가
       if (spokenLeft > targetLeft + 1) continue;
@@ -288,7 +290,7 @@ class JapaneseReadingFold {
     var bestDelta = 1 << 30;
     int? chosen;
     for (var i = ti; i < target.length; i++) {
-      if (isPunct(target[i]) || target[i] != sc) continue;
+      if (isPunct(target[i]) || !_kanaOrExactMatch(sc, target[i])) continue;
       final targetLeft = _contentLength(target.substring(i));
       if (spokenLeft > targetLeft + 1) continue;
       final delta = (targetLeft - spokenLeft).abs();
@@ -300,6 +302,9 @@ class JapaneseReadingFold {
     return chosen;
   }
 
+  static bool _kanaOrExactMatch(String a, String b) =>
+      a == b || JapaneseToKoreanConverter.kanaCharsEquivalent(a, b);
+
   static int _contentLength(String text) {
     var n = 0;
     for (var i = 0; i < text.length; i++) {
@@ -308,7 +313,7 @@ class JapaneseReadingFold {
     return n;
   }
 
-  /// STT 히라가나 읽기를 정답 한자로 접음. 예: `もの` → `者`.
+  /// STT 가나 읽기를 정답 한자로 접음. 예: `もの`/`モノ` → `者`.
   /// 변환기 읽기와 일치하고, 한자 직후 글자가 정렬될 때만 채택.
   static ({int spokenEnd, int targetEnd})? _mapHiraganaReadingToTargetKanji({
     required String spoken,
@@ -319,7 +324,7 @@ class JapaneseReadingFold {
     if (targetStart >= target.length || !isKanji(target[targetStart])) {
       return null;
     }
-    if (spokenStart >= spoken.length || !isHiragana(spoken[spokenStart])) {
+    if (spokenStart >= spoken.length || !isKana(spoken[spokenStart])) {
       return null;
     }
 
@@ -336,10 +341,12 @@ class JapaneseReadingFold {
     final spokenEnd = spokenStart + expected.length;
     if (spokenEnd > spoken.length) return null;
 
-    final spokenReading = spoken.substring(spokenStart, spokenEnd);
-    for (var i = 0; i < spokenReading.length; i++) {
-      if (!isHiragana(spokenReading[i])) return null;
+    final spokenSlice = spoken.substring(spokenStart, spokenEnd);
+    for (var i = 0; i < spokenSlice.length; i++) {
+      if (!isKana(spokenSlice[i])) return null;
     }
+    final spokenReading =
+        JapaneseToKoreanConverter.foldKatakanaToHiragana(spokenSlice);
     if (spokenReading != expected) return null;
 
     if (!_nextAligns(spoken, spokenEnd, target, targetKanjiEnd)) {
@@ -349,8 +356,9 @@ class JapaneseReadingFold {
     return (spokenEnd: spokenEnd, targetEnd: targetKanjiEnd);
   }
 
-  /// STT가 다른 한자를 골랐지만 이어지는 글자가 같으면 같은 단어로 본다.
-  /// 예: spoken `酒げ` ≈ target `下げ` (下げ를 酒げ로 인식 — 발음 채점상 동치).
+  /// STT가 다른 한자를 골랐지만 같은 단어로 본다.
+  /// 1) 이어지는 送り/가나가 같음 (酒げ≈下げ)
+  /// 2) 사전 읽기가 같고 완전함 (機≈器, 送り 없어도 가능)
   static ({int spokenEnd, int targetEnd})? _mapKanjiVariantToTarget({
     required String spoken,
     required int kanjiStart,
@@ -368,14 +376,23 @@ class JapaneseReadingFold {
     }
 
     // 한자 직후가 같은 送り/가나로 이어지면 표기만 다른 동음 오인식으로 본다.
-    if (!_nextAligns(spoken, afterKanji, target, targetKanjiEnd)) {
-      return null;
+    if (_nextAligns(spoken, afterKanji, target, targetKanjiEnd)) {
+      return (
+        spokenEnd: afterKanji,
+        targetEnd: targetKanjiEnd,
+      );
     }
 
-    return (
-      spokenEnd: afterKanji,
-      targetEnd: targetKanjiEnd,
-    );
+    final spokenKanji = spoken.substring(kanjiStart, afterKanji);
+    final targetKanji = target.substring(targetStart, targetKanjiEnd);
+    if (JapaneseToKoreanConverter.readingsEquivalent(spokenKanji, targetKanji)) {
+      return (
+        spokenEnd: afterKanji,
+        targetEnd: targetKanjiEnd,
+      );
+    }
+
+    return null;
   }
 
   /// 한자 run + 最短 送り仮名를 정답 **히라가나** 읽기에 매핑.
@@ -442,6 +459,9 @@ class JapaneseReadingFold {
       return sp >= spoken.length && tp >= target.length;
     }
     if (spoken[sp] == target[tp]) return true;
+    if (JapaneseToKoreanConverter.kanaCharsEquivalent(spoken[sp], target[tp])) {
+      return true;
+    }
     if (isKanji(spoken[sp]) && isKana(target[tp])) return true;
     return false;
   }

@@ -267,6 +267,71 @@ void main() {
         '',
       );
     });
+
+    test('chapter 7+ uses male dictionary audio when available', () {
+      const lateChapterLine = ScenarioLine(
+        scenarioId: 'en_test',
+        order: 2,
+        speaker: 'Crew',
+        textKo: 'ko',
+        textTarget: 'Let me check if there are any available seats.',
+        language: 'English',
+        chapterNo: 7,
+      );
+
+      final hint = resolveScenarioHintAudio(
+        line: lateChapterLine,
+        sentences: [
+          Sentence(
+            id: 's1',
+            language: 'English',
+            category: '좌석 안내',
+            sentence: lateChapterLine.textTarget,
+            pronunciation: '',
+            korean: '',
+            audioUrl: Sentence.resolveAudioUrl('female-audio-id'),
+            audioUrlMale: Sentence.resolveAudioUrl('male-audio-id'),
+            stars: 1,
+            important: false,
+          ),
+        ],
+      );
+
+      expect(hint.clips.single.playbackUrl, contains('male-audio-id'));
+      expect(hint.clips.single.playbackUrl, isNot(contains('female-audio-id')));
+    });
+
+    test('chapter 6 and below prefers female dictionary audio', () {
+      const earlyLine = ScenarioLine(
+        scenarioId: 'en_test',
+        order: 2,
+        speaker: 'Crew',
+        textKo: 'ko',
+        textTarget: 'Let me check if there are any available seats.',
+        language: 'English',
+        chapterNo: 6,
+      );
+
+      final hint = resolveScenarioHintAudio(
+        line: earlyLine,
+        sentences: [
+          Sentence(
+            id: 's1',
+            language: 'English',
+            category: '좌석 안내',
+            sentence: earlyLine.textTarget,
+            pronunciation: '',
+            korean: '',
+            audioUrl: Sentence.resolveAudioUrl('female-audio-id'),
+            audioUrlMale: Sentence.resolveAudioUrl('male-audio-id'),
+            stars: 1,
+            important: false,
+          ),
+        ],
+      );
+
+      expect(hint.clips.single.playbackUrl, contains('female-audio-id'));
+    });
   });
 
   group('inferHintAudioSegment', () {

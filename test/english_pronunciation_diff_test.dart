@@ -1,5 +1,6 @@
 import 'package:flutter_test/flutter_test.dart';
 import 'package:jspeak/core/utils/english_pronunciation_tokens.dart';
+import 'package:jspeak/core/utils/pronunciation_text_tokenizer.dart';
 import 'package:jspeak/core/utils/word_token_alignment.dart';
 import 'package:jspeak/shared/widgets/pronunciation_inline_diff_text.dart';
 
@@ -131,6 +132,43 @@ void main() {
         language: 'English',
       );
       expect(withQr, greaterThan(withoutMerge));
+    });
+  });
+
+  group('Sir/Ma\'am slash and apostrophe', () {
+    const target = 'Good evening, Sir/Ma\'am.';
+    const spoken = 'good evening sir maam';
+
+    test('Ma\'am ≈ maam', () {
+      expect(
+        EnglishPronunciationTokens.areEquivalent('Ma\'am', 'maam'),
+        isTrue,
+      );
+      expect(
+        EnglishPronunciationTokens.areEquivalent('Ma\'am.', 'maam'),
+        isTrue,
+      );
+    });
+
+    test('Sir/Ma\'am 을 sir maam 으로 읽으면 100점', () {
+      expect(
+        WordTokenAligner.accuracyPercent(
+          targetText: target,
+          spokenText: spoken,
+          language: 'English',
+        ),
+        100,
+      );
+    });
+
+    test('문장 중간 Sir/Ma\'am 도 단어로 분리', () {
+      final tokens = PronunciationTextTokenizer.tokenize(
+        target,
+        language: 'English',
+      );
+      expect(tokens.map(EnglishPronunciationTokens.canonicalKey), contains('sir'));
+      expect(tokens.map(EnglishPronunciationTokens.canonicalKey), contains('maam'));
+      expect(tokens.any((t) => t.contains('/')), isFalse);
     });
   });
 }

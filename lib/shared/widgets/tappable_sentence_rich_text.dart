@@ -103,7 +103,9 @@ List<TextSpan> buildTappableWordSpans({
     return [TextSpan(text: sentence, style: baseStyle)];
   }
 
-  final matches = vocabulary == null
+  final karaokeCharMode =
+      karaokeWordIndex != null && language == 'Japanese';
+  final matches = karaokeCharMode || vocabulary == null
       ? <VocabularyPhraseMatch>[]
       : VocabularySpanBuilder.findPhraseMatches(
           sentence,

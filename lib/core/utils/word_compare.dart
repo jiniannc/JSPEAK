@@ -2,7 +2,8 @@
 class WordCompare {
   WordCompare._();
 
-  static final RegExp _punctuation = RegExp(r'[.,!?]');
+  /// `/`·아포스트로피·괄호 등 STT에 안 나오는 기호는 비교에서 무시.
+  static final RegExp _punctuation = RegExp(r'''[.,!?;:"'’/`~\-()\[\]{}]''');
 
   static bool isCjkLanguage(String language) =>
       language == 'Japanese' || language == 'Chinese';
@@ -11,13 +12,83 @@ class WordCompare {
   static List<String> splitWords(String text) =>
       text.split(' ').where((w) => w.isNotEmpty).toList();
 
-  /// 언어별 토큰 분리 — CJK는 글자 단위, 그 외는 공백 단위.
+  /// 언어별 토큰 분리.
+  ///
+  /// 일본어는 가라오케·매칭 모두 글자 단위(공백 무시). 중국어는 공백 있으면 어절,
+  /// 없으면 글자. 그 외는 공백 단위.
   static List<String> splitTokens(String text, {String language = 'English'}) {
-    if (isCjkLanguage(language)) {
+    if (language == 'Japanese') {
+      return splitCharacters(text)
+          .where((c) => c.trim().isNotEmpty)
+          .toList();
+    }
+    if (language == 'Chinese') {
       if (text.contains(' ')) return splitWords(text);
       return splitCharacters(text);
     }
     return splitWords(text);
+  }
+
+  /// UTF-16 [offset]이 가리키는 [splitTokens] 인덱스.
+  static int? tokenIndexForCodeUnitOffset(
+    String text,
+    int offset, {
+    String language = 'English',
+  }) {
+    if (text.isEmpty) return null;
+    final o = offset.clamp(0, text.length);
+
+    if (language == 'Japanese') {
+      var tokenIdx = 0;
+      var i = 0;
+      while (i < text.length) {
+        if (text[i].trim().isEmpty) {
+          i++;
+          continue;
+        }
+        final cu = text.codeUnitAt(i);
+        final len =
+            (cu >= 0xD800 && cu <= 0xDBFF && i + 1 < text.length) ? 2 : 1;
+        final end = i + len;
+        if (o < end) return tokenIdx;
+        i = end;
+        tokenIdx++;
+      }
+      return tokenIdx > 0 ? tokenIdx - 1 : 0;
+    }
+
+    if (isCjkLanguage(language) && !text.contains(' ')) {
+      var tokenIdx = 0;
+      var i = 0;
+      while (i < text.length) {
+        final cu = text.codeUnitAt(i);
+        final len =
+            (cu >= 0xD800 && cu <= 0xDBFF && i + 1 < text.length) ? 2 : 1;
+        final end = i + len;
+        if (o < end) return tokenIdx;
+        i = end;
+        tokenIdx++;
+      }
+      return tokenIdx > 0 ? tokenIdx - 1 : 0;
+    }
+
+    var i = 0;
+    var wordIdx = 0;
+    while (i < text.length) {
+      while (i < text.length && text[i] == ' ') {
+        i++;
+      }
+      if (i >= text.length) break;
+      final start = i;
+      while (i < text.length && text[i] != ' ') {
+        i++;
+      }
+      if (o <= start || o < i) {
+        return wordIdx;
+      }
+      wordIdx++;
+    }
+    return wordIdx > 0 ? wordIdx - 1 : 0;
   }
 
   /// 서로게이트 페어를 고려한 UTF-16 글자 단위 분리.

@@ -153,6 +153,15 @@ class _ScenarioTrainingScreenState extends ConsumerState<ScenarioTrainingScreen>
     return messages.first.id;
   }
 
+  /// 바로 위 메시지도 승무원 아바타가 있으면 위로 겹치면 말풍선이 포개진다.
+  bool _allowCrewAvatarTopOverlap(List<ChatMessage> messages, int msgIndex) {
+    if (msgIndex <= 0) return false;
+    final prev = messages[msgIndex - 1];
+    final prevHasCrewAvatar = prev.kind == ChatBubbleKind.crewTurn &&
+        prev.line.avatarImage.isNotEmpty;
+    return !prevHasCrewAvatar;
+  }
+
   /// 코치마크 1단계 — 아바타·한국어 프롬프트가 있는 활성 승무원 말풍선.
   String? _tourHighlightBubbleId(ScenarioTrainingState training) {
     final crewId = training.activeCrewMessageId;
@@ -503,8 +512,11 @@ class _ScenarioTrainingScreenState extends ConsumerState<ScenarioTrainingScreen>
                           scrollAnchorKey: msg.id == activeMsgId
                               ? _activeBubbleKey
                               : null,
-                          // 리스트 첫 메시지는 위에 겹칠 대상이 없어 안전 모드로 표시.
-                          allowTopOverlap: msgIndex > 0,
+                          // 첫 메시지·연속 승무원 아바타는 위로 겹치지 않음.
+                          allowTopOverlap: _allowCrewAvatarTopOverlap(
+                            training.messages,
+                            msgIndex,
+                          ),
                           message: msg,
                           accentColor: palette.primary,
                           isActive:

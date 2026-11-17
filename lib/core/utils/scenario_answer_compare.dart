@@ -1,8 +1,10 @@
 import 'answer_blank_hints.dart';
 import 'cjk_stt_segments.dart';
+import 'hanzi_to_pinyin_converter.dart';
 import 'japanese_number_normalizer.dart';
 import 'japanese_reading_fold.dart';
 import 'japanese_stt_fix_map.dart';
+import 'japanese_to_korean_converter.dart';
 import 'english_pronunciation_tokens.dart';
 import 'word_compare.dart';
 
@@ -104,12 +106,52 @@ class ScenarioAnswerCompare {
     final na = normalize(a, language: language);
     final nb = normalize(b, language: language);
     if (na.isEmpty || nb.isEmpty) return na == nb;
-    return na == nb;
+    if (na == nb) return true;
+    if (language == 'Chinese') {
+      return HanziToPinyinConverter.isHomophone(na, nb);
+    }
+    if (language == 'Japanese') {
+      final ka = JapaneseToKoreanConverter.foldKatakanaToHiragana(na);
+      final kb = JapaneseToKoreanConverter.foldKatakanaToHiragana(nb);
+      if (ka == kb) return true;
+      // 한자만 — 라틴·가나가 섞이면 toHiragana가 비한자를 버려 거짓 동음이 된다.
+      if (_isKanjiOnly(na) &&
+          _isKanjiOnly(nb) &&
+          JapaneseToKoreanConverter.readingsEquivalent(na, nb)) {
+        return true;
+      }
+      return false;
+    }
+    return false;
   }
+
+  static final RegExp _kanjiOnly = RegExp(r'^[\u4E00-\u9FFF\u3005\u3006\u3007\u303B]+$');
+
+  static bool _isKanjiOnly(String text) =>
+      text.isNotEmpty && _kanjiOnly.hasMatch(text);
 
   /// [AnswerBlankHints] 등 외부에서 글자 동치 비교 시 사용.
   static bool charsEquivalentForCompare(String a, String b, String language) =>
       _charsEquivalent(a, b, language);
+
+  /// 성조만 다른 글자에 주는 부분 점수 (1글자 = 1.0 기준). STT 성조 신뢰도가 낮아 감점은 10%만.
+  static const double toneMismatchCredit = 0.9;
+
+  /// 중국어 한 글자끼리 음절은 같고 성조만 다른지.
+  static bool charsToneOnlyDiffer(String target, String spoken, String language) {
+    if (language != 'Chinese') return false;
+    return HanziToPinyinConverter.isToneOnlyDiff(
+      normalize(target, language: language),
+      normalize(spoken, language: language),
+    );
+  }
+
+  /// 글자 하나의 일치 점수 — 동치 1.0, 성조만 다름 [toneMismatchCredit], 그 외 0.
+  static double charMatchCredit(String target, String spoken, String language) {
+    if (_charsEquivalent(target, spoken, language)) return 1;
+    if (charsToneOnlyDiffer(target, spoken, language)) return toneMismatchCredit;
+    return 0;
+  }
 
   /// STT/타이핑 결과가 정답과 일치하는지 판별.
   static bool isCorrect({
@@ -132,12 +174,12 @@ class ScenarioAnswerCompare {
     final normSpoken = normalize(adjustedSpoken, language: language);
     final normCorrect = normalize(correct, language: language);
     if (normSpoken.isEmpty || normCorrect.isEmpty) return false;
-    if (normSpoken == normCorrect) return true;
+    if (_charsEquivalent(normSpoken, normCorrect, language)) return true;
 
     if (language == 'English') {
       return _englishWordMatch(spoken, correct);
     }
-    return _cjkFuzzyMatch(normSpoken, normCorrect);
+    return _cjkFuzzyMatch(normSpoken, normCorrect, language);
   }
 
   /// 정답 대비 일치율 (0~100). 앞부분 오인식이 있어도 뒤쪽 일치분은 누적 반영.
@@ -183,8 +225,8 @@ class ScenarioAnswerCompare {
     );
     final normCorrect = normalize(correct, language: language);
     if (normSpoken.isEmpty || normCorrect.isEmpty) return 0;
-    if (normSpoken == normCorrect) return 1;
-    final distance = _levenshtein(normSpoken, normCorrect);
+    if (_charsEquivalent(normSpoken, normCorrect, language)) return 1;
+    final distance = _levenshtein(normSpoken, normCorrect, language);
     final maxLen = normSpoken.length > normCorrect.length
         ? normSpoken.length
         : normCorrect.length;
@@ -336,36 +378,44 @@ class ScenarioAnswerCompare {
     return true;
   }
 
-  static bool _cjkFuzzyMatch(String spoken, String correct) {
+  static bool _cjkFuzzyMatch(String spoken, String correct, String language) {
     if (spoken.contains(correct) || correct.contains(spoken)) {
       return spoken.length >= (correct.length * 0.7).floor();
     }
     final ratio = 1 -
-        _levenshtein(spoken, correct) /
+        _levenshtein(spoken, correct, language) /
             (spoken.length > correct.length ? spoken.length : correct.length);
     return ratio >= 0.82;
   }
 
-  static int _levenshtein(String a, String b) {
+  /// [language]가 중국어면 동음 글자는 0, 성조만 다른 글자는 부분 비용.
+  static double _levenshtein(String a, String b, [String? language]) {
     if (a == b) return 0;
-    if (a.isEmpty) return b.length;
-    if (b.isEmpty) return a.length;
+    if (a.isEmpty) return b.length.toDouble();
+    if (b.isEmpty) return a.length.toDouble();
 
     final matrix = List.generate(
       a.length + 1,
-      (_) => List<int>.filled(b.length + 1, 0),
+      (_) => List<double>.filled(b.length + 1, 0),
     );
 
     for (var i = 0; i <= a.length; i++) {
-      matrix[i][0] = i;
+      matrix[i][0] = i.toDouble();
     }
     for (var j = 0; j <= b.length; j++) {
-      matrix[0][j] = j;
+      matrix[0][j] = j.toDouble();
     }
 
     for (var i = 1; i <= a.length; i++) {
       for (var j = 1; j <= b.length; j++) {
-        final cost = a[i - 1] == b[j - 1] ? 0 : 1;
+        final double cost;
+        if (a[i - 1] == b[j - 1]) {
+          cost = 0;
+        } else if (language == 'Chinese') {
+          cost = 1 - charMatchCredit(b[j - 1], a[i - 1], language!);
+        } else {
+          cost = 1;
+        }
         matrix[i][j] = [
           matrix[i - 1][j] + 1,
           matrix[i][j - 1] + 1,

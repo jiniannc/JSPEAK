@@ -1,6 +1,8 @@
 import 'package:flutter_test/flutter_test.dart';
-import 'package:jspeak/core/utils/japanese_reading_fold.dart';
 import 'package:jspeak/core/utils/cjk_pronunciation_phrase.dart';
+import 'package:jspeak/core/utils/japanese_reading_fold.dart';
+import 'package:jspeak/core/utils/japanese_to_korean_converter.dart';
+import 'package:jspeak/core/utils/scenario_answer_compare.dart';
 import 'package:jspeak/shared/widgets/pronunciation_inline_diff_text.dart';
 
 void main() {
@@ -127,5 +129,81 @@ void main() {
       language: 'Japanese',
     );
     expect(score, greaterThanOrEqualTo(95));
+  });
+
+  group('카타카나·동음 한자 완화', () {
+    test('カタカナ→ひらがな 헬퍼', () {
+      expect(
+        JapaneseToKoreanConverter.foldKatakanaToHiragana('テーブル'),
+        'てーぶる',
+      );
+      expect(JapaneseToKoreanConverter.kanaCharsEquivalent('テ', 'て'), isTrue);
+      expect(JapaneseToKoreanConverter.kanaCharsEquivalent('テ', 'デ'), isFalse);
+    });
+
+    test('テーブル ↔ てーぶる Fold·점수 동치', () {
+      expect(
+        JapaneseReadingFold.fold('てーぶるをおもどしください', 'テーブルをおもどしください。'),
+        'テーブルをおもどしください',
+      );
+      expect(
+        CjkPronunciationPhraseBuilder.accuracyPercentByCharacters(
+          sentence: 'テーブルをおもどしください。',
+          spokenText: 'てーぶるをおもどしください',
+          language: 'Japanese',
+        ),
+        100,
+      );
+    });
+
+    test('モノ→者 — 카타카나 읽기도 한자로 접힘', () {
+      expect(
+        JapaneseReadingFold.fold(
+          'お手伝いできるモノを呼んでまいります',
+          'お手伝いできる者を呼んでまいります',
+        ),
+        'お手伝いできる者を呼んでまいります',
+      );
+    });
+
+    test('送り 없는 동음 한자 — 機≈器', () {
+      expect(
+        ScenarioAnswerCompare.charsEquivalentForCompare('機', '器', 'Japanese'),
+        isTrue,
+      );
+      expect(
+        JapaneseToKoreanConverter.readingsEquivalent('機', '器'),
+        isTrue,
+      );
+      expect(
+        JapaneseReadingFold.fold('器内', '機内'),
+        '機内',
+      );
+      expect(
+        CjkPronunciationPhraseBuilder.accuracyPercentByCharacters(
+          sentence: '機内',
+          spokenText: '器内',
+          language: 'Japanese',
+        ),
+        100,
+      );
+    });
+
+    test('읽기가 다른 한자는 동음 아님', () {
+      expect(
+        ScenarioAnswerCompare.charsEquivalentForCompare('機', '内', 'Japanese'),
+        isFalse,
+      );
+    });
+
+    test('기존 下げ/酒げ 회귀', () {
+      expect(
+        JapaneseReadingFold.fold(
+          'お酒げしてもよろしいですか',
+          'お下げしてもよろしいですか。',
+        ),
+        'お下げしてもよろしいですか',
+      );
+    });
   });
 }

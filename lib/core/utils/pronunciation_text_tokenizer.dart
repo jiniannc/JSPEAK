@@ -52,15 +52,16 @@ class PronunciationTextTokenizer {
     final trimmed = text.trim();
     if (trimmed.isEmpty) return [];
 
-    if (hasSlashSegments(trimmed)) {
-      return splitSlashSegments(trimmed);
-    }
-
+    // CJK만 `/`를 선택지·구문 구분자로 쓴다.
     if (CjkSttSegments.isTargetLanguage(language)) {
+      if (hasSlashSegments(trimmed)) {
+        return splitSlashSegments(trimmed);
+      }
       return _tokenizeCjkSegment(trimmed, language);
     }
 
-    return EnglishPronunciationTokens.mergeTokens(WordCompare.splitWords(trimmed));
+    // 영어: Sir/Ma'am → Sir, Ma'am (`/`를 공백처럼 취급)
+    return _tokenizeEnglish(trimmed);
   }
 
   /// 슬래시 구간 내부 — CJK는 글자 단위, 영어는 공백 단위.
@@ -72,7 +73,14 @@ class PronunciationTextTokenizer {
       return _tokenizeCjkSegment(trimmed, language);
     }
 
-    return EnglishPronunciationTokens.mergeTokens(WordCompare.splitWords(trimmed));
+    return _tokenizeEnglish(trimmed);
+  }
+
+  static List<String> _tokenizeEnglish(String text) {
+    final withSlashAsSpace = text.replaceAll('/', ' ');
+    return EnglishPronunciationTokens.mergeTokens(
+      WordCompare.splitWords(withSlashAsSpace),
+    );
   }
 
   static List<String> _tokenizeCjkSegment(String segment, String language) {

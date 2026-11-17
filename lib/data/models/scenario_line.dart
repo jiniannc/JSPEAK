@@ -56,6 +56,10 @@ class ScenarioLine {
 
   bool get isCrew => speaker.toLowerCase() == 'crew' || speaker == '승무원';
 
+  /// 시나리오 챕터 1~6: 여성 녹음, 7 이상: 남성 녹음 (모든 학습 언어 공통).
+  VoiceGender get preferredVoice =>
+      chapterNo <= 6 ? VoiceGender.female : VoiceGender.male;
+
   factory ScenarioLine.fromJson(Map<String, dynamic> json) {
     return ScenarioLine(
       scenarioId: json['scenario_id']?.toString() ?? '',

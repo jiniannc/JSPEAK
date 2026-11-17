@@ -447,7 +447,7 @@ class CjkPronunciationPhraseBuilder {
     return stripped.split('').where((c) => c.trim().isNotEmpty).toList();
   }
 
-  /// 정답·STT 문자 단위 LCS 길이 (구두점 제외).
+  /// 정답·STT 문자 단위 LCS 길이 (구두점 제외). 완전 동치만 카운트.
   static int characterLcsMatchedLength(
     String target,
     String spoken,
@@ -475,6 +475,44 @@ class CjkPronunciationPhraseBuilder {
         } else {
           dp[i][j] = dp[i - 1][j] > dp[i][j - 1] ? dp[i - 1][j] : dp[i][j - 1];
         }
+      }
+    }
+    return dp[n][m];
+  }
+
+  /// 정답·STT 문자 단위 가중 LCS 점수 (구두점 제외).
+  ///
+  /// 완전 동음 1.0, 성조만 다름 [ScenarioAnswerCompare.toneMismatchCredit], 그 외 0.
+  /// DP는 크레딧 합을 최대화한다.
+  static double characterLcsMatchedCredit(
+    String target,
+    String spoken,
+    String language,
+  ) {
+    if (language == 'Japanese') {
+      target = JapaneseNumberNormalizer.expandDigitsInText(target);
+    }
+    final t = _charUnits(target, language);
+    final s = _charUnits(spoken, language);
+    if (t.isEmpty || s.isEmpty) return 0;
+
+    final n = t.length;
+    final m = s.length;
+    final dp = List.generate(n + 1, (_) => List<double>.filled(m + 1, 0));
+
+    for (var i = 1; i <= n; i++) {
+      for (var j = 1; j <= m; j++) {
+        final credit = ScenarioAnswerCompare.charMatchCredit(
+          t[i - 1],
+          s[j - 1],
+          language,
+        );
+        final diag = credit > 0 ? dp[i - 1][j - 1] + credit : -1.0;
+        final up = dp[i - 1][j];
+        final left = dp[i][j - 1];
+        var best = up > left ? up : left;
+        if (diag > best) best = diag;
+        dp[i][j] = best;
       }
     }
     return dp[n][m];
@@ -544,6 +582,8 @@ class CjkPronunciationPhraseBuilder {
   }
 
   /// 맞춘 글자 수 / 정답 전체 글자 수 기반 부분 점수.
+  ///
+  /// 중국어는 성조만 다른 글자에 [ScenarioAnswerCompare.toneMismatchCredit]를 반영한다.
   static int accuracyPercentByCharacters({
     required String sentence,
     required String spokenText,
@@ -558,7 +598,7 @@ class CjkPronunciationPhraseBuilder {
     if (targetLen == 0) {
       return spokenPrepared.trim().isEmpty ? 100 : 0;
     }
-    final matched = characterLcsMatchedLength(
+    final matched = characterLcsMatchedCredit(
       sentence,
       spokenPrepared,
       language,
